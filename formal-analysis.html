@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>从电路到代数 — 形式化分析讲义</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$','$']], displayMath: [['$$','$$']], tags: 'none' },
+  svg: { fontCache: 'global', scale: 1.02 },
+  options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] }
+};
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+<style>
+  :root{
+    --ink:#1c1c1e; --mute:#6b6b70; --line:#e2e2e6; --bg:#fbfbfc;
+    --blue:#1c6dd0; --blue-bg:#eef5fd;
+    --green:#1a7f45; --green-bg:#edf9f1;
+    --amber:#8a5a00; --amber-bg:#fdf6e6;
+    --red:#b3261e; --red-bg:#fdeeed;
+    --violet:#6b3fa0; --violet-bg:#f4eefb;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:0 0 120px; background:#fff; color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans CJK SC","Source Han Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:16.5px; line-height:1.78;
+  }
+  .wrap{max-width:980px; margin:0 auto; padding:0 28px}
+  header.cover{
+    background:linear-gradient(135deg,#0f2540 0%,#1c4a75 55%,#2b6a9e 100%);
+    color:#fff; padding:64px 28px 56px; margin-bottom:44px;
+  }
+  header.cover .wrap{padding:0}
+  header.cover h1{margin:0 0 14px; font-size:2.25em; letter-spacing:.5px; line-height:1.3}
+  header.cover p{margin:6px 0; color:#cfe0f0; font-size:1.02em}
+  header.cover .tag{
+    display:inline-block; margin-top:18px; padding:5px 13px; border:1px solid #5d8cb5;
+    border-radius:99px; font-size:.84em; color:#d8e8f6; letter-spacing:1px;
+  }
+  header.cover a.nav{
+    display:inline-block; margin:18px 0 0 12px; padding:5px 13px; border-radius:99px;
+    background:rgba(255,255,255,.16); color:#fff; font-size:.84em; text-decoration:none;
+    border:1px solid rgba(255,255,255,.35);
+  }
+  header.cover a.nav:hover{background:rgba(255,255,255,.3)}
+  h2{
+    font-size:1.52em; margin:64px 0 22px; padding-bottom:11px;
+    border-bottom:3px solid var(--ink); letter-spacing:.3px;
+  }
+  h2 .num{
+    display:inline-block; background:var(--ink); color:#fff; border-radius:7px;
+    padding:1px 11px; margin-right:13px; font-size:.8em; vertical-align:3px;
+  }
+  h3{font-size:1.16em; margin:34px 0 12px; color:#0f2540}
+  h4{font-size:1.02em; margin:24px 0 8px; color:var(--mute); font-weight:600}
+  p{margin:12px 0}
+  ul,ol{margin:12px 0; padding-left:26px}
+  li{margin:7px 0}
+  code{
+    background:#f0f1f3; padding:1.5px 6px; border-radius:5px;
+    font-family:"SF Mono",Menlo,Consolas,monospace; font-size:.9em;
+  }
+  pre{
+    background:#1c1c1e; color:#eaeaea; padding:16px 18px; border-radius:10px;
+    overflow-x:auto; font-size:.88em; line-height:1.62;
+    font-family:"SF Mono",Menlo,Consolas,monospace;
+  }
+  table{
+    border-collapse:collapse; width:100%; margin:20px 0; font-size:.94em;
+  }
+  th,td{border:1px solid var(--line); padding:9px 13px; text-align:left; vertical-align:middle}
+  th{background:#f5f6f8; font-weight:600}
+  tbody tr:nth-child(even){background:#fafbfc}
+  .box{
+    border-left:5px solid var(--blue); background:var(--blue-bg);
+    padding:16px 20px; border-radius:0 10px 10px 0; margin:24px 0;
+  }
+  .box.warn{border-color:var(--amber); background:var(--amber-bg)}
+  .box.key{border-color:var(--green); background:var(--green-bg)}
+  .box.err{border-color:var(--red); background:var(--red-bg)}
+  .box.note{border-color:var(--violet); background:var(--violet-bg)}
+  .box > .lbl{
+    display:block; font-weight:700; font-size:.83em; letter-spacing:1.4px;
+    text-transform:uppercase; margin-bottom:8px; color:var(--blue);
+  }
+  .box.warn > .lbl{color:var(--amber)}
+  .box.key  > .lbl{color:var(--green)}
+  .box.err  > .lbl{color:var(--red)}
+  .box.note > .lbl{color:var(--violet)}
+  .box p:first-of-type{margin-top:0}
+  .box p:last-child{margin-bottom:0}
+  .fig{margin:30px 0; text-align:center}
+  .fig svg{max-width:100%; height:auto}
+  .fig .cap{font-size:.87em; color:var(--mute); margin-top:10px}
+  details{
+    background:#f7f8fa; border:1px solid var(--line); border-radius:10px;
+    padding:12px 18px; margin:14px 0;
+  }
+  summary{cursor:pointer; font-weight:600; color:var(--blue)}
+  details[open] summary{margin-bottom:10px}
+  .toc{background:#f7f8fa; border:1px solid var(--line); border-radius:12px; padding:22px 28px}
+  .toc ol{columns:2; column-gap:44px; margin:0; padding-left:22px}
+  .toc li{margin:6px 0; break-inside:avoid}
+  .toc a{color:var(--ink); text-decoration:none; border-bottom:1px dotted #bbb}
+  .toc a:hover{color:var(--blue); border-color:var(--blue)}
+  .small{font-size:.9em; color:var(--mute)}
+  .center{text-align:center}
+  hr{border:none; border-top:1px solid var(--line); margin:44px 0}
+  .mjx-container{overflow-x:auto; overflow-y:hidden; max-width:100%}
+  mjx-container[display="true"]{margin:20px 0 !important}
+  .lead{font-size:1.05em; color:#3a3a3e}
+</style>
+</head>
+<body>
+
+<header class="cover">
+  <div class="wrap">
+    <h1>从电路到代数</h1>
+    <p>—— 用你学过的线性代数，把 MOSFET 网络变成可计算的矩阵</p>
+    <p style="margin-top:18px;font-size:.95em">讲义 / 助教手记 · 数字电路形式化分析</p>
+    <span class="tag">前置知识：矩阵乘法 · 只有 0 和 1 的算术</span>
+    <a class="nav" href="index.html">课程首页</a>
+    <a class="nav" href="intuition-zero.html">讲义 0:直觉篇</a>
+    <a class="nav" href="synthesis-inverse.html">讲义二:从代数到电路 →</a>
+  </div>
+</header>
+
+<div class="wrap">
+
+<div class="toc">
+<strong>目录</strong>
+<ol>
+  <li><a href="#s1">三条翻译规则</a></li>
+  <li><a href="#s2">例 1：NOR2（你的思路是对的）</a></li>
+  <li><a href="#s3">把表变成矩阵</a></li>
+  <li><a href="#s4">关键：加法有五种</a></li>
+  <li><a href="#s5">第二层：拓扑矩阵</a></li>
+  <li><a href="#s6">连通闭包</a></li>
+  <li><a href="#s7">例 2：6T XOR 全推演</a></li>
+  <li><a href="#s8">线性在哪里断掉</a></li>
+  <li><a href="#s9">良构性判据（最重要）</a></li>
+  <li><a href="#s10">用错代数的后果</a></li>
+  <li><a href="#s11">这套数学的工程意义</a></li>
+  <li><a href="#s12">附录：符号表与习题</a></li>
+</ol>
+</div>
+
+<h2 id="s0"><span class="num">0</span>导读：这份讲义要回答什么</h2>
+
+<p class="lead">你的直觉是对的：电路的几何拓扑、逻辑关系、电气状态，都可以数字化，然后交给矩阵去算。你已经独立走到了正确的路上。但这条路有三处容易摔跤的地方，正是这份讲义要讲清楚的：</p>
+
+<ol>
+  <li><strong>建模</strong>：电路图怎么变成一个方程组？（串联/并联 → 乘/加）</li>
+  <li><strong>代数</strong>：这个方程组里的「加」和「乘」到底是什么？<em>用错一种就会得到自洽但完全错误的答案</em>。</li>
+  <li><strong>判据</strong>：怎么不靠枚举真值表，就<strong>证明</strong>一个电路是良构的？</li>
+</ol>
+
+<div class="box note">
+  <span class="lbl">怎么读</span>
+  <p>你只需要两样东西：<strong>矩阵乘法</strong>，和<strong>只有 0、1 两个数的算术</strong>。看到新的符号（$\vee$、$\wedge$、$\oplus$）时，先当成「一种加法/乘法」就好，第 4 章会专门讲清楚它们和普通加减乘除的区别。</p>
+</div>
+
+<h2 id="s1"><span class="num">1</span>三条翻译规则</h2>
+
+<p>MOS 管在开关意义上只有两种状态：<strong>导通</strong>或<strong>截止</strong>。给每个器件 $d$ 配一个变量：</p>
+
+$$\kappa_d = \begin{cases} 1, & \text{器件 } d \text{ 导通（电流能过）}\\[2pt] 0, & \text{器件 } d \text{ 截止}\end{cases}$$
+
+<p>那么电路结构就有一一对应的代数运算：</p>
+
+<table>
+<thead><tr><th>电路结构</th><th>物理含义</th><th>代数运算</th><th>记号</th></tr></thead>
+<tbody>
+<tr><td>两个器件<strong>串联</strong></td><td>必须<em>同时</em>导通才有通路</td><td>与（AND）</td><td>$\kappa_1 \wedge \kappa_2$</td></tr>
+<tr><td>两个器件<strong>并联</strong></td><td><em>任一</em>导通就有通路</td><td>或（OR）</td><td>$\kappa_1 \vee \kappa_2$</td></tr>
+<tr><td>单个器件</td><td>—</td><td>变量本身</td><td>$\kappa_d$</td></tr>
+</tbody>
+</table>
+
+<p>而一个 MOS 管导不导通，由<strong>栅极电平</strong>决定（互补型：PMOS 低电平导通，NMOS 高电平导通）：</p>
+
+$$\kappa = \begin{cases} \bar{g}, & \text{PMOS（栅极 } g \text{）}\\[2pt] g, & \text{NMOS（栅极 } g\text{）}\end{cases}$$
+
+<p>其中 $\bar{g}$ 表示「非 $g$」，也就是 $g$ 的反。这两条规则合起来，就已经能把任意串并联网络写成代数式了。<strong>这一步你在做 NOR 分析时其实已经做过了。</strong></p>
+
+<h2 id="s2"><span class="num">2</span>例 1：2 输入 NOR —— 你的思路在这里完全正确</h2>
+
+<p>先看一个你已经算对的例子，把记号固定下来。四个器件：</p>
+
+<table>
+<thead><tr><th>器件</th><th>类型</th><th>栅极</th><th>导通条件 $\kappa$</th><th>连接</th></tr></thead>
+<tbody>
+<tr><td>$P_1$</td><td>PMOS</td><td>$A$</td><td>$\bar{A}$</td><td>Vcc → 中间节点</td></tr>
+<tr><td>$P_2$</td><td>PMOS</td><td>$B$</td><td>$\bar{B}$</td><td>中间节点 → $Y$</td></tr>
+<tr><td>$N_1$</td><td>NMOS</td><td>$A$</td><td>$A$</td><td>$Y$ → GND</td></tr>
+<tr><td>$N_2$</td><td>NMOS</td><td>$B$</td><td>$B$</td><td>$Y$ → GND</td></tr>
+</tbody>
+</table>
+
+<p>$P_1,P_2$ <strong>串联</strong>在 Vcc 与 $Y$ 之间；$N_1,N_2$ <strong>并联</strong>在 $Y$ 与 GND 之间。于是：</p>
+
+$$\kappa_{\text{上拉}} = \bar{A}\wedge\bar{B}, \qquad \kappa_{\text{下拉}} = A \vee B$$
+
+<p>$Y$ 是这个网络上唯一的非电源节点，它有两种「驱动」：要么被上拉网络拉到 Vcc（值 1），要么被下拉网络拉到 GND（值 0）。写成一条方程：</p>
+
+$$\boxed{\;Y = \kappa_{\text{上拉}}\cdot 1 \;\vee\; \kappa_{\text{下拉}}\cdot 0 = \bar{A}\bar{B}\;}$$
+
+<p>再用德摩根律 $\bar{A}\bar{B} = \overline{A \vee B}$，就是 <strong>NOR</strong>。这和你手算的四行表完全一致：</p>
+
+<table>
+<thead><tr><th>$A$</th><th>$B$</th><th>$P_1$</th><th>$P_2$</th><th>$N_1$</th><th>$N_2$</th><th>上拉通?</th><th>下拉通?</th><th>$Y$</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>1</td><td>0</td><td>0</td><td>1</td><td>1</td><td>否</td><td>是</td><td><strong>0</strong></td></tr>
+<tr><td>1</td><td>0</td><td>0</td><td>1</td><td>1</td><td>0</td><td>否</td><td>是</td><td><strong>0</strong></td></tr>
+<tr><td>0</td><td>1</td><td>1</td><td>0</td><td>0</td><td>1</td><td>否</td><td>是</td><td><strong>0</strong></td></tr>
+<tr><td>0</td><td>0</td><td>1</td><td>1</td><td>0</td><td>0</td><td><strong>是</strong></td><td>否</td><td><strong>1</strong></td></tr>
+</tbody>
+</table>
+
+<div class="box key">
+  <span class="lbl">这一节的结论</span>
+  <p>电路功能不需要枚举。只要知道 <strong>串联 = 与、并联 = 或</strong>，一个式子就写完了。表只是它的展开，不是它的来源。</p>
+</div>
+
+<h2 id="s3"><span class="num">3</span>把表变成矩阵</h2>
+
+<p>你原来的做法是：输入向量 $\vec{v_1}$，器件状态向量 $\vec{v_2}$，一行一行列表。这个表其实可以压成<strong>一个 4×2 的矩阵</strong>。</p>
+
+<p>先注意一个关键事实：在互补 CMOS 里，<strong>每个器件的状态完全由输入决定</strong>，没有自由度。所以 $\vec{v_2}$ 是 $\vec{v_1}$ 的函数。</p>
+
+<h3>3.1 一种只有 0 和 1 的算术</h3>
+
+<p>定义三种运算（暂时都只当作「某种加法 / 某种乘法」看）：</p>
+
+<table>
+<thead><tr><th>运算</th><th>规则</th><th>叫什么</th></tr></thead>
+<tbody>
+<tr><td>$x \vee y$</td><td>$0\vee0=0,\;0\vee1=1,\;1\vee0=1,\;1\vee1=1$</td><td>或</td></tr>
+<tr><td>$x \wedge y$</td><td>$0\wedge0=0,\;0\wedge1=0,\;1\wedge0=0,\;1\wedge1=1$</td><td>与</td></tr>
+<tr><td>$x \oplus y$</td><td>$0\oplus0=0,\;0\oplus1=1,\;1\oplus0=1,\;1\oplus1=0$</td><td>异或（模 2 加）</td></tr>
+</tbody>
+</table>
+
+<p>「取反」正好可以用异或表示。把 $x=0$ 和 $x=1$ 分别代入验证：</p>
+
+$$\bar{x} = 1 \oplus x \qquad(\text{因为 } 1\oplus 0 = 1,\; 1\oplus 1 = 0)$$
+
+<h3>3.2 写成矩阵</h3>
+
+<p>令 $\vec{s} = \begin{bmatrix} A \\ B\end{bmatrix}$，$\vec{\kappa} = \begin{bmatrix}\kappa_{P1} \\ \kappa_{P2} \\ \kappa_{N1} \\ \kappa_{N2}\end{bmatrix} = \begin{bmatrix}\bar{A}\\ \bar{B}\\ A\\ B\end{bmatrix}$。用 $\bar{A} = 1\oplus A$、$\bar{B} = 1\oplus B$：</p>
+
+$$\vec{\kappa} \;=\; \underbrace{\begin{bmatrix} 1 & 0\\ 0 & 1\\ 1 & 0\\ 0 & 1\end{bmatrix}}_{M} \begin{bmatrix} A\\ B\end{bmatrix} \;\oplus\; \underbrace{\begin{bmatrix} 1\\ 1\\ 0\\ 0\end{bmatrix}}_{\vec{c}}$$
+
+<p><strong>验算一下</strong> $A=1,\,B=0$（就是你说的 $v_1 = 10$）：</p>
+
+$$M\vec{s} = \begin{bmatrix} 1 & 0\\ 0 & 1\\ 1 & 0\\ 0 & 1\end{bmatrix}\begin{bmatrix}1\\0\end{bmatrix} = \begin{bmatrix}1\\0\\1\\0\end{bmatrix}, \qquad \begin{bmatrix}1\\0\\1\\0\end{bmatrix}\oplus\begin{bmatrix}1\\1\\0\\0\end{bmatrix} = \begin{bmatrix}\mathbf{0}\\\mathbf{1}\\\mathbf{1}\\\mathbf{0}\end{bmatrix}$$
+
+<p>正是你表里写的 <code>0110</code>。四条全对。</p>
+
+<div class="box">
+  <span class="lbl">为什么这件事值得兴奋</span>
+  <p>整个门的「输入端 → 器件端」的行为，被压缩成 <strong>8 个数字</strong>（$M$ 的 8 个元素 + $\vec{c}$ 的 4 个，其中 $M$ 只有 4 个独立值）。而且 $M$ 只是一张<strong>连线表</strong>：$M$ 的第 1 行 $[1,0]$ 表示「$P_1$ 由 $A$ 驱动」。换一个门，只换 $M$。</p>
+</div>
+
+<h2 id="s4"><span class="num">4</span>关键：加法有五种，别拿错</h2>
+
+<p>这是整份讲义最重要的一节。在实数里你已经习惯了「加法只有一种」。但在这里，<strong>同一个符号「+」在不同系统下含义不同</strong>，拿错了就全错。</p>
+
+<table>
+<thead><tr><th>系统</th><th>加法</th><th>乘法</th><th>用在哪</th></tr></thead>
+<tbody>
+<tr><td><strong>实数 $\mathbb{R}$</strong></td><td>$1+1=2$</td><td>$1\times1=1$</td><td>你学的线代 / 微积分</td></tr>
+<tr><td><strong>布尔代数</strong> $\{0,1\}$</td><td>$1\vee1=\mathbf{1}$</td><td>$1\wedge1=1$</td><td><strong>电路拓扑的正确代数</strong></td></tr>
+<tr><td><strong>模 2 域 $\mathrm{GF}(2)$</strong></td><td>$1\oplus1=\mathbf{0}$</td><td>$1\wedge1=1$</td><td>算补、算异或类函数</td></tr>
+</tbody>
+</table>
+
+<p>差别只在 <strong>$1+1$ 等于什么</strong>：实数得 2，布尔得 1，模 2 得 0。就这一条，决定了你算出的答案对不对。</p>
+
+<h3>4.1 为什么电路拓扑必须用「布尔加法」</h3>
+
+<p>因为<strong>两条并联路径只要有一条能通，输出就算通</strong>。哪怕两条都通，结果还是「通」——不会变成「两倍通」，也不会变成「不通」。这就是 $1\vee1=1$。</p>
+
+<p>如果误用模 2 加法（$1\oplus1=0$），两条并联的路径就会互相抵消，物理上荒谬。第 10 章会给你看一个具体的「算出来自洽但完全错误」的例子。</p>
+
+<h3>4.2 矩阵还能用吗？可以，但要换成「布尔矩阵乘法」</h3>
+
+<p>对比一下同一个式子的两种算法（左边普通、右边布尔）：</p>
+
+$$\begin{bmatrix}1 & 1\end{bmatrix}\begin{bmatrix}1\\1\end{bmatrix} = 1+1 = 2 \quad(\mathbb{R}), \qquad
+\begin{bmatrix}1 & 1\end{bmatrix}\odot\begin{bmatrix}1\\1\end{bmatrix} = 1\vee 1 = 1 \quad(\text{布尔})$$
+
+<p>布尔矩阵乘法的定义只是把「乘再加」换成「与再或」：</p>
+
+$$(X \odot Y)_{ij} \;=\; \bigvee_{k} \big( X_{ik} \wedge Y_{kj} \big)$$
+
+<div class="box key">
+  <span class="lbl">一句话记忆</span>
+  <p>结构上它仍然是<strong>矩阵乘法</strong>，你熟悉的行×列、结合律、幂运算全都在。只是内部的「十」和「×」被换成了 $\vee$ 和 $\wedge$。数学上这叫<strong>半环（semiring）</strong>，是环的弱化版：不要求减法存在。</p>
+</div>
+
+<h2 id="s5"><span class="num">5</span>第二层：拓扑矩阵（这一层与输入无关）</h2>
+
+<p>这是整套方法<strong>真正值钱的地方</strong>。前面 $\vec{\kappa}$ 每换一次输入就要重算；但网络的<strong>连线关系永远不变</strong>。</p>
+
+<h3>5.1 邻接矩阵（你在图论里见过）</h3>
+
+<p>把所有<strong>节点</strong>（导线交汇处，包括电源、地、输入、输出）编上号。给每个器件 $d$ 造一个 $n\times n$ 矩阵：</p>
+
+$$(E_d)_{uv} = (E_d)_{vu} = 1 \iff \text{器件 } d \text{ 的两端分别接在节点 } u \text{ 和 } v$$
+
+<p>也就是「只有 $u$、$v$ 两个位置是 1，其余全 0」的对称矩阵。</p>
+
+<h3>5.2 把器件「插进」矩阵</h3>
+
+<p>导通时它就是一根导线，截止时它不存在。所以总的连接矩阵是所有器件按导通状态加权（加权用的是 $\wedge$，叠加用的是 $\vee$）：</p>
+
+$$\boxed{\;C \;=\; \bigvee_{d=1}^{m} \big( \kappa_d \wedge E_d \big)\;}$$
+
+<p>含义极直白：<strong>第 $(u,v)$ 项是 1，就说明此刻 $u$ 和 $v$ 之间被一根导通的管子连着。</strong></p>
+
+<h3>5.3 NOR 的拓扑矩阵</h3>
+
+<p>节点编号：$1=\mathrm{Vcc}$，$2=Y$，$3=\mathrm{GND}$。上拉网络视为一个复合器件（$\kappa_{\text{上拉}}=\bar{A}\bar{B}$），下拉同理（$\kappa_{\text{下拉}}=A\vee B$）：</p>
+
+$$C \;=\; \begin{array}{c|ccc} & \mathrm{Vcc} & Y & \mathrm{GND}\\ \hline \mathrm{Vcc} & 0 & \kappa_{\text{上拉}} & 0\\ Y & \kappa_{\text{上拉}} & 0 & \kappa_{\text{下拉}}\\ \mathrm{GND} & 0 & \kappa_{\text{下拉}} & 0\end{array}$$
+
+<p>读矩阵第二行：$Y$ 只和 Vcc、GND 两个节点相邻，权重分别是 $\kappa_{\text{上拉}}$、$\kappa_{\text{下拉}}$。于是</p>
+
+$$Y = \kappa_{\text{上拉}}\cdot 1 \;\vee\; \kappa_{\text{下拉}}\cdot 0 = \bar{A}\bar{B}$$
+
+<p>和第 2 章结果一致——但现在它是<strong>矩阵链乘出来</strong>的了。</p>
+
+<div class="box note">
+  <span class="lbl">可拆分的两层</span>
+  <p>$C$ 的形状（哪些位置非零）只由<strong>画图时的连线</strong>决定，一辈子不变；$C$ 的<strong>取值</strong>随输入变。所以：<strong>拓扑信息算一次就能永久复用，输入信息每次代进去。</strong> 这正好是你上次察觉到的那个问题——$\vec{v_2}$ 是派生量，路径/连线才是本体。</p>
+</div>
+
+<h2 id="s6"><span class="num">6</span>连通闭包：为什么还要做一次幂运算</h2>
+
+<p>$C$ 只描述「<strong>一跳</strong>能到哪」。但信号可以经过很多跳。用布尔矩阵乘法自己乘自己，就是「两跳」，再乘是「三跳」：</p>
+
+$$C^* \;=\; C \;\vee\; C^{2} \;\vee\; C^{3} \;\vee\; \cdots \;\vee\; C^{\,n-1}$$
+
+<p>（$C^{\,k}$ 是布尔幂：$k$ 次布尔矩阵乘法。）这个 $C^*$ 就是图论里的<strong>可达矩阵</strong>，你如果学过 Warshall 算法，算的就是同一个东西。</p>
+
+<table>
+<thead><tr><th>矩阵元素</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td>$C_{uv} = 1$</td><td>$u$ 与 $v$ 之间有<strong>一根管子</strong>直接相连</td></tr>
+<tr><td>$C^{*}_{uv} = 1$</td><td>$u$ 与 $v$ 之间<strong>存在一条通路</strong>（任意长度）</td></tr>
+</tbody>
+</table>
+
+<div class="box warn">
+  <span class="lbl">为什么用布尔乘而不是普通乘</span>
+  <p>普通矩阵幂会去<strong>数路径条数</strong>（$C^3_{uv}=5$ 表示有 5 条三跳路径）。但电路不关心有几条路，只关心<strong>通不通</strong>。所以必须用 $\vee$ / $\wedge$ 版本，把「条数」压成「有没有」。</p>
+</div>
+
+<h3>6.1 一个两行的手算例子</h3>
+
+<p>设三个节点 $1-2-3$ 串成链，只有 $1{-}2$ 和 $2{-}3$ 相连：</p>
+
+$$C=\begin{bmatrix}0&1&0\\1&0&1\\0&1&0\end{bmatrix} \;\Rightarrow\; C^2=\begin{bmatrix}1&0&1\\0&1&0\\1&0&1\end{bmatrix} \;\Rightarrow\; C^*=C\vee C^2=\begin{bmatrix}1&1&1\\1&1&1\\1&1&1\end{bmatrix}$$
+
+<p>看 $C^2$ 的第 1 行第 3 列：$\big(1\wedge1\big)\vee\big(0\wedge1\big)\vee\big(1\wedge0\big)=1$——「从 1 走两跳能到 3」。所以全连通。✓</p>
+
+<h2 id="s7"><span class="num">7</span>例 2：6 个晶体管的 XOR —— 完整推演</h2>
+
+<p>现在用这套机器分析真正有意思的电路。这是你课本上那张图：<strong>异或门的全定制实现</strong>。</p>
+
+<div class="fig">
+<svg viewBox="0 0 800 470" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:780px">
+  <g font-family="-apple-system,Segoe UI,Noto Sans CJK SC,sans-serif" font-size="15" fill="#1c1c1e">
+  <!-- ===== A rail (top) ===== -->
+  <line x1="100" y1="60" x2="630" y2="60" stroke="#1c1c1e" stroke-width="2.2"/>
+  <text x="72" y="55" font-size="14" fill="#6b6b70">顶轨 = A</text>
+  <!-- A bus -->
+  <line x1="100" y1="60" x2="100" y2="300" stroke="#1c1c1e" stroke-width="2.2"/>
+  <line x1="40" y1="220" x2="100" y2="220" stroke="#1c1c1e" stroke-width="2.2"/>
+  <circle cx="100" cy="220" r="4.2" fill="#1c1c1e"/>
+  <circle cx="100" cy="140" r="4.2" fill="#1c1c1e"/>
+  <text x="30" y="226" text-anchor="end" font-size="17" font-weight="600">A</text>
+  <!-- gate stubs from A -->
+  <line x1="100" y1="140" x2="157" y2="140" stroke="#1c1c1e" stroke-width="2.2"/>
+  <line x1="100" y1="300" x2="169" y2="300" stroke="#1c1c1e" stroke-width="2.2"/>
+
+  <!-- ===== Vcc terminal (only feeds P1 source) ===== -->
+  <circle cx="180" cy="95" r="5.5" fill="none" stroke="#1c1c1e" stroke-width="2"/>
+  <text x="196" y="100" font-size="14.5" font-style="italic">Vcc</text>
+  <line x1="180" y1="100" x2="180" y2="105" stroke="#1c1c1e" stroke-width="2.2"/>
+
+  <!-- ===== Column 1: P1 / N1 ===== -->
+  <line x1="180" y1="105" x2="180" y2="165" stroke="#1c1c1e" stroke-width="4"/>
+  <line x1="169" y1="117" x2="169" y2="153" stroke="#1c1c1e" stroke-width="2.6"/>
+  <circle cx="163" cy="140" r="6" fill="#fff" stroke="#1c1c1e" stroke-width="1.9"/>
+  <text x="203" y="140" font-size="16" font-weight="600">P1</text>
+
+  <line x1="180" y1="165" x2="180" y2="265" stroke="#1c1c1e" stroke-width="2.2"/>
+  <line x1="180" y1="265" x2="180" y2="325" stroke="#1c1c1e" stroke-width="4"/>
+  <line x1="169" y1="277" x2="169" y2="313" stroke="#1c1c1e" stroke-width="2.6"/>
+  <text x="203" y="300" font-size="16" font-weight="600">N1</text>
+
+  <!-- A-bar tap -->
+  <circle cx="180" cy="215" r="4.2" fill="#1c1c1e"/>
+  <line x1="180" y1="215" x2="280" y2="215" stroke="#1c1c1e" stroke-width="2.2"/>
+  <text x="248" y="207" font-size="14" fill="#6b6b70">Ā</text>
+  <line x1="280" y1="215" x2="280" y2="400" stroke="#1c1c1e" stroke-width="2.2"/>
+  <line x1="280" y1="400" x2="630" y2="400" stroke="#1c1c1e" stroke-width="2.2"/>
+  <text x="300" y="418" font-size="14" fill="#6b6b70">底轨 = Ā</text>
+
+  <!-- GND -->
+  <line x1="180" y1="325" x2="180" y2="352" stroke="#1c1c1e" stroke-width="2.2"/>
+  <line x1="155" y1="352" x2="205" y2="352" stroke="#1c1c1e" stroke-width="2.6"/>
+  <line x1="165" y1="360" x2="195" y2="360" stroke="#1c1c1e" stroke-width="2.6"/>
+  <line x1="175" y1="368" x2="185" y2="368" stroke="#1c1c1e" stroke-width="2.6"/>
+
+  <!-- ===== Column 2: P2 / N2 ===== -->
+  <line x1="440" y1="105" x2="440" y2="60" stroke="#1c1c1e" stroke-width="2.2"/>
+  <circle cx="440" cy="60" r="4.2" fill="#1c1c1e"/>
+  <line x1="440" y1="105" x2="440" y2="165" stroke="#1c1c1e" stroke-width="4"/>
+  <line x1="429" y1="117" x2="429" y2="153" stroke="#1c1c1e" stroke-width="2.6"/>
+  <circle cx="423" cy="140" r="6" fill="#fff" stroke="#1c1c1e" stroke-width="1.9"/>
+  <text x="463" y="140" font-size="16" font-weight="600">P2</text>
+
+  <line x1="440" y1="165" x2="440" y2="265" stroke="#1c1c1e" stroke-width="2.2"/>
+  <line x1="440" y1="265" x2="440" y2="325" stroke="#1c1c1e" stroke-width="4"/>
+  <line x1="429" y1="277" x2="429" y2="313" stroke="#1c1c1e" stroke-width="2.6"/>
+  <text x="463" y="325" font-size="16" font-weight="600">N2</text>
+  <line x1="440" y1="325" x2="440" y2="400" stroke="#1c1c1e" stroke-width="2.2"/>
+  <circle cx="440" cy="400" r="4.2" fill="#1c1c1e"/>
+
+  <!-- Y node -->
+  <circle cx="440" cy="215" r="4.2" fill="#1c1c1e"/>
+  <line x1="440" y1="215" x2="565" y2="215" stroke="#1c1c1e" stroke-width="2.2"/>
+  <text x="470" y="207" font-size="17" font-weight="600">Y</text>
+
+  <!-- B bus -->
+  <line x1="350" y1="140" x2="417" y2="140" stroke="#1c1c1e" stroke-width="2.2"/>
+  <line x1="350" y1="300" x2="429" y2="300" stroke="#1c1c1e" stroke-width="2.2"/>
+  <line x1="350" y1="140" x2="350" y2="300" stroke="#1c1c1e" stroke-width="2.2"/>
+  <circle cx="350" cy="215" r="4.2" fill="#1c1c1e"/>
+  <line x1="320" y1="215" x2="350" y2="215" stroke="#1c1c1e" stroke-width="2.2"/>
+  <text x="310" y="221" text-anchor="end" font-size="17" font-weight="600">B</text>
+
+  <!-- ===== Transmission gate: P3 // N3 ===== -->
+  <line x1="565" y1="185" x2="565" y2="245" stroke="#1c1c1e" stroke-width="2.2"/>
+  <line x1="565" y1="185" x2="605" y2="185" stroke="#1c1c1e" stroke-width="2.2"/>
+  <line x1="565" y1="245" x2="605" y2="245" stroke="#1c1c1e" stroke-width="2.2"/>
+  <line x1="695" y1="185" x2="695" y2="245" stroke="#1c1c1e" stroke-width="2.2"/>
+  <line x1="655" y1="185" x2="695" y2="185" stroke="#1c1c1e" stroke-width="2.2"/>
+  <line x1="655" y1="245" x2="695" y2="245" stroke="#1c1c1e" stroke-width="2.2"/>
+
+  <!-- P3 : horizontal channel, gate plate above, gate lead up to A rail -->
+  <line x1="605" y1="185" x2="655" y2="185" stroke="#1c1c1e" stroke-width="7" stroke-linecap="butt"/>
+  <line x1="613" y1="171" x2="647" y2="171" stroke="#1c1c1e" stroke-width="3.2"/>
+  <line x1="630" y1="172" x2="630" y2="60" stroke="#1c1c1e" stroke-width="2.2"/>
+  <circle cx="630" cy="60" r="4.2" fill="#1c1c1e"/>
+  <text x="535" y="190" font-size="16" font-weight="600">P3</text>
+
+  <!-- N3 : horizontal channel, gate plate below, gate lead down to A-bar rail -->
+  <line x1="605" y1="245" x2="655" y2="245" stroke="#1c1c1e" stroke-width="7" stroke-linecap="butt"/>
+  <line x1="613" y1="259" x2="647" y2="259" stroke="#1c1c1e" stroke-width="3.2"/>
+  <line x1="630" y1="259" x2="630" y2="400" stroke="#1c1c1e" stroke-width="2.2"/>
+  <text x="535" y="252" font-size="16" font-weight="600">N3</text>
+
+  <!-- TG right node to B -->
+  <line x1="695" y1="215" x2="755" y2="215" stroke="#1c1c1e" stroke-width="2.2"/>
+  <text x="767" y="221" font-size="17" font-weight="600">B</text>
+
+  <!-- annotations -->
+  <text x="645" y="128" font-size="13" fill="#6b6b70">P3 栅极 ← A</text>
+  <text x="645" y="336" font-size="13" fill="#6b6b70">N3 栅极 ← Ā</text>
+  <text x="150" y="430" font-size="13" fill="#6b6b70">GND</text>
+  </g>
+</svg>
+<div class="cap">图 1　六管异或门。<strong>注意顶部横线是 A，不是电源</strong>；Vcc 只是 P1 源极上方一个独立端子。</div>
+<p class="small center" style="margin-top:-2px">
+图例：<strong>带小圆圈</strong>的栅极 = PMOS　·　<strong>无圆圈</strong>的栅极 = NMOS　·　<strong>实心点</strong> = 电气连接（交叉但无点 = 不连接）
+</p>
+</div>
+
+<h3>7.1 器件清单</h3>
+
+<table>
+<thead><tr><th>器件</th><th>类型</th><th>栅极</th><th>两端接</th><th>导通条件 $\kappa_d=1$</th></tr></thead>
+<tbody>
+<tr><td>$P_1$</td><td>PMOS</td><td>$A$</td><td>Vcc ↔ $\bar{A}$</td><td>$\bar{A}$</td></tr>
+<tr><td>$N_1$</td><td>NMOS</td><td>$A$</td><td>$\bar{A}$ ↔ GND</td><td>$A$</td></tr>
+<tr><td>$P_2$</td><td>PMOS</td><td>$B$</td><td><strong>$A$</strong> ↔ $Y$</td><td>$\mathbf{A\bar{B}}$</td></tr>
+<tr><td>$N_2$</td><td>NMOS</td><td>$B$</td><td><strong>$\bar{A}$</strong> ↔ $Y$</td><td>$\mathbf{B\bar{A}}$</td></tr>
+<tr><td>$P_3$</td><td>PMOS</td><td>$A$</td><td>$Y$ ↔ $B$</td><td>$\bar{A}$</td></tr>
+<tr><td>$N_3$</td><td>NMOS</td><td>$\bar{A}$</td><td>$Y$ ↔ $B$</td><td>$\bar{A}$</td></tr>
+</tbody>
+</table>
+
+<p>加粗的两行是关键——第 8 章专门讲。</p>
+
+<h3>7.2 先算内部节点 $\bar{A}$</h3>
+
+<p>$P_1$、$N_1$ 组成反相器，$\bar{A}$ 只和 Vcc、GND 相邻：</p>
+
+$$\bar{A} = \kappa_{P1}\cdot 1 \;\vee\; \kappa_{N1}\cdot 0 = \bar{A}\cdot 1 \vee A\cdot 0 = \bar{A}$$
+
+<p>方程两边一致（这叫<strong>自洽</strong>），说明反相器工作正常。✓</p>
+
+<h3>7.3 输出节点 $Y$ 的三条出径</h3>
+
+<p>从 $Y$ 出发，导通的器件只有三个候选，每个都通向一个「有确定电平的节点」：</p>
+
+$$Y \;=\; \underbrace{\kappa_{P2}}_{P_2}\cdot A \;\vee\; \underbrace{\kappa_{N2}}_{N_2}\cdot \bar{A} \;\vee\; \underbrace{(\kappa_{P3}\vee\kappa_{N3})}_{\text{传输门}}\cdot B$$
+
+<p>代入 $\kappa$，注意 $\kappa_{P3}\vee\kappa_{N3} = \bar{A}\vee\bar{A}=\bar{A}$：</p>
+
+$$Y = \underbrace{A\bar{B}\cdot A}_{} \;\vee\; \underbrace{B\bar{A}\cdot\bar{A}}_{} \;\vee\; \underbrace{\bar{A}\cdot B}_{}$$
+
+<p>用幂等律 $x\wedge x = x$ 化简：</p>
+
+$$Y = A\bar{B} \;\vee\; B\bar{A} \;\vee\; \bar{A}B_{}$$
+
+<p>注意 $B\bar{A}$ 与 $\bar{A}B$ 是<strong>同一个表达式</strong>，布尔代数里 $x\vee x = x$，吸收掉一个：</p>
+
+$$\boxed{\;Y \;=\; A\bar{B} \;\vee\; \bar{A}B \;=\; A \oplus B\;}$$
+
+<p>就是<strong>异或门</strong>。✓</p>
+
+<h3>7.4 用真值表复核</h3>
+
+<table>
+<thead><tr><th>$A$</th><th>$B$</th><th>$\bar{A}$</th><th>$u_1=A\bar{B}$<br>($P_2$ 通)</th><th>$u_2=B\bar{A}$<br>($N_2$ 通)</th><th>$u_3=\bar{A}$<br>(传输门通)</th><th>$Y$ 由谁决定</th><th>$Y$</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>0</td><td>1</td><td>0</td><td>0</td><td><strong>1</strong></td><td>传输门 → $B$</td><td><strong>0</strong></td></tr>
+<tr><td>0</td><td>1</td><td>1</td><td>0</td><td>0</td><td><strong>1</strong></td><td>传输门 → $B$</td><td><strong>1</strong></td></tr>
+<tr><td>1</td><td>0</td><td>0</td><td><strong>1</strong></td><td>0</td><td>0</td><td>$P_2$ → $A$</td><td><strong>1</strong></td></tr>
+<tr><td>1</td><td>1</td><td>0</td><td>0</td><td><strong>1</strong></td><td>0</td><td>$N_2$ → $\bar{A}$</td><td><strong>0</strong></td></tr>
+</tbody>
+</table>
+
+<p>正好是异或。而且注意<strong>每一行只有一个「通」</strong>——这个性质非常重要，第 9 章讲。</p>
+
+<h2 id="s8"><span class="num">8</span>线性在哪里断掉：$\vec{v_2} = M\vec{v_1}\oplus\vec{c}$ 为什么不够用</h2>
+
+<p>回头看第 3 章那个漂亮的矩阵式。它对 NOR 成立，对这个 XOR 却<strong>写不出来</strong>。为什么？</p>
+
+<h3>8.1 MOS 管的真实导通条件</h3>
+
+<p>第 1 章我们偷懒地说「PMOS 栅极低电平导通」。严格的判据是看<strong>栅源电压</strong>：</p>
+
+$$\text{NMOS 导通} \iff V_g - V_s \ge V_{tn}, \qquad \text{PMOS 导通} \iff V_g - V_s \le -|V_{tp}|$$
+
+<p>关键在于那个 $V_s$——<strong>源极电位</strong>。</p>
+
+<table>
+<thead><tr><th>情况</th><th>源极接在哪</th><th>$\kappa$ 依赖什么</th><th>能否写成 $M\vec{s}\oplus\vec{c}$</th></tr></thead>
+<tbody>
+<tr><td><strong>静态互补 CMOS</strong>（NOR/NAND）</td><td>Vcc 或 GND，<strong>常数</strong></td><td>只依赖栅极（输入）</td><td>✅ 可以</td></tr>
+<tr><td><strong>传输门 / 传输管</strong>（XOR）</td><td>另一个<strong>信号节点</strong></td><td>依赖栅极<em>和</em>数据</td><td>❌ 不行</td></tr>
+</tbody>
+</table>
+
+<h3>8.2 具体看 $P_2$</h3>
+
+<p>$P_2$ 是 PMOS，栅极 $B$，但<strong>源极接在节点 $A$ 上</strong>（不是 Vcc）。所以：</p>
+
+$$V_g - V_s = B - A \le -1 \;\Longrightarrow\; B=0 \text{ 且 } A=1 \;\Longrightarrow\; \kappa_{P2} = A\bar{B}$$
+
+<p>出现了 $A$ 和 $B$ 的<strong>乘积</strong>。而线性（准确说，仿射）映射只能产生 $s$ 的一次组合，产生不了乘积。</p>
+
+$$\vec{\kappa}_{\text{NOR}} = \begin{bmatrix}\bar{A}\\\bar{B}\\A\\B\end{bmatrix} \;\;(\text{全是一次式}) \qquad\qquad \vec{\kappa}_{\text{XOR}} = \begin{bmatrix}\bar{A}\\A\\ \mathbf{A\bar{B}}\\ \mathbf{B\bar{A}}\\ \bar{A}\\\bar{A}\end{bmatrix} \;\;(\text{含二次项})$$
+
+<div class="box key">
+  <span class="lbl">诊断结论</span>
+  <p>你的 $\vec{v_2} = M\vec{v_1}\oplus\vec{c}$ 框架<strong>没有错，只是适用范围是「静态互补 CMOS」</strong>。一旦器件的一端不再接电源轨，$\vec{\kappa}$ 就从「输入的线性函数」升级成「输入的多项式」，矩阵形式失效。</p>
+</div>
+
+<h3>8.3 它升级成了什么：不动点方程</h3>
+
+<p>更麻烦的是，传输管两端的电位本身又依赖于 $\kappa$，于是方程变成隐式的：</p>
+
+$$\vec{v} \;=\; F\big(\vec{s},\; \vec{\kappa}(\vec{v})\big)$$
+
+<p>这叫<strong>不动点问题</strong>——方程两边都有未知数，要靠解方程（对数字电路就是按输入逐一代入检验）来定。</p>
+
+<div class="box warn">
+  <span class="lbl">好消息</span>
+  <p>对于<strong>设计良好</strong>的传输门网络，四种输入下都恰好只有一条通路，所以不动点唯一、可以直接手算出来——就像第 7.4 章那张表。形式化并没有失效，只是「一步矩阵乘法」变成了「矩阵 + 分情况求解」。</p>
+</div>
+
+<h2 id="s9"><span class="num">9</span>良构性判据：形式化最值钱的产物</h2>
+
+<p>前面都在「算功能」。但工程上更重要的问题是：<strong>这个电路结构上就一定对吗？</strong></p>
+
+<p>定义 $Y$ 的<strong>驱动源集合</strong>：</p>
+
+$$\mathcal{D}(\vec{s}) \;=\; \Big\{\, x \;\Big|\; C^{*}_{Yx}=1 \;\text{ 且 } x \in \{\mathrm{Vcc},\mathrm{GND},A,\bar{A},B\} \,\Big\}$$
+
+<p>也就是「此刻有哪些带确定电平的节点，通过导通路径连到了 $Y$」。三种情况：</p>
+
+<table>
+<thead><tr><th>$|\mathcal{D}|$</th><th>物理含义</th><th>判定</th><th>后果</th></tr></thead>
+<tbody>
+<tr><td><strong>1</strong></td><td>唯一驱动源</td><td style="color:#1a7f45"><strong>良构 ✓</strong></td><td>输出电平确定</td></tr>
+<tr><td><strong>0</strong></td><td>无驱动源</td><td style="color:#b3261e"><strong>浮空 ✗</strong></td><td>高阻、电荷分享、输出依赖历史</td></tr>
+<tr><td><strong>≥2</strong></td><td>多个驱动源竞争</td><td style="color:#b3261e"><strong>冲突 ✗</strong></td><td>比值竞争，电平不确定、有静态功耗</td></tr>
+</tbody>
+</table>
+
+<h3>9.1 验证 NOR</h3>
+
+<p>两个驱动谓词：$u_{\text{上拉}}=\bar{A}\bar{B}$，$u_{\text{下拉}}=A\vee B$。</p>
+
+<table>
+<thead><tr><th>$A$</th><th>$B$</th><th>$u_{\text{上拉}}$</th><th>$u_{\text{下拉}}$</th><th>和</th><th>判定</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>0</td><td>1</td><td>0</td><td>1</td><td style="color:#1a7f45">✓</td></tr>
+<tr><td>0</td><td>1</td><td>0</td><td>1</td><td>1</td><td style="color:#1a7f45">✓</td></tr>
+<tr><td>1</td><td>0</td><td>0</td><td>1</td><td>1</td><td style="color:#1a7f45">✓</td></tr>
+<tr><td>1</td><td>1</td><td>0</td><td>1</td><td>1</td><td style="color:#1a7f45">✓</td></tr>
+</tbody>
+</table>
+
+<p>每行恰好一个 1。这正是<strong>互补 CMOS 从结构上就不会出错</strong>的证明——上拉和下拉天然互斥（$\bar{A}\bar{B}$ 与 $A\vee B$ 互为反）。</p>
+
+<h3>9.2 验证 XOR</h3>
+
+<p>三个驱动谓词：$u_1=A\bar{B}$、$u_2=B\bar{A}$、$u_3=\bar{A}$。第 7.4 章的表已经算过：每行也恰好一个 1。</p>
+
+$$\begin{array}{c|ccc|c} A & B & u_1 & u_2 & u_3 & \textstyle\sum u_i\\ \hline 0&0&0&0&1&1\\ 0&1&0&0&1&1\\ 1&0&1&0&0&1\\ 1&1&0&1&0&1\end{array}$$
+
+<p>所以这个六管 XOR <strong>是良构设计</strong>：无浮空、无竞争、无静态功耗。</p>
+
+<div class="box key">
+  <span class="lbl">这才是形式化的意义</span>
+  <p>真值表只能告诉你「这四种输入下<em>碰巧</em>算对了」。良构性判据告诉你「<strong>无论输入怎么变，结构上都不可能出错</strong>」。前者是抽样检验，后者是证明。</p>
+</div>
+
+<h2 id="s10"><span class="num">10</span>用错代数会怎样：一个必须看见的反例</h2>
+
+<p>第 4 章说「并联必须用 $\vee$ 不能用 $\oplus$」。现在看后果。回到 7.3 章那条式子，但把 $\vee$ 全换成 $\oplus$（模 2 加）：</p>
+
+$$Y = A\bar{B} \oplus B\bar{A} \oplus \bar{A}B$$
+
+<p>观察到 $B\bar{A}$ 和 $\bar{A}B$ 是<strong>同一个式子</strong>，而在模 2 里 $x\oplus x = 0$：</p>
+
+$$Y = A\bar{B} \oplus \big(B\bar{A} \oplus \bar{A}B\big) = A\bar{B} \oplus 0 = \mathbf{A\bar{B}}$$
+
+<div class="box err">
+  <span class="lbl">结果</span>
+  <p>算出来是 $A\bar{B}$，即「$A=1$ 且 $B=0$ 时为 1，其余为 0」。</p>
+  <p>而正确答案是 $A\oplus B$：「$A\ne B$ 时为 1」。</p>
+  <p>在 $A=0,B=1$ 这一行，错误答案给出 0，正确是 1。<strong>错得干净利落，而且推导过程完全自洽——你检查每一步都挑不出毛病。</strong></p>
+</div>
+
+<p>这就是为什么第 4 章要花整整一节讲「加法有五种」。<strong>代数错了，形式化只会让你更快地得到错误答案，并且更相信自己是对的。</strong></p>
+
+<h2 id="s11"><span class="num">11</span>这套数学的工程含义</h2>
+
+<h3>11.1 「次数 = 串联深度」</h3>
+
+<p>先要把一件事说清楚：一个门有<strong>两个网络</strong>（上拉、下拉），各有各的「深度」。别把两者的次数混成一个数。</p>
+
+<p>下拉网络只由 NMOS 串并联构成，它的导通函数写成「积之和」时，<strong>最长乘积项里的变量个数 = 最长 NMOS 串联链</strong>：</p>
+
+$$f_{\mathrm{pd}} = \bigvee_i \Big( \bigwedge_{j \in \text{链 } i} x_j \Big), \qquad \max_i |\text{链 } i| = \text{最长 NMOS 串联数}$$
+
+<p>上拉网络同理。而互补 CMOS 要求 $Y = f_{\mathrm{pu}} = \overline{f_{\mathrm{pd}}}$，所以两者的「深度」是<strong>对偶</strong>的——一个串，另一个就并：</p>
+
+<table>
+<thead><tr><th>门</th><th>PMOS 最长串链<br>（并联记 1）</th><th>$Y = f_{\mathrm{pu}}$</th><th>NMOS 最长串链<br>（并联记 1）</th><th>$\bar{Y} = f_{\mathrm{pd}}$</th></tr></thead>
+<tbody>
+<tr><td>$2$ 输入 NOR</td><td><strong>2</strong>（串）</td><td>$\bar{A}\bar{B}$</td><td>1（并）</td><td>$A\vee B$</td></tr>
+<tr><td>$3$ 输入 NAND</td><td>1（并）</td><td>$\bar{A}\vee\bar{B}\vee\bar{C}$</td><td><strong>3</strong>（串）</td><td>$ABC$</td></tr>
+<tr><td>$3$ 输入 NOR</td><td><strong>3</strong>（串）</td><td>$\bar{A}\bar{B}\bar{C}$</td><td>1（并）</td><td>$A\vee B\vee C$</td></tr>
+</tbody>
+</table>
+
+<div class="box warn">
+  <span class="lbl">别搞反</span>
+  <p>「次数」不是整个输出式的次数，而是<strong>最长那个乘积项里变量的个数</strong>。3 输入 NAND 的 $Y=\bar{A}\vee\bar{B}\vee\bar{C}$ 每个乘积项只有 1 个变量——它的「深」在下拉那一侧（$ABC$ 是三次的）。</p>
+</div>
+
+<p>这个长度直接对应<strong>延迟</strong>：串联堆栈越长，等效电阻越大，边沿越慢。所以在讨论三输入 NAND 时才要强调「串联的 NMOS 宽度要放大到约 3 倍」——而 NOR 的上拉是 <em>PMOS</em> 串联，PMOS 本身迁移率更低，所以更糟。这就是 <strong>NAND 比 NOR 受欢迎</strong>的定量理由。</p>
+
+<h3>11.2 为什么 XOR 在静态 CMOS 里那么贵</h3>
+
+<p>有一个漂亮的定理性事实：</p>
+
+<div class="box">
+  <span class="lbl">串并联网络的单调性</span>
+  <p>下拉网络由 NMOS 串并联构成，它的导通函数 $f_{\mathrm{pd}}$ 对每个输入都是<strong>单调增</strong>的（输入从 0 变 1，只会让更多管子导通）。而输出 $Y = \overline{f_{\mathrm{pd}}}$，所以 $Y$ 对每个输入<strong>单调减</strong>。</p>
+  <p>换句话说：<strong>单级串并联 CMOS 门只能实现「单调」函数</strong> —— $A$ 从 0 变 1，$Y$ 只能不变或下降，绝不会上下都来。</p>
+</div>
+
+<p>而 XOR 恰恰<strong>不是单调的</strong>：</p>
+
+$$\begin{array}{c|cc} A & B{=}0 & B{=}1\\ \hline 0 & 0 & 1\\ 1 & 1 & 0\end{array}$$
+
+<p>$B=1$ 时，$A$ 从 0 升到 1，$Y$ 从 1 <strong>降到</strong> 0；$B=0$ 时，$A$ 从 0 升到 1，$Y$ 从 0 <strong>升到</strong> 1。<strong>方向都反了。</strong></p>
+
+<p>所以结论是硬的：</p>
+
+<div class="box key">
+  <span class="lbl">结论</span>
+  <p><strong>XOR 不可能用单个串并联 CMOS 门实现。</strong> 只能：</p>
+  <ul>
+    <li>用多级门拼（标准做法，约 <strong>12 个晶体管</strong>）；</li>
+    <li>或者用<strong>非串并联结构</strong>——传输门 / 传输管逻辑，也就是你课本这张图，<strong>6 个晶体管</strong>。</li>
+  </ul>
+</div>
+
+<h3>11.3 回到「全定制 vs 自动综合」</h3>
+
+<p>现在可以从数学上说清这件事了：</p>
+
+<table>
+<thead><tr><th></th><th>静态互补 CMOS（可综合）</th><th>传输门 / pass 管（全定制）</th></tr></thead>
+<tbody>
+<tr><td>可实现函数类</td><td>单调函数（受限！）</td><td>任意函数</td></tr>
+<tr><td>$\kappa$ 的形式</td><td>输入的<strong>线性</strong>（仿射）函数</td><td>输入的<strong>多项式</strong>，且需解不动点</td></tr>
+<tr><td>形式化难度</td><td>一个矩阵式搞定</td><td>要矩阵 + 分情况/闭包</td></tr>
+<tr><td>工具支持</td><td>✅ 综合器完全掌握</td><td>❌ 只能人工设计关键块</td></tr>
+<tr><td>XOR 成本</td><td>12 管</td><td><strong>6 管</strong></td></tr>
+</tbody>
+</table>
+
+<p>这就是为什么综合工具把逻辑尽量映射成 NAND/NOT，而 XOR、加法器进位链、SRAM 位单元、高速接口 PHY 必须靠人工全定制。 <strong>「能不能自动化」的分界线，本质上就是「$\kappa$ 是不是线性」的分界线。</strong></p>
+
+<hr>
+
+<h2 id="s12"><span class="num">12</span>附录</h2>
+
+<h3>A. 符号速查</h3>
+
+<table>
+<thead><tr><th>符号</th><th>读法</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td>$\kappa_d$</td><td>kappa</td><td>器件 $d$ 的导通状态（1 = 通）</td></tr>
+<tr><td>$\bar{A}$</td><td>A bar</td><td>$A$ 的反，等于 $1\oplus A$</td></tr>
+<tr><td>$x \vee y$</td><td>or</td><td>或：任一为 1 则 1</td></tr>
+<tr><td>$x \wedge y$</td><td>and</td><td>与：全为 1 才 1</td></tr>
+<tr><td>$x \oplus y$</td><td>xor</td><td>异或：不同为 1</td></tr>
+<tr><td>$E_d$</td><td>—</td><td>器件 $d$ 的端点关联矩阵（连在哪两个节点）</td></tr>
+<tr><td>$C$</td><td>—</td><td>当前连接矩阵：$C=\bigvee_d(\kappa_d\wedge E_d)$</td></tr>
+<tr><td>$C^{*}$</td><td>C star</td><td>连通闭包（可达矩阵）</td></tr>
+<tr><td>$\mathcal{D}(\vec{s})$</td><td>—</td><td>驱动源集合（良构性判据用）</td></tr>
+</tbody>
+</table>
+
+<h3>B. 习题</h3>
+
+<p><strong>习题 1</strong>　用第 5、6 章的方法，写出 <strong>3 输入 NAND</strong> 的 $\kappa$ 向量和连接矩阵，并验证良构性。</p>
+<details>
+<summary>提示与答案</summary>
+<p>3 个 PMOS <strong>并联</strong>在 Vcc 与 $Y$ 之间，3 个 NMOS <strong>串联</strong>在 $Y$ 与 GND 之间。</p>
+<p>$\kappa_{\text{上拉}} = \bar{A}\vee\bar{B}\vee\bar{C}$（并联 = 或），$\kappa_{\text{下拉}} = ABC$（串联 = 与）。</p>
+<p>$Y = \kappa_{\text{上拉}}\cdot 1 \vee \kappa_{\text{下拉}}\cdot 0 = \bar{A}\vee\bar{B}\vee\bar{C} = \overline{ABC}$。✓</p>
+<p>良构性：$u_{\text{pu}}=\bar{A}\vee\bar{B}\vee\bar{C}$ 与 $u_{\text{pd}}=ABC$。若两者同时为 1，则需 $A=B=C=1$ 且 $\bar{A}\vee\bar{B}\vee\bar{C}=1$，但 $A=B=C=1$ 时后者为 0，矛盾。所以永远互斥 ✓。共 6 个晶体管。</p>
+</details>
+
+<p><strong>习题 2</strong>　如果误把习题 1 的「与」和「或」对调（即下拉用并联、上拉用串联），会得到什么门？晶体管数是多少？</p>
+<details>
+<summary>答案</summary>
+<p>$\kappa_{\text{上拉}} = \bar{A}\bar{B}\bar{C}$（串联），$\kappa_{\text{下拉}} = A\vee B\vee C$（并联）。</p>
+<p>$Y = \bar{A}\bar{B}\bar{C} = \overline{A\vee B\vee C}$ → <strong>3 输入 NOR</strong>。仍然是 6 个晶体管。</p>
+<p>但注意：此时上拉是 3 个 <strong>PMOS 串联</strong>。PMOS 本身迁移率低，再串三个 → 上拉极慢，宽度要放大很多。这就是 <strong>NAND 比 NOR 更受欢迎</strong>的根本原因。</p>
+</details>
+
+<p><strong>习题 3</strong>　下面这个「网络」有个致命缺陷：$P_1$（栅极 $A$，Vcc↔$Y$）和 $N_1$（栅极 $\bar{A}$，$Y$↔GND）看上去是一个反相器……但 $N_1$ 的栅极接的是 <strong>$\bar{A}$ 而不是 $A$</strong>。用良构性判据分析它。</p>
+<details>
+<summary>答案</summary>
+<p>$\kappa_{P1} = \bar{A}$（PMOS 栅极 $A$），$\kappa_{N1} = \bar{A}$（NMOS 栅极 $\bar{A}$）。</p>
+<p>两个驱动谓词都是 $\bar{A}$，所以：</p>
+<p>$A=0$ 时：$\kappa_{P1}=\kappa_{N1}=1$ → <strong>两个同时导通</strong>，Vcc 和 GND 直接短路！$|\mathcal{D}|=2$，<strong>冲突</strong> ✗</p>
+<p>$A=1$ 时：两者都截止 → <strong>浮空</strong>，$|\mathcal{D}|=0$ ✗</p>
+<p>结论：这个电路在两种输入下都失效。正确接法必须让两个管子<strong>互补</strong>导通——这正是「互补 CMOS（complementary）」这个名字的由来。</p>
+</details>
+
+<hr>
+
+<p class="small center" style="margin-top:40px">
+讲义结束。<br>
+形式化的价值不在于「算得更快」，而在于：<strong>可复用（拓扑算一次）· 可检验（每一步可被验证）· 可证明（结构上不可能错）</strong>。
+</p>
+
+</div>
+</body>
+</html>

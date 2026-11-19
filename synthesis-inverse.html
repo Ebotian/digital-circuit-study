@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>从代数到电路 — 逆向设计与自动化的边界</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$','$']], displayMath: [['$$','$$']], tags: 'none' },
+  svg: { fontCache: 'global', scale: 1.02 },
+  options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] }
+};
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+<style>
+  :root{
+    --ink:#1c1c1e; --mute:#6b6b70; --line:#e2e2e6;
+    --blue:#1c6dd0; --blue-bg:#eef5fd;
+    --green:#1a7f45; --green-bg:#edf9f1;
+    --amber:#8a5a00; --amber-bg:#fdf6e6;
+    --red:#b3261e; --red-bg:#fdeeed;
+    --violet:#6b3fa0; --violet-bg:#f4eefb;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:0 0 120px; background:#fff; color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans CJK SC","Source Han Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:16.5px; line-height:1.78;
+  }
+  .wrap{max-width:980px; margin:0 auto; padding:0 28px}
+  header.cover{
+    background:linear-gradient(135deg,#2b1a4a 0%,#4a2f7a 52%,#7145a8 100%);
+    color:#fff; padding:64px 28px 56px; margin-bottom:44px;
+  }
+  header.cover .wrap{padding:0}
+  header.cover h1{margin:0 0 14px; font-size:2.25em; letter-spacing:.5px; line-height:1.3}
+  header.cover p{margin:6px 0; color:#e0d6f2; font-size:1.02em}
+  header.cover .tag{
+    display:inline-block; margin-top:18px; padding:5px 13px; border:1px solid #9d7fc4;
+    border-radius:99px; font-size:.84em; color:#ece4f8; letter-spacing:1px;
+  }
+  header.cover a.nav{
+    display:inline-block; margin:18px 0 0 12px; padding:5px 13px; border-radius:99px;
+    background:rgba(255,255,255,.16); color:#fff; font-size:.84em; text-decoration:none;
+    border:1px solid rgba(255,255,255,.35);
+  }
+  header.cover a.nav:hover{background:rgba(255,255,255,.3)}
+  h2{
+    font-size:1.52em; margin:64px 0 22px; padding-bottom:11px;
+    border-bottom:3px solid var(--ink); letter-spacing:.3px;
+  }
+  h2 .num{
+    display:inline-block; background:var(--violet); color:#fff; border-radius:7px;
+    padding:1px 11px; margin-right:13px; font-size:.8em; vertical-align:3px;
+  }
+  h3{font-size:1.16em; margin:34px 0 12px; color:#2b1a4a}
+  h4{font-size:1.02em; margin:24px 0 8px; color:var(--mute); font-weight:600}
+  p{margin:12px 0}
+  ul,ol{margin:12px 0; padding-left:26px}
+  li{margin:7px 0}
+  code{background:#f0f1f3; padding:1.5px 6px; border-radius:5px;
+    font-family:"SF Mono",Menlo,Consolas,monospace; font-size:.9em;}
+  pre{background:#1c1c1e; color:#eaeaea; padding:16px 18px; border-radius:10px;
+    overflow-x:auto; font-size:.86em; line-height:1.6;
+    font-family:"SF Mono",Menlo,Consolas,monospace;}
+  pre .c{color:#7fb3d5}
+  table{border-collapse:collapse; width:100%; margin:20px 0; font-size:.94em;}
+  th,td{border:1px solid var(--line); padding:9px 13px; text-align:left; vertical-align:middle}
+  th{background:#f5f6f8; font-weight:600}
+  tbody tr:nth-child(even){background:#fafbfc}
+  .box{border-left:5px solid var(--blue); background:var(--blue-bg);
+    padding:16px 20px; border-radius:0 10px 10px 0; margin:24px 0;}
+  .box.warn{border-color:var(--amber); background:var(--amber-bg)}
+  .box.key{border-color:var(--green); background:var(--green-bg)}
+  .box.err{border-color:var(--red); background:var(--red-bg)}
+  .box.note{border-color:var(--violet); background:var(--violet-bg)}
+  .box > .lbl{display:block; font-weight:700; font-size:.83em; letter-spacing:1.4px;
+    text-transform:uppercase; margin-bottom:8px; color:var(--blue);}
+  .box.warn > .lbl{color:var(--amber)}
+  .box.key  > .lbl{color:var(--green)}
+  .box.err  > .lbl{color:var(--red)}
+  .box.note > .lbl{color:var(--violet)}
+  .box p:first-of-type{margin-top:0}
+  .box p:last-child{margin-bottom:0}
+  .fig{margin:30px 0; text-align:center}
+  .fig svg{max-width:100%; height:auto}
+  .fig .cap{font-size:.87em; color:var(--mute); margin-top:10px}
+  details{background:#f7f8fa; border:1px solid var(--line); border-radius:10px;
+    padding:12px 18px; margin:14px 0;}
+  summary{cursor:pointer; font-weight:600; color:var(--violet)}
+  details[open] summary{margin-bottom:10px}
+  .toc{background:#f7f8fa; border:1px solid var(--line); border-radius:12px; padding:22px 28px}
+  .toc ol{columns:2; column-gap:44px; margin:0; padding-left:22px}
+  .toc li{margin:6px 0; break-inside:avoid}
+  .toc a{color:var(--ink); text-decoration:none; border-bottom:1px dotted #bbb}
+  .toc a:hover{color:var(--violet); border-color:var(--violet)}
+  .small{font-size:.9em; color:var(--mute)}
+  .center{text-align:center}
+  hr{border:none; border-top:1px solid var(--line); margin:44px 0}
+  .mjx-container{overflow-x:auto; overflow-y:hidden; max-width:100%}
+  mjx-container[display="true"]{margin:20px 0 !important}
+  .lead{font-size:1.05em; color:#3a3a3e}
+  .mono{font-family:"SF Mono",Menlo,Consolas,monospace; font-size:.92em}
+</style>
+</head>
+<body>
+
+<header class="cover">
+  <div class="wrap">
+    <h1>从代数到电路</h1>
+    <p>—— 反问题、自动设计的可达边界，以及那道绕不过去的墙</p>
+    <p style="margin-top:18px;font-size:.95em">讲义 / 助教手记 · 第二册</p>
+    <span class="tag">前置:讲义一《从电路到代数》第 1–9 章</span>
+    <a class="nav" href="index.html">首页</a>
+    <a class="nav" href="intuition-zero.html">← 讲义 0:直觉篇</a>
+    <a class="nav" href="formal-analysis.html">← 讲义一</a>
+  </div>
+</header>
+
+<div class="wrap">
+
+<div class="toc">
+<strong>目录</strong>
+<ol>
+  <li><a href="#s1">把「逆向」写成一个映射问题</a></li>
+  <li><a href="#s2">单调性判据（核心定理）</a></li>
+  <li><a href="#s3">转写算法</a></li>
+  <li><a href="#s4">可达集有多小：Dedekind 数</a></li>
+  <li><a href="#s5">三层自动化，难度天差地别</a></li>
+  <li><a href="#s6">分解：从单级走向多级</a></li>
+  <li><a href="#s7">最深的一层：纤维与成本</a></li>
+  <li><a href="#s8m">实测：把四道墙量出来</a></li>
+  <li><a href="#s8">那人类为什么还能做</a></li>
+  <li><a href="#s9">附录：程序、习题、与第一册的关系</a></li>
+</ol>
+</div>
+
+<h2 id="s0"><span class="num">0</span>导读</h2>
+
+<p class="lead">第一册把电路变成了代数：给定一张电路图，一路代入，得到它的功能。那是<strong>正向</strong>——求值，复杂度与电路规模成正比，很便宜。</p>
+
+<p>这一册问的是反问题：<strong>给定功能，能不能自动造出电路？</strong></p>
+
+<p>答案分三段，而且每一段都比上一段更硬：</p>
+
+<table>
+<thead><tr><th></th><th>问题</th><th>答案</th></tr></thead>
+<tbody>
+<tr><td><strong>能吗</strong></td><td>在单级互补 CMOS 这一层，逆变换存在吗？</td><td><strong>存在，而且是闭式的、零搜索的</strong>（第 2–3 章）</td></tr>
+<tr><td><strong>能到多好</strong></td><td>这个逆变换能覆盖多少函数？</td><td><strong>覆盖率跌到 $4\times10^{-13}$ 量级</strong>（第 4 章）</td></tr>
+<tr><td><strong>边界在哪</strong></td><td>为什么不能一直往上推，做到"全自动最优"？</td><td><strong>四道墙，其中一道是信息论的</strong>（第 5–7 章）</td></tr>
+</tbody>
+</table>
+
+<div class="box note">
+  <span class="lbl">一句话预览</span>
+  <p>能自动<strong>生成一个正确设计</strong>——今天已经在做。<br>不能自动<strong>生成一个最优设计</strong>——因为"最优"所需要的成本信息，<em>根本不在逻辑映射的像里</em>。</p>
+</div>
+
+<h2 id="s1"><span class="num">1</span>把「逆向」写成一个映射问题</h2>
+
+<p>先给正向过程一个名字。第一册第 5–7 章做的其实是同一件事:</p>
+
+$$\Phi:\; \underbrace{\big(\text{器件类型},\ \text{拓扑}\big)}_{x}\; \longmapsto\; \underbrace{Y(x)}_{\text{逻辑函数}}$$
+
+<p>对一个电路 $x$，$\Phi(x)$ 就是"把所有输入代入，看输出是什么"。这是一个<strong>求值</strong>操作。</p>
+
+<p>综合（synthesis）要的是反方向：给定 $f$，找 $x$ 使 $\Phi(x)=f$。于是第一个关键事实是：</p>
+
+<div class="box key">
+  <span class="lbl">Φ 不是单射（injective）</span>
+  <p>同一个逻辑函数可以由<strong>很多很多</strong>不同电路实现。所以 $\Phi$ 没有普通的逆函数，只有<strong>逆像</strong>：</p>
+  $$\Phi^{-1}(f)=\{\,x\;:\;\Phi(x)=f\,\}$$
+  <p>这个集合在数学上叫 $f$ 的<strong>纤维（fiber）</strong>。综合不是"求逆"，而是"<strong>在纤维里挑一个点</strong>"。</p>
+</div>
+
+<p>这句话看起来只是措辞，但它决定了后面所有的困难：<strong>只要存在多个答案，"选哪个"就需要一个额外的判据，而那个判据不在 $\Phi$ 里。</strong></p>
+
+<h2 id="s2"><span class="num">2</span>单调性判据：核心定理</h2>
+
+<p>第一册第 7 章的路径公式是</p>
+
+$$Y=\bigvee_{\text{路径}}\Big(\prod_{d\in\text{路径}}\kappa_d\Big)\wedge\mathrm{val}(\text{源})$$
+
+<p>现在只看<strong>下拉网络</strong>。它是 NMOS 的串并联网络，而每个 NMOS 的导通条件 $\kappa_d$ 就是它栅极上的输入变量本身。于是：</p>
+
+<table>
+<thead><tr><th>结构</th><th>运算</th><th>单调性</th></tr></thead>
+<tbody>
+<tr><td>串联</td><td>$\wedge$</td><td>对每个变量<strong>单调增</strong></td></tr>
+<tr><td>并联</td><td>$\vee$</td><td>对每个变量<strong>单调增</strong></td></tr>
+</tbody>
+</table>
+
+<p>$\wedge$ 和 $\vee$ 都是单调增的，而单调增函数复合仍是单调增。所以下拉网络的导通函数 $f_{\mathrm{pd}}(x_1,\dots,x_n)$ <strong>必然对每个输入单调增</strong>。而互补 CMOS 要求 $Y=f_{\mathrm{pu}}=\overline{f_{\mathrm{pd}}}$。这就给出了判据：</p>
+
+<div class="box key">
+  <span class="lbl">定理（单调性判据 / unateness）</span>
+  <p>逻辑函数 $Y$ 能由<strong>单级</strong>互补 CMOS 门实现，<strong>当且仅当</strong></p>
+  $$\neg Y \ \text{对每个输入单调增}$$
+  <p>等价说法：$Y$ 对每个输入<strong>反单调</strong>（输入升，$Y$ 只能不变或降）。</p>
+</div>
+
+<h3>2.1 两个方向的证明</h3>
+
+<h4>必要性（⇒）</h4>
+<p>假设存在单级实现。它的下拉网络是串并联的，由上表，$f_{\mathrm{pd}}$ 单调增。而 $\neg Y=f_{\mathrm{pd}}$。□</p>
+
+<h4>充分性（⇐）</h4>
+<p>假设 $\neg Y$ 单调增。单调布尔函数有一个标准结论：<strong>它可以写成"只含正文字"的积之和（SOP）</strong>。于是把它化成 SOP，每个乘积项对应一条串联链，项与项并联——这就造出了下拉网络；再取对偶造出上拉网络。□</p>
+
+<p><em>注意：充分性的证明本身就是算法。</em>它就是第 3 章要写的东西。</p>
+
+<h3>2.2 怎么在真值表上验</h3>
+
+<p>单调性的定义可以直接翻译成一句检查：<strong>把任意一个输入从 $0$ 翻到 $1$，$g$ 不许下降</strong>。</p>
+
+<pre><span class="c"># g: 单调函数?  n: 输入个数。真值表下标 m 的第 i 位 = 输入 i</span>
+def mono_inc(g, n):
+    for m in range(1 &lt;&lt; n):
+        for i in range(n):
+            if not (m &gt;&gt; i) &amp; 1 and g[m] &gt; g[m | (1 &lt;&lt; i)]:
+                return False
+    return True
+
+<span class="c"># 单级 CMOS 可实现?  —— 测的是 ¬f</span>
+def realizable(tt, n):
+    return mono_inc([1 - x for x in tt], n)</pre>
+
+<p class="small">注：严格定义还要允许"无关项"。这里一律按完全定义的真值表处理。</p>
+
+<h2 id="s3"><span class="num">3</span>转写算法：从函数到晶体管</h2>
+
+<h3>3.1 四步</h3>
+
+<ol>
+  <li>算 $f_{\mathrm{pd}}=\neg Y$</li>
+  <li>把 $f_{\mathrm{pd}}$ 化成<strong>只含正文字</strong>的积之和（卡诺图 / Quine-McCluskey 最小化）</li>
+  <li><strong>每个乘积项 → 一条 NMOS 串联链；项与项之间 → 并联</strong></li>
+  <li><strong>PMOS 网络取对偶</strong>：串 ↔ 并，每个变量取反</li>
+</ol>
+
+<table>
+<thead><tr><th>下拉（NMOS）</th><th>上拉（PMOS）</th></tr></thead>
+<tbody>
+<tr><td>串联</td><td>并联</td></tr>
+<tr><td>并联</td><td>串联</td></tr>
+<tr><td>栅极 $=$ 变量 $x_i$（高电平导通）</td><td>栅极 $=$ 变量 $x_i$（低电平导通，等效于 $\bar{x}_i$）</td></tr>
+</tbody>
+</table>
+
+<h3>3.2 两个例子</h3>
+
+<p><strong>例 1：$Y=\overline{ABC}$（NAND3）</strong></p>
+<p>$f_{\mathrm{pd}}=\neg Y=ABC$。一个乘积项、三个文字 → 三条 NMOS <strong>串联</strong>。对偶：三条 PMOS <strong>并联</strong>。管数 $=3+3=6$。✓</p>
+
+<p><strong>例 2：$Y=\overline{A\vee B\vee C}$（NOR3）</strong></p>
+<p>$f_{\mathrm{pd}}=A\vee B\vee C$。三个单项式之和 → 三条 NMOS <strong>并联</strong>。对偶：三条 PMOS <strong>串联</strong>。管数 $=6$。✓</p>
+<p class="small">但注意上拉是 PMOS 串联——PMOS 迁移率低，这样很慢。这是 NOR 的固有劣势。</p>
+
+<h3>3.3 管数公式（平铺 SOP 的上界）</h3>
+
+<p>设 $f_{\mathrm{pd}}$ 的 SOP 里<strong>文字总数</strong>为 $L$（把每个乘积项的长度全加起来），则</p>
+
+$$\boxed{\;\text{晶体管数}=2L\;}$$
+
+<table>
+<thead><tr><th>函数</th><th>$f_{\mathrm{pd}}$ 的 SOP</th><th>$L$</th><th>管数</th></tr></thead>
+<tbody>
+<tr><td>NAND2</td><td>$AB$</td><td>2</td><td>4</td></tr>
+<tr><td>NAND3</td><td>$ABC$</td><td>3</td><td>6</td></tr>
+<tr><td>NOR3</td><td>$A\vee B\vee C$</td><td>3</td><td>6</td></tr>
+<tr><td>AOI21：$Y=\overline{AB\vee C}$</td><td>$AB\vee C$</td><td>$2+1=3$</td><td>6</td></tr>
+<tr><td>AOI22：$Y=\overline{AB\vee CD}$</td><td>$AB\vee CD$</td><td>$4$</td><td>8</td></tr>
+</tbody>
+</table>
+
+<h3>3.4 平铺 SOP 不是最省的：因式分解</h3>
+
+<p>看 $Y=\overline{AB\vee AC}$。平铺 SOP 有 4 个文字 → $8$ 个管子。可是注意</p>
+
+$$AB\vee AC \;=\; A\wedge(B\vee C)$$
+
+<p>在<strong>网络</strong>层面（不是代数展开层面），这就是「$A$ 与 $(B\parallel C)$ 串联」→ 只要 <strong>3 个 NMOS</strong>，对偶给 3 个 PMOS，<strong>共 6 管</strong>。</p>
+
+<div class="box warn">
+  <span class="lbl">一个必须分清的区别</span>
+  <p>单级互补 CMOS 的可实现类 = <strong>所有串并联表达式</strong>，不是只有平铺 SOP。所以：</p>
+  <ul>
+    <li><strong>判据</strong>（能不能做）是纯单调性 —— 与表达式形式无关；</li>
+    <li><strong>管数</strong>（做得多省）取决于你找到哪个串并联表达式 —— <em>这才是要优化的地方</em>。</li>
+  </ul>
+  <p>"找最小串并联表达式"就是<strong>因式分解 / 布尔除法</strong>，也正是"多级综合"的第一步。</p>
+</div>
+
+<h2 id="s4"><span class="num">4</span>可达集有多小：Dedekind 数</h2>
+
+<p>判据有了，下一步问：<strong>它覆盖了多少函数？</strong> 枚举 $n$ 输入的全部 $2^{2^n}$ 个函数，逐个测判据：</p>
+
+<table>
+<thead><tr><th>$n$</th><th>全部函数 $2^{2^n}$</th><th>单级可实现</th><th>占比</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>4</td><td>3</td><td>75%</td></tr>
+<tr><td>2</td><td>16</td><td><strong>6</strong></td><td>37.5%</td></tr>
+<tr><td>3</td><td>256</td><td><strong>20</strong></td><td>7.81%</td></tr>
+<tr><td>4</td><td>65,536</td><td><strong>168</strong></td><td>0.256%</td></tr>
+<tr><td>5</td><td>4,294,967,296</td><td><strong>7,581</strong></td><td>$1.77\times10^{-6}$</td></tr>
+<tr><td>6</td><td>18,446,744,073,709,551,616</td><td><strong>7,828,354</strong></td><td>$4.24\times10^{-13}$</td></tr>
+</tbody>
+</table>
+
+<p>那一列 $3,\,6,\,20,\,168,\,7581,\,7828354$ 有个名字：<strong>Dedekind 数</strong> $M(n)$，即 $n$ 元<strong>单调布尔函数</strong>的个数。</p>
+
+<div class="box key">
+  <span class="lbl">一个漂亮的"巧合"（其实是必然）</span>
+  <p>单级互补 CMOS 的可达集，<strong>恰好就是 Dedekind 数</strong>。因为判据说"$Y$ 可实现 ⟺ $\neg Y$ 单调"，而"取反"在函数集合上是一个双射，所以可达集的大小 $=$ 单调函数的个数。</p>
+</div>
+
+<h3>4.1 $n=2$ 时那 6 个是谁</h3>
+
+<p>真值表按 $(A,B)=(0,0),(1,0),(0,1),(1,1)$ 排列：</p>
+
+<table>
+<thead><tr><th>真值表</th><th>函数</th><th>怎么读</th></tr></thead>
+<tbody>
+<tr><td class="mono">0000</td><td>常数 $0$</td><td>永远 0</td></tr>
+<tr><td class="mono">1111</td><td>常数 $1$</td><td>永远 1</td></tr>
+<tr><td class="mono">1100</td><td>$\bar{A}$</td><td>只看 $A$</td></tr>
+<tr><td class="mono">1010</td><td>$\bar{B}$</td><td>只看 $B$</td></tr>
+<tr><td class="mono">1110</td><td><strong>NAND2</strong> $=\overline{AB}$</td><td>只有 $A=B=1$ 时为 0</td></tr>
+<tr><td class="mono">1000</td><td><strong>NOR2</strong> $=\overline{A\vee B}$</td><td>只有 $A=B=0$ 时为 1</td></tr>
+</tbody>
+</table>
+
+<p><strong>2 输入只有这 6 个能单级做。</strong> 剩下 10 个里面最常被问的几个：</p>
+
+<table>
+<thead><tr><th>函数</th><th>单级?</th><th>理由</th></tr></thead>
+<tbody>
+<tr><td>AND2 $=AB$</td><td style="color:#b3261e">✗</td><td>$\neg(AB)$ 不是单调增</td></tr>
+<tr><td>OR2 $=A\vee B$</td><td style="color:#b3261e">✗</td><td>同一逻辑：$\neg(A\vee B)$ 是单调减的</td></tr>
+<tr><td>XOR2 $=A\oplus B$</td><td style="color:#b3261e">✗</td><td>既非单调增也非单调减</td></tr>
+<tr><td>MAJ3（多数表决）</td><td style="color:#b3261e">✗</td><td>$Y$ 单调增 ⟹ $\neg Y$ 单调减 ⟹ ✗</td></tr>
+</tbody>
+</table>
+
+<div class="box">
+  <span class="lbl">这条结论解释了两件事</span>
+  <ol>
+    <li><strong>为什么综合工具把一切逻辑往 NAND / NOT 上映射</strong>：不是因为 NAND "特殊"，而是因为下到晶体管级时，<strong>只有单调的那一支逆变换是可闭式得到的</strong>。</li>
+    <li><strong>为什么 AND / OR 在 CMOS 里反而"贵"</strong>：AND2 需要 NAND2 + 反相器 = 6 管，而 NAND2 只要 4 管。<em>名字越"基础"的门，在 CMOS 里反而越贵。</em></li>
+  </ol>
+</div>
+
+<h2 id="s5"><span class="num">5</span>三层自动化，难度天差地别</h2>
+
+<table>
+<thead><tr><th>层</th><th>问题</th><th>状态</th></tr></thead>
+<tbody>
+<tr><td rowspan="2"><strong>L1 逻辑综合</strong><br><span class="small">真值表 → 布尔网络</span></td>
+    <td>两级（SOP）</td>
+    <td>✅ 精确可解（本质是集合覆盖，NP-hard，但 $n$ 小可穷举；Espresso 近优且极快）</td></tr>
+<tr><td>多级</td>
+    <td style="color:#b3261e">⚠️ <strong>连"最优"的定义都没有</strong> —— 只能用启发式</td></tr>
+<tr><td rowspan="2"><strong>L2 晶体管映射</strong><br><span class="small">布尔门 → $\kappa$ 网络</span></td>
+    <td>互补 CMOS</td>
+    <td>✅ <strong>完全可逆</strong>（第 2–3 章那个定理，纯转写）</td></tr>
+<tr><td>传输门 / pass 管</td>
+    <td style="color:#b3261e">❌ 需要人工"发明"（第一册第 8 章：$\kappa$ 变成多项式、方程变成不动点）</td></tr>
+<tr><td><strong>L3 物理实现</strong><br><span class="small">网络 → 版图</span></td>
+    <td>布局布线</td>
+    <td style="color:#b3261e">❌ NP-hard</td></tr>
+</tbody>
+</table>
+
+<p>把你前面几轮的问题对进这张表，全都吻合：</p>
+
+<table>
+<thead><tr><th>你问过的</th><th>落在哪</th><th>结论来源</th></tr></thead>
+<tbody>
+<tr><td>三输入 NAND 最少几管？</td><td>L1 直接给 NAND + L2 转写</td><td><strong>6T</strong>，一步到位</td></tr>
+<tr><td>课本说用现成门搭要 10 管</td><td>L1 被约束成"只能用 2 输入门"</td><td><strong>10T</strong> $=$ AND2(6) $+$ NAND2(4)</td></tr>
+<tr><td>那个 6 管 XOR 怎么来的</td><td>L2 的<strong>不可逆那一支</strong></td><td>不是算法找的，是人想出来的</td></tr>
+<tr><td>为什么全定制不现实</td><td>L2 + L3 规模爆炸</td><td>自动化只在 L1 的单调子集里成立</td></tr>
+</tbody>
+</table>
+
+<h2 id="s6"><span class="num">6</span>分解：从单级走向多级</h2>
+
+<p>判据告诉你"单级做不了"，但没告诉你"那怎么办"。正式的答案是<strong>分解</strong>。</p>
+
+<h3>6.1 Shannon 分解（最基础的一招）</h3>
+
+$$\boxed{\;f(x_1,\dots,x_n)\;=\;x_i\wedge f_{x_i=1}\;\vee\;\bar{x}_i\wedge f_{x_i=0}\;}$$
+
+<p>其中 $f_{x_i=1}$、$f_{x_i=0}$ 是<strong>余因子</strong>（把 $x_i$ 固定为 1 / 0 之后剩下的函数）。递归地用下去，任何函数都能拆成多级网络——代价是规模可能爆炸。</p>
+
+<div class="box note">
+  <span class="lbl">看出这是什么了吗</span>
+  <p>这个式子就是<strong>一个 2:1 数据选择器（MUX）</strong>：选通端是 $x_i$，两路数据是 $f_{x_i=1}$ 和 $f_{x_i=0}$。</p>
+  <p><strong>所以：Shannon 分解 ≡ MUX 树。</strong> 记住这一点，6.3 会回到它。</p>
+</div>
+
+<h3>6.2 拿 XOR 走一遍</h3>
+
+<p>$Y=A\oplus B$。按 $A$ 分解：</p>
+
+$$Y \;=\; A\cdot f_{A=1} \;\vee\; \bar{A}\cdot f_{A=0} \;=\; A\cdot\bar{B} \;\vee\; \bar{A}\cdot B$$
+
+<p>余因子是 $\bar{B}$ 和 $B$。把它化成 SOP 后仍<strong>不满足</strong>单级判据（$\neg Y$ 不单调），所以必须再下到一层。</p>
+
+<p>观察 $A\bar{B}\vee\bar{A}B=\neg\big(AB\vee\bar{A}\bar{B}\big)$——右边正好是<strong>一个 AOI22 门</strong>的形式（$\overline{ab\vee cd}$），输入取 $A,\,B,\,\bar{A},\,\bar{B}$：</p>
+
+$$\underbrace{\text{2 个反相器}}_{4\ \text{管}\;}\;+\;\underbrace{\text{AOI22}}_{8\ \text{管}\;}\;=\;12\ \text{管}$$
+
+<p>验算管数：AOI22 的下拉是两个串联对再并联 → 4 NMOS；对偶上拉 4 PMOS；共 8。✓</p>
+
+<div class="box key">
+  <span class="lbl">于是"XOR 要 12 管"有了出处</span>
+  <p>不是巧合，是三条结论的合成：<strong>① 不可单级实现</strong>（单调性判据）→ <strong>② 必须分解</strong>（Shannon）→ <strong>③ 每一级分别转写</strong>（第 3 章）→ $4+8=12$。</p>
+</div>
+
+<h3>6.3 而那个 6 管版本，是同一个分解的另一种实现</h3>
+
+<p>回头看 Shannon 式：</p>
+
+$$Y=A\cdot\bar{B}\;\vee\;\bar{A}\cdot B$$
+
+<p>这就是 MUX：<strong>$Y = A\ ?\ \bar{B}\ :\ B$</strong>，即"$A=1$ 时选 $\bar{B}$，$A=0$ 时选 $B$"。</p>
+
+<p>而第一册那个电路在干什么？</p>
+
+<ul>
+<li>$A=0$ 时：传输门打开，$Y$ 直接连到 $B$ ⟹ $Y=B$ ✓（MUX 的低路）</li>
+<li>$A=1$ 时：传输门关闭，$P_2/N_2$ 那一对把 $A$ 或 $\bar{A}$ 送到 $Y$，得到 $\bar{B}$ ✓（MUX 的高路）</li>
+</ul>
+
+<p><strong>所以那 6 个管子是这个 MUX 的一个"零反相器"实现</strong>——它把 $\bar{A}$ 本身当成一条电源轨来用，从而省掉 2 个反相器（4 管）。</p>
+
+<div class="box warn">
+  <span class="lbl">但请注意这个跳跃</span>
+  <p><strong>Shannon 分解给出 MUX 是自动的</strong>（一个三行算法）。<br>
+  <strong>"用传输门实现 MUX、并把 $\bar{A}$ 当轨以省掉反相器" 不自动</strong>——这一步要求你允许 $\kappa$ 依赖数据（第一册第 8 章），而一旦允许，整个方程就从"线性"退化成"不动点"，第 5 章表里那一行也就变成了 ❌。</p>
+  <p>换句话说：<strong>逻辑层的自动化是完整的，晶体管层的自动化是有洞的，而那个洞正好可以用来省掉一半管子。</strong></p>
+</div>
+
+<h2 id="s7"><span class="num">7</span>最深的一层：纤维与成本</h2>
+
+<p>前面都是工程难度。这里有一个<strong>不是难度、是信息</strong>的问题。</p>
+
+<div class="fig">
+<svg viewBox="0 0 820 400" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:800px">
+  <g font-family="-apple-system,Segoe UI,Noto Sans CJK SC,sans-serif" font-size="14" fill="#1c1c1e">
+  <rect x="30" y="60" width="320" height="290" rx="16" fill="#faf8fe" stroke="#c9b8e4" stroke-width="1.6"/>
+  <rect x="500" y="60" width="290" height="290" rx="16" fill="#f8fafc" stroke="#c9cdd4" stroke-width="1.6"/>
+  <text x="190" y="44" text-anchor="middle" font-size="15" font-weight="600">电路空间 X</text>
+  <text x="645" y="44" text-anchor="middle" font-size="15" font-weight="600">逻辑函数空间 Y</text>
+
+  <ellipse cx="150" cy="150" rx="80" ry="58" fill="#efe6fb" stroke="#6b3fa0" stroke-width="1.6" stroke-dasharray="6 4"/>
+  <circle cx="118" cy="128" r="5.5" fill="#6b3fa0"/>
+  <circle cx="160" cy="120" r="5.5" fill="#6b3fa0"/>
+  <circle cx="192" cy="158" r="5.5" fill="#6b3fa0"/>
+  <circle cx="140" cy="178" r="5.5" fill="#6b3fa0"/>
+  <circle cx="178" cy="146" r="5.5" fill="#6b3fa0"/>
+  <text x="150" y="76" text-anchor="middle" font-size="13.5" fill="#6b3fa0" font-weight="600">Φ⁻¹(f) 纤维</text>
+
+  <circle cx="95" cy="285" r="4.5" fill="#b9aed2"/>
+  <circle cx="165" cy="310" r="4.5" fill="#b9aed2"/>
+  <circle cx="245" cy="292" r="4.5" fill="#b9aed2"/>
+  <circle cx="300" cy="230" r="4.5" fill="#b9aed2"/>
+  <circle cx="72" cy="248" r="4.5" fill="#b9aed2"/>
+
+  <circle cx="600" cy="150" r="7" fill="#1c6dd0"/>
+  <text x="618" y="157" font-size="17" font-style="italic" fill="#1c6dd0" font-weight="600">f</text>
+  <circle cx="690" cy="245" r="4" fill="#c3c8cf"/>
+  <circle cx="715" cy="300" r="4" fill="#c3c8cf"/>
+  <circle cx="560" cy="300" r="4" fill="#c3c8cf"/>
+
+  <line x1="234" y1="150" x2="586" y2="150" stroke="#6b3fa0" stroke-width="2.4"/>
+  <polygon points="586,150 572,144 572,156" fill="#6b3fa0"/>
+  <text x="415" y="140" text-anchor="middle" font-size="12.5" fill="#6b3fa0">纤维里每一个点，逻辑上完全等价</text>
+
+  <line x1="356" y1="265" x2="492" y2="265" stroke="#1c1c1e" stroke-width="2.4"/>
+  <polygon points="492,265 478,259 478,271" fill="#1c1c1e"/>
+  <text x="424" y="251" text-anchor="middle" font-size="18" font-style="italic" font-weight="600">Φ</text>
+
+  <text x="190" y="336" text-anchor="middle" font-size="12.5" fill="#6b3fa0" font-weight="600">成本 w(x):面积 / 延迟 / 功耗 —— 只在这里有定义</text>
+  <text x="645" y="336" text-anchor="middle" font-size="12.5" fill="#8b9099">只有逻辑，没有任何成本信息</text>
+  </g>
+</svg>
+<div class="cap">图 1　$\Phi$ 把<strong>很多</strong>电路映到<strong>一个</strong>函数上。成本函数 $w$ 定义在左边（结构里），不在右边（函数里）。</div>
+</div>
+
+<h3>7.1 三条推论</h3>
+
+<p><strong>① 纤维是指数大的。</strong> 一个 $n$ 输入函数有无穷多种电路写法；若限定规模 $k$，数量随 $k$ 指数增长。</p>
+
+<p><strong>② 真值表里没有任何成本信息。</strong> 纤维 $\Phi^{-1}(f)$ 里的每一点，在逻辑上<strong>完全等价</strong>。逻辑函数 $f$ 无法区分它们——$\Phi$ 已经把结构信息全部丢掉了。</p>
+
+<p><strong>③ 所以"最优"必须靠映射之外的判据。</strong> 而那个判据注定难以形式化：</p>
+
+<table>
+<thead><tr><th>成本项的麻烦</th><th>后果</th></tr></thead>
+<tbody>
+<tr><td>面积、延迟、功耗<strong>互相冲突</strong></td><td>不存在单目标最优，只能谈帕累托前沿</td></tr>
+<tr><td>电气模型<strong>不精确</strong>（模型误差常大于优化收益）</td><td>被"优化"的是模型，不是硅片</td></tr>
+<tr><td>成本函数<strong>不可微、含噪声</strong></td><td>梯度类方法失效，只能搜索</td></tr>
+<tr><td>工艺变异是<strong>统计量</strong></td><td>问题升级成随机优化</td></tr>
+</tbody>
+</table>
+
+<div class="box err">
+  <span class="lbl">神谕论证:这是信息问题，不是算力问题</span>
+  <p>假设给你一个<strong>万能神谕</strong>，瞬间列出整个纤维 $\Phi^{-1}(f)$ 的全部元素。</p>
+  <p>你仍然无法选出"最好的那个"——因为<strong>选择所需的成本信息，不在 $\Phi$ 的像里</strong>。你必须额外构造一个 $w:\mathcal{X}\to\mathbb{R}^k$，而构造 $w$ 的过程里已经引入了模型、权重和目标取舍，那些全是人为决定。</p>
+  <p>所以就算算力无限，"自动求最优"依然缺的是一个<strong>定义</strong>，而不是一个<strong>算法</strong>。</p>
+</div>
+
+<h2 id="s8m"><span class="num">8</span>实测：把四道墙量出来</h2>
+
+<p>前面七章都是推理。这一章全部换成<strong>实测数据</strong>——两个真实工业 PDK、四个工具跑出来的。</p>
+
+<div class="box note">
+  <span class="lbl">实验条件</span>
+  <p><strong>库</strong>：Nangate45（45nm 学术预测库，含 CDL 晶体管网表）／ ICsprout55 v2（55nm 真实工艺，9T，SVT/LVT/HVT 三档阈值电压）</p>
+  <p><strong>工具</strong>：yosys 0.66 · iEDA（iSTA / iPA）· Verilator 5.054</p>
+</div>
+
+<h3>8.1 一条公式，9 个单元全中，1 个失手</h3>
+
+<p>第 3 章推出「平铺 SOP 的晶体管数 $=2L$」。拿 Nangate45 的 CDL 网表逐个核对：</p>
+
+<table>
+<thead><tr><th>单元</th><th>$2L$ 预测</th><th>CDL 实测</th><th></th></tr></thead>
+<tbody>
+<tr><td>INV / NAND2 / NOR2 / NAND3 / NOR3</td><td>2 / 4 / 4 / 6 / 6</td><td>2 / 4 / 4 / 6 / 6</td><td style="color:#1a7f45">✓</td></tr>
+<tr><td>AND2 / OR2 / AOI21 / AOI22</td><td>6 / 6 / 6 / 8</td><td>6 / 6 / 6 / 8</td><td style="color:#1a7f45">✓</td></tr>
+<tr><td><strong>XOR2</strong></td><td><strong>12</strong></td><td><strong>10</strong></td><td style="color:#b3261e">✗</td></tr>
+</tbody>
+</table>
+
+<div class="box key">
+  <span class="lbl">预言被按字面验证</span>
+  <p>九个<strong>单调</strong>单元一个不差；唯一出框的，正是唯一<strong>非单调</strong>的那个函数。<strong>理论说的就是这件事。</strong></p>
+</div>
+
+<h3>8.2 库里那个 XOR 是 10 个管子，不是我推的 12</h3>
+
+<p>把 <code>XOR2_X1</code> 的 CDL 摊开（$M$ 行的格式是 <code>D G S B type</code>）：</p>
+
+<pre><span class="c"># 第一级 4T: net_000 = ¬(A∨B)</span>
+M0  net_000  A    VSS      VSS  NMOS
+M7  VSS      B    net_000  VSS  NMOS        <span class="c"># 并联 → 拉低</span>
+M30 net_002  A    net_000  VDD  PMOS
+M35 VDD      B    net_002  VDD  PMOS        <span class="c"># 串联 → 拉高</span>
+
+<span class="c"># 第二级 6T: 输出 Z</span>
+M41 net_003  net_000  VDD  VDD  PMOS        <span class="c"># net_003 = 1 当 A∨B</span>
+M13 Z        net_000  VSS  VSS  NMOS        <span class="c"># Z=0 当 A=B=0</span>
+M19 net_001  A        Z    VSS  NMOS
+M24 VSS      B        net_001  VSS  NMOS    <span class="c"># Z=0 当 A=B=1</span>
+M47 Z        A        net_003  VDD  PMOS
+M53 net_003  B        Z        VDD  PMOS    <span class="c"># 并联 → Z←net_003 当 ¬A∨¬B</span></pre>
+
+<p>请注意 <code>M47</code> / <code>M53</code>：它们的<strong>源极接的是 <code>net_003</code>——一条信号线，不是电源轨</strong>。</p>
+
+<div class="box warn">
+  <span class="lbl">工业库在主动利用那道裂缝</span>
+  <p>第 1 册第 8 章说「源极不是电源时，$\kappa$ 变成乘法式，矩阵失效」——那是<strong>理论上的麻烦</strong>。</p>
+  <p>而工业库的答案是：<strong>不绕开它，专门去用它。</strong> 省下来的 2 个管子就是这么来的。</p>
+</div>
+
+<h3>8.3 枚举 + Verilator：6T 的异或门有<strong>两种</strong></p>
+
+<p>用「枚举 → 自动生成 Verilog → Verilator 判定」的流水线，在「单级 pass 网络 + 反相器」这个类里穷举，全部结果都通过了独立仿真：</p>
+
+<table>
+<thead><tr><th>函数</th><th>最少管数</th><th>语义不同的解</th><th>其中一种拓扑</th></tr></thead>
+<tbody>
+<tr><td>NAND2</td><td><strong>4T</strong></td><td>1</td><td>$1{-}[P_A]{-}Y$、$1{-}[P_B]{-}Y$、$0{-}[N_A N_B]{-}Y$</td></tr>
+<tr><td><strong>XOR2</strong></td><td><strong>6T</strong></td><td><strong>2</strong></td><td>$B{-}[TGL(A)]{-}Y$、$A{-}[P_B]{-}Y$、$\bar A{-}[N_B]{-}Y$</td></tr>
+<tr><td><strong>AND2</strong></td><td><strong>5T</strong></td><td>2</td><td>$0{-}[N_{\bar A}]{-}Y$、$B{-}[TGL(\bar A)]{-}Y$</td></tr>
+</tbody>
+</table>
+
+<div class="box err">
+  <span class="lbl">我在这一轮里错了三次</span>
+  <ol>
+    <li>「AND2 = NAND2 + INV = 6T」→ <strong>实测 5T</strong>（那是<em>只管静态互补 CMOS</em> 的结论）</li>
+    <li>「XOR2 要 12T」→ <strong>实测 6T</strong></li>
+    <li>「6T 拓扑唯一」→ <strong>实测 2 种</strong></li>
+  </ol>
+  <p>三次都是同一个病因：<strong>我的设计空间划得太窄，然后误以为那是问题的边界。</strong></p>
+</div>
+
+<h3>8.4 多阈值电压：面积对它<strong>完全瞎</strong></h3>
+
+<p>ICsprout55 同一角（tt / 1.2V / 25C）、同一拓扑，只换阈值电压：</p>
+
+<table>
+<thead><tr><th>单元</th><th>VT</th><th>面积</th><th>最大漏电 (pW)</th><th>最大延时 (ns)</th></tr></thead>
+<tbody>
+<tr><td rowspan="3">XOR2</td><td>LVT</td><td>3.96</td><td>2.9489</td><td>0.722</td></tr>
+<tr><td>SVT</td><td>3.96</td><td>0.7930</td><td>0.700</td></tr>
+<tr><td>HVT</td><td>3.96</td><td><strong>0.0282</strong></td><td>1.761</td></tr>
+</tbody>
+</table>
+
+$$\frac{\text{LVT}}{\text{HVT}}:\quad\text{延时 }0.41\times,\qquad\text{漏电 }\mathbf{104\times},\qquad\text{面积 }\mathbf{1.00\times}$$
+
+<div class="box key">
+  <span class="lbl">这是第三个「成本不在像里」的证据</span>
+  <p>三档阈值电压，<strong>面积一字不差</strong>。也就是说：</p>
+  <p><strong>「最少管数 = 最小面积」这个目标函数，根本看不见 VT。</strong> 你可以一点面积都不加，靠换 VT 把漏电降 104 倍。</p>
+</div>
+
+<p>顺带一个可用的结论：$\text{LVT}/\text{SVT}$ 的延时只有 $1.03\times$，漏电却是 $3.9\times$ ——<strong>在这份库里 SVT 几乎完全支配 LVT</strong>。除极关键路径外，用 LVT 基本是白付漏电。</p>
+
+<h3>8.5 而且「换 HVT 省电」这件事，在这个设计上<strong>失败了</strong></h3>
+
+<p>拿仓库自带的 GCD（1053 个实例，500MHz 约束）跑三档纯 VT：</p>
+
+<table>
+<thead><tr><th>VT</th><th>面积 (µm²)</th><th>最差路径</th><th>最高频率</th><th>漏电 (W)</th><th><strong>总功耗 (W)</strong></th></tr></thead>
+<tbody>
+<tr><td>LVT</td><td>837.36</td><td>0.620 ns</td><td>1526 MHz</td><td>$4.32\times10^{-7}$</td><td>$7.81\times10^{-4}$</td></tr>
+<tr><td>SVT</td><td>832.68</td><td>0.685 ns</td><td>1391 MHz</td><td>$1.02\times10^{-7}$</td><td><strong>$7.42\times10^{-4}$</strong></td></tr>
+<tr><td>HVT</td><td>840.24</td><td>1.436 ns</td><td>662 MHz</td><td>$6.71\times10^{-9}$</td><td style="color:#b3261e"><strong>$9.04\times10^{-4}$</strong></td></tr>
+</tbody>
+</table>
+
+<div class="box err">
+  <span class="lbl">反直觉的结果</span>
+  <p>HVT 的漏电确实降了 <strong>64 倍</strong>……但因为漏电只占总功耗的 <strong>0.05%</strong>，而 HVT 映射让内部功耗反而升高，<strong>总功耗反而涨了 22%</strong>。</p>
+  <p>「多阈值电压省功耗」这句话，<strong>不是无条件成立的</strong>。它只在这两种情形下有价值：<strong>(a)</strong> 漏电占比显著（低活动率设计、慢角/高温）；<strong>(b)</strong> 时序有余量时，只把<em>非关键路径</em>降级，而不牺牲关键路径。</p>
+</div>
+
+<h3>8.6 更狠的是：工具<strong>根本不知道漏电</strong></h3>
+
+<p>把 LVT / SVT / HVT 三份 liberty 一起丢给 ABC（<code>abc -liberty L -liberty S -liberty H</code>），换不同目标：</p>
+
+<table>
+<thead><tr><th>abc 的目标</th><th>选中</th></tr></thead>
+<tbody>
+<tr><td>无延时约束（纯面积）</td><td>HVT</td></tr>
+<tr><td><code>-D 100ps</code>（很紧）</td><td>HVT</td></tr>
+<tr><td><code>-D 2000ps</code>（很松）</td><td>HVT</td></tr>
+<tr><td><code>-D 100ps</code> + 强制面积优先</td><td>SVT</td></tr>
+</tbody>
+</table>
+
+<p>三档 VT 面积完全相同，于是 ABC <strong>靠无关的 tie-break 乱挑</strong>，加延时约束也不改。</p>
+
+<div class="box err">
+  <span class="lbl">第七道「墙」</span>
+  <p><strong>ABC 的成本函数里没有漏电。</strong> 所以「多 Vt 优化」在这条流程里<strong>无法自动完成</strong>——你必须自己提供目标、自己做 Vt 交换。</p>
+  <p>这是第 7 章那句「成本函数不在 $\Phi$ 的像里」的<strong>第四个证据</strong>，而且这次是<em>工具自己承认的</em>。</p>
+</div>
+
+<h3>8.7 四道墙，现在都有了数字</h3>
+
+<table>
+<thead><tr><th>第 5 章说的墙</th><th>实测</th></tr></thead>
+<tbody>
+<tr><td><strong>① 可达集指数小</strong></td><td>单级互补 CMOS 覆盖 $3,6,20,168,7581,7.8\text{M}$（Dedekind 数）；$n{=}6$ 时占比 $4\times10^{-13}$</td></tr>
+<tr><td><strong>② 多级无最优判据</strong></td><td>同一行 RTL、同一份库，<code>abc -liberty</code> 给 1.596，完整 <code>synth</code> 给 2.394 —— <strong>差 50%</strong>，取决于目标</td></tr>
+<tr><td><strong>③ 逆映射非单射</strong></td><td>同一个 XOR2 落在纤维里三个不同的点：<strong>6T</strong>（全定制，2 种）／<strong>10T</strong>（Nangate 库 <code>XOR2_X1</code>）／<strong>16T</strong>（yosys 默认选 <code>XOR2_X2</code>，面积 2.394 vs 最小 1.596，差 <strong>1.5×</strong>）</td></tr>
+<tr><td><strong>④ 成本不在像里</strong></td><td>面积对 VT <strong>完全瞎</strong>（1.00×）；漏电差 104×；而工具的成本函数里<strong>没有漏电</strong></td></tr>
+</tbody>
+</table>
+
+<p class="small">附：面积与管数的关系<strong>并非普适</strong>。Nangate45 恰好满足「面积 $=0.133(k+2)$」（7 个单元零误差），而 ICsprout55 每管面积在 $0.54\to0.24$ 之间乱跳——<strong>真实库里「最少管数」并不等价于「最小面积」</strong>。这让第 5 章那张表里 L2 的那一格 ❌ 更严重了。</p>
+
+<h2 id="s8"><span class="num">9</span>那人类为什么还能做</h2>
+
+<p>因为人类设计师<strong>不是从真值表出发的</strong>。他们从"这个电路是个加法器"开始——这带着大量 $f$ 之外的结构信息：</p>
+
+<table>
+<thead><tr><th>人带的先验</th><th>算法拿不到的信息</th></tr></thead>
+<tbody>
+<tr><td>"这是加法器" ⟹ 进位链要短</td><td>$f$ 本身不含"哪条路径关键"</td></tr>
+<tr><td>"这块在芯片最热的位置" ⟹ 用低功耗单元</td><td>$f$ 不含布局与热</td></tr>
+<tr><td>"这个复用模式常见" ⟹ 共享子表达式</td><td>$f$ 不含实际使用频次分布</td></tr>
+<tr><td>"库里已经有 X 单元" ⟹ 直接复用</td><td>$f$ 不含工艺库</td></tr>
+</tbody>
+</table>
+
+<p>换成数学的说法：<strong>人用一个先验去限制搜索空间，而那个先验来自 $f$ 之外。</strong> 这正是"分层抽象 $+$ 局部贪心 $+$ 迭代收敛"能工作的原因——它们不是求最优，而是在<strong>限定的子空间</strong>里求"足够好"。</p>
+
+<h2 id="s9"><span class="num">10</span>附录</h2>
+
+<h3>A. 程序 <code>design_backwards.py</code></h3>
+
+<p>一个完整的 L2 逆向器（$n\le 6$ 精确），约 60 行。核心只有三块：</p>
+
+<pre><span class="c"># ① 判据</span>
+def realizable(tt, n):
+    return mono_inc([1 - x for x in tt], n)
+
+<span class="c"># ② 最小化积之和（Quine-McCluskey:先求质蕴含项,再贪心覆盖）</span>
+def min_sop(g, n, names): ...
+
+<span class="c"># ③ 转写:乘积项 → 串联链,项间 → 并联</span>
+n_fet = sum(len(t.replace("'", "")) for t in terms)
+print(2 * n_fet, "个晶体管")</pre>
+
+<p>实测输出（从 $n=2,3$ 里挑几个）：</p>
+
+<pre>AND2   AB          ✗ 不可实现 (¬f 非单调增)
+XOR2   A⊕B         ✗ 不可实现
+MAJ3   多数表决     ✗ 不可实现
+NAND3  ¬(ABC)      ✓  f_pd = ABC        → 6 个晶体管
+NOR3   ¬(A∨B∨C)    ✓  f_pd = C ∨ A ∨ B  → 6 个晶体管</pre>
+
+<h3>B. 习题</h3>
+
+<p><strong>习题 1</strong>　判断 $Y=\overline{AB\vee C}$（AOI21）能否单级实现；若能，写出下拉网络并数出管数。</p>
+<details>
+<summary>答案</summary>
+<p>$f_{\mathrm{pd}}=\neg Y=AB\vee C$。检查单调性：$A$ 升、$B$ 升、$C$ 升都只可能让它从 0 变 1，不会下降 ⟹ 单调增 ⟹ <strong>可实现</strong> ✓</p>
+<p>下拉：$A$ 与 $B$ 串联，再与 $C$ 并联 → <strong>3 个 NMOS</strong>。</p>
+<p>上拉取对偶：$(\bar{A}\parallel\bar{B})$ 与 $\bar{C}$ 串联 → <strong>3 个 PMOS</strong>。</p>
+<p>合计 <strong>6 个晶体管</strong>。（$L=2+1=3$，套公式 $2L=6$ ✓）</p>
+</details>
+
+<p><strong>习题 2</strong>　$Y=\overline{AB\vee AC}$。用平铺 SOP 算管数，再用因式分解算一遍，比较。</p>
+<details>
+<summary>答案</summary>
+<p><strong>平铺 SOP：</strong>$f_{\mathrm{pd}}=AB\vee AC$，$L=2+2=4$ ⟹ $2L=8$ 管。</p>
+<p><strong>因式分解：</strong>$AB\vee AC=A\wedge(B\vee C)$。下拉 $=$ $A$ 与 $(B\parallel C)$ 串联 → 3 个 NMOS；对偶上拉 3 个 PMOS ⟹ <strong>6 管</strong>。</p>
+<p>省了 2 个管子。注意：判据（可实现性）完全没变，变的只是<strong>你找到哪个串并联表达式</strong>。</p>
+</details>
+
+<p><strong>习题 3</strong>　为什么 3 输入多数表决 $Y=AB\vee AC\vee BC$ 不能单级实现？给出一个具体的"违反单调性"的证据。</p>
+<details>
+<summary>答案</summary>
+<p>$Y$ 本身对每个输入都<strong>单调增</strong>（任何一票从 0 变 1，只会让"多数"更容易成立）。所以 $\neg Y$ 对每个输入<strong>单调减</strong>，不满足判据 ⟹ 不可单级实现 ✗</p>
+<p>具体证据：取 $B=1,\,C=0$，令 $A$ 从 $0$ 变 $1$。此时 $Y$ 从 $0$ <strong>升到</strong> $1$ —— 而判据要求 $Y$ 反单调（只能不变或降）。矛盾。□</p>
+<p>所以多数表决至少要两级（典型实现 12 管左右）。</p>
+</details>
+
+<p><strong>习题 4</strong>（思考题）　第 7 章说"成本信息不在 $\Phi$ 的像里"。那么"延迟"这一项，到底是被 $\Phi$ 丢掉了，还是它本来就该定义在电路空间上？</p>
+<details>
+<summary>提示</summary>
+<p>严格说是<strong>后者</strong>：延迟是电路的性质，不是函数的性质——它本来就定义在 $\mathcal{X}$ 上。$\Phi$ 并没有"丢掉"它，而是<strong>压根没有理由把它放进陪域</strong>。</p>
+<p>但这带来一个实际后果：你无法"先在函数层面算出最优函数，再去实现它"。函数的优劣（比如"这个函数的 SOP 有多长"）只是<strong>成本的代理指标</strong>，代理不等于成本。这正是"布尔复杂度"与"电路成本"之间那道一直没被填平的沟。</p>
+</details>
+
+<h3>C. 两册讲义的关系</h3>
+
+<table>
+<thead><tr><th></th><th>第一册 <a href="formal-analysis.html">从电路到代数</a></th><th>第二册（本文）</th></tr></thead>
+<tbody>
+<tr><td>方向</td><td>电路 → 函数（<strong>求值</strong>）</td><td>函数 → 电路（<strong>求逆</strong>）</td></tr>
+<tr><td>核心式</td><td>$Y=\bigvee_{\text{路径}}\big(\prod\kappa_d\big)\wedge\mathrm{val}$</td><td>$f_{\mathrm{pd}}=\neg Y$ 的 SOP → 串联链 / 并联</td></tr>
+<tr><td>复杂度</td><td>$O(\text{规模})$，线性</td><td>单级:闭式；多级:无最优判据</td></tr>
+<tr><td>最难的一步</td><td>选对代数（$\vee$ 不是 $\oplus$）</td><td>接受"成本不在映射里"</td></tr>
+<tr><td>结论</td><td>形式化 $=$ 可复用 $+$ 可检验 $+$ 可证明</td><td>自动化 $=$ 有洞、有边界、非最优</td></tr>
+</tbody>
+</table>
+
+<hr>
+
+<p class="small center" style="margin-top:40px">
+<strong>能自动设计</strong>：已经在做，而且做得很好。<br>
+<strong>不能自动求最优</strong>：四道墙——可达集指数小、多级无判据、逆映射非单射、成本不在像里。<br>
+而"最优"这个词，在这四道墙之后，其实还没有被定义清楚。
+</p>
+
+</div>
+</body>
+</html>

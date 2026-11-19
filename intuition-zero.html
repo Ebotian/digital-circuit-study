@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>讲义 0 · 从一个 NOR 出发 — 把"看出来"变成"算出来"</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$','$']], displayMath: [['$$','$$']], tags: 'none' },
+  svg: { fontCache: 'global', scale: 1.02 },
+  options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] }
+};
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+<style>
+  :root{
+    --ink:#1c1c1e; --mute:#6b6b70; --line:#e2e2e6;
+    --t:#0f766e; --t-bg:#eefaf8;
+    --t2:#0d9488;
+    --blue:#1c6dd0; --blue-bg:#eef5fd;
+    --green:#1a7f45; --green-bg:#edf9f1;
+    --amber:#8a5a00; --amber-bg:#fdf6e6;
+    --red:#b3261e; --red-bg:#fdeeed;
+    --violet:#6b3fa0; --violet-bg:#f4eefb;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:0 0 120px; background:#fff; color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans CJK SC","Source Han Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:16.5px; line-height:1.8;
+  }
+  .wrap{max-width:980px; margin:0 auto; padding:0 28px}
+  header.cover{
+    background:linear-gradient(135deg,#062f2c 0%,#0f766e 55%,#14a08f 100%);
+    color:#fff; padding:64px 28px 56px; margin-bottom:44px;
+  }
+  header.cover .wrap{padding:0}
+  header.cover h1{margin:0 0 14px; font-size:2.3em; letter-spacing:.5px; line-height:1.3}
+  header.cover p{margin:6px 0; color:#c9ece7; font-size:1.02em}
+  header.cover .tag{display:inline-block; margin-top:18px; padding:5px 13px;
+    border:1px solid #63c5b8; border-radius:99px; font-size:.84em; color:#e6fbf7; letter-spacing:1px;}
+  header.cover a.nav{display:inline-block; margin:18px 0 0 10px; padding:5px 13px; border-radius:99px;
+    background:rgba(255,255,255,.16); color:#fff; font-size:.82em; text-decoration:none;
+    border:1px solid rgba(255,255,255,.35);}
+  header.cover a.nav:hover{background:rgba(255,255,255,.3)}
+  h2{font-size:1.48em; margin:62px 0 20px; padding-bottom:11px;
+    border-bottom:3px solid var(--ink); letter-spacing:.3px;}
+  h2 .num{display:inline-block; background:var(--t); color:#fff; border-radius:7px;
+    padding:1px 11px; margin-right:13px; font-size:.8em; vertical-align:3px;}
+  h3{font-size:1.12em; margin:30px 0 10px; color:#062f2c}
+  p{margin:12px 0}
+  ul,ol{margin:12px 0; padding-left:26px}
+  li{margin:7px 0}
+  code{background:#f0f1f3; padding:1.5px 6px; border-radius:5px;
+    font-family:"SF Mono",Menlo,Consolas,monospace; font-size:.9em;}
+  table{border-collapse:collapse; width:100%; margin:20px 0; font-size:.94em;}
+  th,td{border:1px solid var(--line); padding:9px 13px; text-align:left; vertical-align:middle}
+  th{background:#f5f6f8; font-weight:600}
+  tbody tr:nth-child(even){background:#fafbfc}
+  .obs{border-left:5px solid var(--green); background:var(--green-bg);
+    padding:14px 20px; border-radius:0 10px 10px 0; margin:22px 0;}
+  .obs .lbl{display:block; font-weight:700; font-size:.82em; letter-spacing:1.4px;
+    margin-bottom:6px; color:var(--green); text-transform:uppercase;}
+  .obs p:first-of-type{margin-top:0} .obs p:last-child{margin-bottom:0}
+  .q{border:1.5px dashed var(--t2); background:var(--t-bg);
+    padding:16px 20px; border-radius:12px; margin:26px 0;}
+  .q .lbl{display:block; font-weight:700; font-size:.82em; letter-spacing:1.4px;
+    margin-bottom:8px; color:var(--t); text-transform:uppercase;}
+  .q p{margin:6px 0; font-weight:600}
+  .q p:last-child{margin-bottom:0}
+  .box{border-left:5px solid var(--blue); background:var(--blue-bg);
+    padding:16px 20px; border-radius:0 10px 10px 0; margin:24px 0;}
+  .box.warn{border-color:var(--amber); background:var(--amber-bg)}
+  .box.key{border-color:var(--green); background:var(--green-bg)}
+  .box.err{border-color:var(--red); background:var(--red-bg)}
+  .box.note{border-color:var(--violet); background:var(--violet-bg)}
+  .box > .lbl{display:block; font-weight:700; font-size:.83em; letter-spacing:1.4px;
+    text-transform:uppercase; margin-bottom:8px; color:var(--blue);}
+  .box.warn > .lbl{color:var(--amber)}
+  .box.key > .lbl{color:var(--green)}
+  .box.err > .lbl{color:var(--red)}
+  .box.note > .lbl{color:var(--violet)}
+  .box p:first-of-type{margin-top:0} .box p:last-child{margin-bottom:0}
+  .fig{margin:28px 0; text-align:center}
+  .fig svg{max-width:100%; height:auto}
+  .fig .cap{font-size:.87em; color:var(--mute); margin-top:10px}
+  .toc{background:#f7f8fa; border:1px solid var(--line); border-radius:12px; padding:22px 28px}
+  .toc ol{columns:2; column-gap:44px; margin:0; padding-left:22px}
+  .toc li{margin:6px 0; break-inside:avoid}
+  .toc a{color:var(--ink); text-decoration:none; border-bottom:1px dotted #bbb}
+  .toc a:hover{color:var(--t); border-color:var(--t)}
+  .small{font-size:.9em; color:var(--mute)}
+  .center{text-align:center}
+  hr{border:none; border-top:1px solid var(--line); margin:44px 0}
+  .mjx-container{overflow-x:auto; overflow-y:hidden; max-width:100%}
+  mjx-container[display="true"]{margin:18px 0 !important}
+  .lead{font-size:1.05em; color:#3a3a3e}
+  .step{background:#f7f8fa;border:1px solid var(--line);border-radius:10px;padding:14px 20px;margin:16px 0}
+  .step b{color:var(--t)}
+</style>
+</head>
+<body>
+
+<header class="cover">
+  <div class="wrap">
+    <h1>从一个 NOR 出发</h1>
+    <p>—— 把"看出来"变成"算出来"</p>
+    <p style="margin-top:16px;font-size:.95em">讲义 0 · 直觉篇 / 助教手记</p>
+    <span class="tag">前置:只要知道 MOS 管能当开关</span>
+    <a class="nav" href="index.html">课程首页</a>
+    <a class="nav" href="formal-analysis.html">讲义一:从电路到代数</a>
+    <a class="nav" href="synthesis-inverse.html">讲义二:从代数到电路</a>
+  </div>
+</header>
+
+<div class="wrap">
+
+<div class="toc">
+<strong>这十步是怎么长出来的</strong>
+<p class="small" style="margin:8px 0 14px">每一步只做三件事:<strong>看一眼</strong> → <strong>推一步</strong> → <strong>留一个问题</strong>。下一个标题就是上一个问题的答案。</p>
+<ol>
+  <li><a href="#s1">管子是个开关</a></li>
+  <li><a href="#s2">串起来、并起来</a></li>
+  <li><a href="#s3">输出是"抢"出来的</a></li>
+  <li><a href="#s4">从图到表,从表到式</a></li>
+  <li><a href="#s5">那 κ 从哪来？</a></li>
+  <li><a href="#s6">矩阵背后是连线图</a></li>
+  <li><a href="#s7">拓扑的另一半</a></li>
+  <li><a href="#s8">三种命运</a></li>
+  <li><a href="#s9">互补为什么这么妙</a></li>
+  <li><a href="#s10">裂缝：源极不是电源</a></li>
+</ol>
+</div>
+
+<h2 id="s0"><span class="num">0</span>先说清楚要干什么</h2>
+
+<p class="lead">你手上有一张四个管子的图,你知道它是 NOR。</p>
+
+<p>但我猜你是<strong>看出来</strong>的——有人告诉你"PMOS 串、NMOS 并就是 NOR",你记住了。</p>
+
+<p>这份讲义只干一件事:<strong>把"看出来"换成"算出来"</strong>。而且要求是:每一步都只依赖上一步的观察,不靠背诵。</p>
+
+<div class="box note">
+  <span class="lbl">你会得到什么</span>
+  <p>走完这十步,你会<strong>自己</strong>造出这三样东西:</p>
+  <ul>
+    <li>一个<strong>公式</strong> $Y=\bar{A}\bar{B}$(而不是一张真值表)</li>
+    <li>一个<strong>矩阵</strong>,它编码了这张电路图的连线</li>
+    <li>一个<strong>判据</strong>,它能告诉你一个电路"结构上会不会出事"</li>
+  </ul>
+  <p>这三样东西,就是讲义一第 1、5、9 章的全部内容。<strong>只不过在讲义一里它们是定义和定理,在这里是观察和猜测。</strong></p>
+</div>
+
+<h3>起点:这张图</h3>
+
+<div class="fig">
+<svg viewBox="0 0 620 500" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:560px">
+  <g font-family="-apple-system,Segoe UI,Noto Sans CJK SC,sans-serif" fill="#1c1c1e">
+  <text x="310" y="30" text-anchor="middle" font-size="15" font-style="italic">Vcc</text>
+  <circle cx="310" cy="48" r="5" fill="none" stroke="#1c1c1e" stroke-width="2"/>
+  <line x1="310" y1="53" x2="310" y2="90" stroke="#1c1c1e" stroke-width="2.2"/>
+
+  <line x1="310" y1="90" x2="310" y2="150" stroke="#1c1c1e" stroke-width="7" stroke-linecap="butt"/>
+  <line x1="299" y1="102" x2="299" y2="138" stroke="#1c1c1e" stroke-width="2.6"/>
+  <circle cx="293" cy="120" r="6" fill="#fff" stroke="#1c1c1e" stroke-width="1.9"/>
+  <line x1="287" y1="120" x2="180" y2="120" stroke="#1c1c1e" stroke-width="2.2"/>
+  <text x="170" y="126" text-anchor="end" font-size="17" font-weight="600">A</text>
+  <text x="330" y="125" font-size="16" font-weight="600">P1</text>
+
+  <line x1="310" y1="150" x2="310" y2="180" stroke="#1c1c1e" stroke-width="2.2"/>
+
+  <line x1="310" y1="180" x2="310" y2="240" stroke="#1c1c1e" stroke-width="7" stroke-linecap="butt"/>
+  <line x1="299" y1="192" x2="299" y2="228" stroke="#1c1c1e" stroke-width="2.6"/>
+  <circle cx="293" cy="210" r="6" fill="#fff" stroke="#1c1c1e" stroke-width="1.9"/>
+  <line x1="287" y1="210" x2="180" y2="210" stroke="#1c1c1e" stroke-width="2.2"/>
+  <text x="170" y="216" text-anchor="end" font-size="17" font-weight="600">B</text>
+  <text x="330" y="215" font-size="16" font-weight="600">P2</text>
+
+  <line x1="310" y1="240" x2="310" y2="270" stroke="#1c1c1e" stroke-width="2.2"/>
+  <circle cx="310" cy="270" r="4.5" fill="#1c1c1e"/>
+  <line x1="310" y1="270" x2="470" y2="270" stroke="#1c1c1e" stroke-width="2.2"/>
+  <text x="482" y="276" font-size="17" font-weight="700">Y</text>
+
+  <line x1="310" y1="270" x2="200" y2="270" stroke="#1c1c1e" stroke-width="2.2"/>
+  <line x1="200" y1="270" x2="200" y2="300" stroke="#1c1c1e" stroke-width="2.2"/>
+  <line x1="200" y1="300" x2="200" y2="360" stroke="#1c1c1e" stroke-width="7" stroke-linecap="butt"/>
+  <line x1="189" y1="312" x2="189" y2="348" stroke="#1c1c1e" stroke-width="2.6"/>
+  <line x1="189" y1="330" x2="90" y2="330" stroke="#1c1c1e" stroke-width="2.2"/>
+  <text x="80" y="336" text-anchor="end" font-size="17" font-weight="600">A</text>
+  <text x="215" y="318" font-size="16" font-weight="600">N1</text>
+  <line x1="200" y1="360" x2="200" y2="390" stroke="#1c1c1e" stroke-width="2.2"/>
+
+  <circle cx="420" cy="270" r="4.5" fill="#1c1c1e"/>
+  <line x1="420" y1="270" x2="420" y2="300" stroke="#1c1c1e" stroke-width="2.2"/>
+  <line x1="420" y1="300" x2="420" y2="360" stroke="#1c1c1e" stroke-width="7" stroke-linecap="butt"/>
+  <line x1="409" y1="312" x2="409" y2="348" stroke="#1c1c1e" stroke-width="2.6"/>
+  <line x1="409" y1="330" x2="350" y2="330" stroke="#1c1c1e" stroke-width="2.2"/>
+  <text x="340" y="336" text-anchor="end" font-size="17" font-weight="600">B</text>
+  <text x="435" y="318" font-size="16" font-weight="600">N2</text>
+  <line x1="420" y1="360" x2="420" y2="390" stroke="#1c1c1e" stroke-width="2.2"/>
+
+  <line x1="200" y1="390" x2="420" y2="390" stroke="#1c1c1e" stroke-width="2.2"/>
+  <circle cx="310" cy="390" r="4.5" fill="#1c1c1e"/>
+  <line x1="310" y1="390" x2="310" y2="412" stroke="#1c1c1e" stroke-width="2.2"/>
+  <line x1="285" y1="412" x2="335" y2="412" stroke="#1c1c1e" stroke-width="2.6"/>
+  <line x1="295" y1="420" x2="325" y2="420" stroke="#1c1c1e" stroke-width="2.6"/>
+  <line x1="305" y1="428" x2="315" y2="428" stroke="#1c1c1e" stroke-width="2.6"/>
+  </g>
+</svg>
+<div class="cap">图 0　起点。四个管子,两根输入,一个输出。<strong>带小圆圈 = PMOS,不带 = NMOS。</strong></div>
+</div>
+
+<h2 id="s1"><span class="num">1</span>第一个观察:管子其实是个开关</h2>
+
+<p>在数字电路里,我们<strong>故意</strong>不让 MOS 管工作在线性区。它只被当成一个开关:要么通,要么断。</p>
+
+<p>于是可以给它一个只有两个值的量:</p>
+
+$$\kappa=\begin{cases}1,&\text{通}\\[2pt]0,&\text{断}\end{cases}$$
+
+<p>那什么决定通断?<strong>栅极电压</strong>。而这里出现了第一个"反直觉":</p>
+
+<div class="obs">
+<span class="lbl">观察 1</span>
+<p>两种管子对<strong>同一个</strong>栅极电平反应<strong>相反</strong>:</p>
+<table style="margin:10px 0 0">
+<thead><tr><th>栅极电平</th><th>NMOS</th><th>PMOS</th></tr></thead>
+<tbody>
+<tr><td>0(低)</td><td>断 $\kappa=0$</td><td><strong>通 $\kappa=1$</strong></td></tr>
+<tr><td>1(高)</td><td><strong>通 $\kappa=1$</strong></td><td>断 $\kappa=0$</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>所以一笔就能写完:<strong>NMOS 的 $\kappa$ 就是栅极信号本身;PMOS 的 $\kappa$ 是栅极信号的"反"。</strong></p>
+
+$$\kappa_{N}=g,\qquad \kappa_{P}=\bar{g}$$
+
+<p>用这个写图 0 的四个管子:</p>
+
+<table>
+<thead><tr><th>管子</th><th>类型</th><th>栅极</th><th>$\kappa$</th></tr></thead>
+<tbody>
+<tr><td>$P_1$</td><td>PMOS</td><td>$A$</td><td>$\bar{A}$</td></tr>
+<tr><td>$P_2$</td><td>PMOS</td><td>$B$</td><td>$\bar{B}$</td></tr>
+<tr><td>$N_1$</td><td>NMOS</td><td>$A$</td><td>$A$</td></tr>
+<tr><td>$N_2$</td><td>NMOS</td><td>$B$</td><td>$B$</td></tr>
+</tbody>
+</table>
+
+<div class="q">
+<span class="lbl">留给第 2 章</span>
+<p>现在每个管子都有一个 0/1 状态了。但电路不是四个孤立的管子——<strong>它们被连在了一起</strong>。</p>
+<p>👉 那么,"两个管子接成一条线"和"两个管子并排接",在代数上分别意味着什么？</p>
+</div>
+
+<h2 id="s2"><span class="num">2</span>第二个观察:串起来、并起来,就是"与"、"或"</h2>
+
+<p>先不想电路,想两扇门。你要走进房间:</p>
+
+<ul>
+<li><strong>两道门串着</strong>:必须<strong>都</strong>推开才能过去。</li>
+<li><strong>两道门并排</strong>(旁边再开一个门洞):推开<strong>任一</strong>就能过去。</li>
+</ul>
+
+<p>这就是全部。把它写成符号:</p>
+
+<table>
+<thead><tr><th>接法</th><th>什么时候"通"</th><th>运算</th><th>记作</th></tr></thead>
+<tbody>
+<tr><td><strong>串联</strong></td><td>两个都通</td><td>与</td><td>$\kappa_1\wedge\kappa_2$</td></tr>
+<tr><td><strong>并联</strong></td><td>任一通</td><td>或</td><td>$\kappa_1\vee\kappa_2$</td></tr>
+</tbody>
+</table>
+
+<p>这两张运算表,你可以自己填一遍:</p>
+
+<table>
+<thead><tr><th>$\kappa_1$</th><th>$\kappa_2$</th><th>串联 $\kappa_1\wedge\kappa_2$</th><th>并联 $\kappa_1\vee\kappa_2$</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td>0</td><td>1</td><td>0</td><td>1</td></tr>
+<tr><td>1</td><td>0</td><td>0</td><td>1</td></tr>
+<tr><td>1</td><td>1</td><td><strong>1</strong></td><td>1</td></tr>
+</tbody>
+</table>
+
+<div class="obs">
+<span class="lbl">观察 2</span>
+<p>把这两张表和你在数学里熟悉的乘法、加法对一下:</p>
+<table style="margin:10px 0 0">
+<thead><tr><th></th><th>数学里</th><th>这里</th><th>差在哪</th></tr></thead>
+<tbody>
+<tr><td>串联像</td><td>$1\times1=1$</td><td>$1\wedge1=1$</td><td><strong>完全一样</strong></td></tr>
+<tr><td>并联像</td><td>$1+1=2$</td><td>$1\vee1=1$</td><td><strong>只差这一行</strong></td></tr>
+</tbody>
+</table>
+<p style="margin-top:10px">所以 $\wedge$ 就是普通乘法,$\vee$ 就是"封顶在 1 的加法"。<strong>整个新代数,只有这一处和你的数学不一样。</strong></p>
+</div>
+
+<p class="small">顺带:因为只有 0 和 1,$\bar{x}$ 也可以写成算术式 $\bar{x}=1-x$。这个小事第九章会变得很重要。</p>
+
+<div class="q">
+<span class="lbl">留给第 3 章</span>
+<p>好,现在我们会算"一段通路通不通"了。但 $Y$ 并不在某条通路上——它是<strong>节点</strong>。</p>
+<p>👉 一个<strong>节点</strong>的值,是由什么决定的？</p>
+</div>
+
+<h2 id="s3"><span class="num">3</span>第三个观察:输出是"抢"出来的</h2>
+
+<p>这一步是整份讲义的关键跳跃。<strong>不要想"计算",想"抢地盘"。</strong></p>
+
+<div class="obs">
+<span class="lbl">观察 3</span>
+<p>在图 0 里,$Y$ 这个节点只被两个东西缠着:<strong>$V_{cc}$(值 1)</strong> 和 <strong>GND(值 0)</strong>。</p>
+<p>所以 $Y$ 的值<strong>不是算出来的,是被拉出来的</strong>:</p>
+<ul>
+<li>如果有一条全通的路径把它连到 $V_{cc}$ → 它变 <strong>1</strong></li>
+<li>如果有一条全通的路径把它连到 GND → 它变 <strong>0</strong></li>
+</ul>
+</div>
+
+<p>于是查 $Y$ 的值,变成查一件事:<strong>有没有一条路走得通?</strong></p>
+
+<p>图 0 里有几条候选路径?</p>
+
+<table>
+<thead><tr><th>方向</th><th>路径</th><th>什么时候通</th></tr></thead>
+<tbody>
+<tr><td>$V_{cc}\to Y$</td><td>$V_{cc}{-}P_1{-}P_2{-}Y$</td><td>$P_1$ 与 $P_2$ <strong>同时</strong>通 → $\bar{A}\wedge\bar{B}$</td></tr>
+<tr><td>$Y\to$ GND</td><td>$Y{-}N_1{-}$GND</td><td>$N_1$ 通 → $A$</td></tr>
+<tr><td>$Y\to$ GND</td><td>$Y{-}N_2{-}$GND</td><td>$N_2$ 通 → $B$</td></tr>
+</tbody>
+</table>
+
+<p>现在做一件很小的事:把"通不通"记成一个是非判断。</p>
+
+$$\text{上拉通?}=\bar{A}\bar{B},\qquad \text{下拉通?}=A\vee B$$
+
+并且注意到:<strong>它俩不可能同时为真</strong>(你可以逐行验一下,四行都成立)。所以:</p>
+
+$$Y=\begin{cases}1,&\text{上拉通}\\[2pt]0,&\text{下拉通}\end{cases}\qquad\Longrightarrow\qquad Y=\bar{A}\bar{B}$$
+
+<p>再补一步:<strong>$A\vee B$ 的反,恰好就是 $\bar{A}\bar{B}$</strong>。所以</p>
+
+$$Y=\overline{A\vee B}\qquad\Longleftarrow\ \textbf{NOR}$$
+
+<p>到这里,你不是"看出来"的,你是<strong>查通路查出来</strong>的。</p>
+
+<div class="box key">
+  <span class="lbl">顺便:德摩根律突然变得物理了</span>
+  <p>教科书里 $\overline{A\vee B}=\bar{A}\bar{B}$ 是一条要背的公式。但在这里它是一句大白话:</p>
+  <p><strong>下拉那边"并联"(任通),翻到上拉这边就成了"串联"(全通)。</strong></p>
+  <p>这不是数学技巧,这是两条网络互为"对偶"的物理事实。第十章还会再遇到它。</p>
+</div>
+
+<div class="q">
+<span class="lbl">留给第 4 章</span>
+<p>我们只用了"查路径"这一招就得到了结论,一个真值表都没列。</p>
+<p>👉 那<strong>真值表还有用吗？如果输入从 2 个变成 20 个,我们刚才那招还work吗？</strong></p>
+</div>
+
+<h2 id="s4"><span class="num">4</span>从图到表,从表到式</h2>
+
+<p>先<strong>自己</strong>把真值表列一遍——不是为了求答案,是为了给第 3 章的结论做对照。拿一张纸,四列输入、七列量:</p>
+
+<table>
+<thead><tr><th>$A$</th><th>$B$</th><th>$\bar{A}$</th><th>$\bar{B}$</th><th>上拉 $\bar{A}\bar{B}$</th><th>下拉 $A\vee B$</th><th>$Y$</th></tr></thead>
+<tbody>
+<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+</tbody>
+</table>
+
+<details style="background:#f7f8fa;border:1px solid #e2e2e6;border-radius:10px;padding:12px 18px;margin:14px 0">
+<summary style="cursor:pointer;font-weight:600;color:#0f766e">填完再点开对答案</summary>
+<table style="margin-top:12px">
+<thead><tr><th>$A$</th><th>$B$</th><th>$\bar{A}$</th><th>$\bar{B}$</th><th>上拉</th><th>下拉</th><th>$Y$</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>0</td><td>1</td><td>1</td><td><strong>1</strong></td><td>0</td><td><strong>1</strong></td></tr>
+<tr><td>0</td><td>1</td><td>1</td><td>0</td><td>0</td><td><strong>1</strong></td><td><strong>0</strong></td></tr>
+<tr><td>1</td><td>0</td><td>0</td><td>1</td><td>0</td><td><strong>1</strong></td><td><strong>0</strong></td></tr>
+<tr><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td><strong>1</strong></td><td><strong>0</strong></td></tr>
+</tbody>
+</table>
+<p style="margin-top:10px">注意最后两列:<strong>上拉和下拉,永远一个 1 一个 0</strong>——从不同时成立。这就是第 9 章那条纪律在这里的第一次露头。</p>
+</details>
+
+<p>现在关键的一问来了。<strong>这张表有多少行?</strong></p>
+
+<table>
+<thead><tr><th>输入个数 $n$</th><th>真值表行数 $2^n$</th><th>感觉</th></tr></thead>
+<tbody>
+<tr><td>2</td><td>4</td><td>随便列</td></tr>
+<tr><td>10</td><td>1,024</td><td>能写,但看不过来</td></tr>
+<tr><td>20</td><td>1,048,576</td><td>手写废了</td></tr>
+<tr><td>64(一个加法器)</td><td>$\approx 1.8\times10^{19}$</td><td>宇宙级</td></tr>
+</tbody>
+</table>
+
+<div class="obs">
+<span class="lbl">观察 4</span>
+<p>真值表的大小是<strong>指数的</strong>。而图 0 那个公式 $\bar{A}\bar{B}$ <strong>只有 4 个字符,完全不变</strong>。</p>
+<p>所以:<strong>公式是"压缩",真值表是"展开"。压缩的那个才是可扩展的表示。</strong></p>
+</div>
+
+<div class="q">
+<span class="lbl">留给第 5 章</span>
+<p>好,$Y=\bar{A}\bar{B}$ 只要一行就写完了。</p>
+<p>👉 但那四个 $\kappa$($\bar{A},\bar{B},A,B$)本身呢?它们是"凭常识填的"还是有规律的？</p>
+</div>
+
+<h2 id="s5"><span class="num">5</span>那 κ 从哪来？</h2>
+
+<p>回头看你第 1 章填的那张表:</p>
+
+<table>
+<thead><tr><th>管子</th><th>$\kappa$</th><th>用图形描述</th></tr></thead>
+<tbody>
+<tr><td>$P_1$</td><td>$\bar{A}$</td><td>看 $A$,取反</td></tr>
+<tr><td>$P_2$</td><td>$\bar{B}$</td><td>看 $B$,取反</td></tr>
+<tr><td>$N_1$</td><td>$A$</td><td>看 $A$</td></tr>
+<tr><td>$N_2$</td><td>$B$</td><td>看 $B$</td></tr>
+</tbody>
+</table>
+
+<p>用一个向量把输入打包:$\vec{s}=\begin{bmatrix}A\\B\end{bmatrix}$,把四个 $\kappa$ 打包成 $\vec{\kappa}$。</p>
+
+<p>第二章末尾留了一句小事:$\bar{x}=1-x$。用它就能把 $\vec{\kappa}$ 写成<strong>一个矩阵乘一个向量,再加一个常数</strong>:</p>
+
+$$\vec{\kappa}=\begin{bmatrix}\bar{A}\\ \bar{B}\\ A\\ B\end{bmatrix}=\underbrace{\begin{bmatrix}1&0\\0&1\\1&0\\0&1\end{bmatrix}}_{M}\begin{bmatrix}A\\B\end{bmatrix}\ \oplus\ \begin{bmatrix}1\\1\\0\\0\end{bmatrix}$$
+
+<p class="small">（这里的 $\oplus$ 表示"模 2 加":$1\oplus1=0$。因为 $1+\bar{\ }$ 会溢出,得绕回来。）</p>
+
+<p>验一条:取 $A=1,B=0$。</p>
+
+$$\begin{bmatrix}1&0\\0&1\\1&0\\0&1\end{bmatrix}\begin{bmatrix}1\\0\end{bmatrix}=\begin{bmatrix}1\\0\\1\\0\end{bmatrix},\qquad \begin{bmatrix}1\\0\\1\\0\end{bmatrix}\oplus\begin{bmatrix}1\\1\\0\\0\end{bmatrix}=\begin{bmatrix}0\\1\\1\\0\end{bmatrix}$$
+
+<p>读出来:$P_1=0$(断)、$P_2=1$(通)、$N_1=1$(通)、$N_2=0$(断)。和第 3 章的路径判断完全一致。</p>
+
+<div class="q">
+<span class="lbl">留给第 6 章</span>
+<p>一个 8 个数字的矩阵,就编码了四个管子的全部行为。</p>
+<p>👉 那<strong>这 8 个数字到底是什么</strong>?它们为什么长这个样子？</p>
+</div>
+
+<h2 id="s6"><span class="num">6</span>矩阵背后是连线图</h2>
+
+<p>把 $M$ 一行一行读出来:</p>
+
+$$M=\begin{bmatrix}1&0\\0&1\\1&0\\0&1\end{bmatrix}\quad\Longrightarrow\quad\begin{array}{l}P_1\text{ 由 }A\text{ 控制}\\P_2\text{ 由 }B\text{ 控制}\\N_1\text{ 由 }A\text{ 控制}\\N_2\text{ 由 }B\text{ 控制}\end{array}$$
+
+<div class="obs">
+<span class="lbl">观察 6</span>
+<p>$M$ 里<strong>没有电路本身的信息</strong>——它只说"谁受谁控制",完全没说"谁和谁相连"。</p>
+<p>换句话说:$M$ 编码了<strong>栅极连线</strong>,但没编码<strong>沟道连线</strong>。</p>
+</div>
+
+<p>这两件事是分开的,而且第二件才是决定功能的那一半。举个小实验:</p>
+
+<table>
+<thead><tr><th>如果我把 $P_1,P_2$ 从"串联"改成"并联"</th><th>会发生什么</th></tr></thead>
+<tbody>
+<tr><td>$M$ 变了吗?</td><td><strong>没变</strong>——还是那 8 个数字</td></tr>
+<tr><td>功能变了吗?</td><td><strong>变了</strong>——上拉条件从 $\bar{A}\bar{B}$ 变成 $\bar{A}\vee\bar{B}$</td></tr>
+</tbody>
+</table>
+
+<div class="q">
+<span class="lbl">留给第 7 章</span>
+<p>所以缺的那一半信息,必须单独写出来。</p>
+<p>👉 "<strong>谁和谁相连</strong>"这件事,能用矩阵表示吗？</p>
+</div>
+
+<h2 id="s7"><span class="num">7</span>拓扑的另一半：邻接矩阵</h2>
+
+<p>能。而且你在图论里见过这个东西。</p>
+
+<p>把每个"导线交汇处"编个号。图 0 里只有三个:</p>
+
+$$1=V_{cc},\qquad 2=Y,\qquad 3=\mathrm{GND}$$
+
+<p>然后造一张"谁和谁挨着"的表——这正是<strong>邻接矩阵</strong>:</p>
+
+$$C=\begin{array}{c|ccc} & 1 & 2 & 3\\\hline 1 & 0 & ? & 0\\ 2 & ? & 0 & ?\\ 3 & 0 & ? & 0\end{array}$$
+
+<p>填问号的地方,填的不是 1,而是"<strong>这一格对应的那条通路,此刻通不通</strong>"——也就是第 2 章的 $\wedge,\vee$:</p>
+
+$$C=\begin{array}{c|ccc} & V_{cc} & Y & \mathrm{GND}\\\hline V_{cc} & 0 & \bar{A}\bar{B} & 0\\ Y & \bar{A}\bar{B} & 0 & A\vee B\\ \mathrm{GND} & 0 & A\vee B & 0\end{array}$$
+
+<p>读第二行:$Y$ 只和 $V_{cc}$、GND 两个节点相邻,而"通不通"分别是上拉、下拉的条件。</p>
+
+<p>于是第 3 章那句大白话,变成了一个矩阵式子:</p>
+
+$$Y=C[Y][V_{cc}]\cdot 1\ \vee\ C[Y][\mathrm{GND}]\cdot 0=(\bar{A}\bar{B})\vee(A\vee B)\cdot 0=\bar{A}\bar{B}$$
+
+<div class="box key">
+  <span class="lbl">两半拼起来了</span>
+  <p>你现在有了一个完整的三段式:</p>
+  <ol style="margin:8px 0 0">
+    <li>$\vec{\kappa}=M\vec{s}\oplus\vec{c}$ &nbsp;—&nbsp; 管子状态(<strong>随输入变</strong>)</li>
+    <li>$C=\bigvee_d(\kappa_d\wedge E_d)$ &nbsp;—&nbsp; 连接关系(<strong>永不改变</strong>)</li>
+    <li>$Y=\bigvee_x C[Y][x]\wedge\mathrm{val}(x)$ &nbsp;—&nbsp; 输出取值</li>
+  </ol>
+  <p style="margin-top:10px">这正是讲义一第 5 章的三行公式。<strong>你是从"谁挨着谁"这个问题自己走到的。</strong></p>
+</div>
+
+<div class="q">
+<span class="lbl">留给第 8 章</span>
+<p>$C$ 只回答了"<strong>一跳</strong>能不能到"。但这个电路里每对节点之间都只有一跳,所以我们侥幸过关了。</p>
+<p>👉 要是有个电路,$V_{cc}$ 到 $Y$ 中间隔着<strong>三层</strong>管子呢？或者——<strong>$Y$ 同时被上拉和下拉连上呢？</strong></p>
+</div>
+
+<h2 id="s8"><span class="num">8</span>三种命运：良构、浮空、冲突</h2>
+
+<p>第 3 章我们默认了一件事:<strong>上拉和下拉不会同时成立</strong>。当时我们"逐行验了一下"。现在把它变成一条判据。</p>
+
+<p>对 $Y$ 来说,此刻能给它"定值"的节点有几个?记成集合 $\mathcal{D}$:</p>
+
+<table>
+<thead><tr><th>$|\mathcal{D}|$</th><th>物理上</th><th>名字</th><th>后果</th></tr></thead>
+<tbody>
+<tr><td><strong>1</strong></td><td>只有一个来源在拉</td><td style="color:#1a7f45"><strong>良构</strong></td><td>电平确定,正常工作</td></tr>
+<tr><td><strong>0</strong></td><td>没人拉</td><td style="color:#b3261e"><strong>浮空</strong></td><td>高阻,值取决于上次是什么(<strong>看历史</strong>)</td></tr>
+<tr><td><strong>≥2</strong></td><td>两个来源对拉</td><td style="color:#b3261e"><strong>冲突</strong></td><td><strong>V<sub>cc</sub> 直接短路到 GND!</strong>发热、甚至烧毁</td></tr>
+</tbody>
+</table>
+
+<p>回到图 0,验四种输入:</p>
+
+<table>
+<thead><tr><th>$A$</th><th>$B$</th><th>上拉 $\bar{A}\bar{B}$</th><th>下拉 $A\vee B$</th><th>$|\mathcal{D}|$</th><th>判定</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>0</td><td>1</td><td>0</td><td>1</td><td style="color:#1a7f45">✓ 良构</td></tr>
+<tr><td>0</td><td>1</td><td>0</td><td>1</td><td>1</td><td style="color:#1a7f45">✓ 良构</td></tr>
+<tr><td>1</td><td>0</td><td>0</td><td>1</td><td>1</td><td style="color:#1a7f45">✓ 良构</td></tr>
+<tr><td>1</td><td>1</td><td>0</td><td>1</td><td>1</td><td style="color:#1a7f45">✓ 良构</td></tr>
+</tbody>
+</table>
+
+<p>四行全是 1。<strong>这意味着这个电路不是"碰巧对",而是"结构上不可能错"。</strong></p>
+
+<div class="box key">
+  <span class="lbl">这才是形式化最值钱的东西</span>
+  <p>真值表验的是<strong>四种情况</strong>;这个判据验的是<strong>所有情况</strong>。前者是抽样,后者是证明。</p>
+</div>
+
+<div class="q">
+<span class="lbl">留给第 9 章</span>
+<p>但为什么四行都这么顺?巧合吗?</p>
+<p>👉 图 0 的电路在设计上<strong>遵守了某条纪律</strong>。那条纪律是什么?如果我不遵守会怎样？</p>
+</div>
+
+<h2 id="s9"><span class="num">9</span>互补为什么这么妙</h2>
+
+<p>那条纪律就在你第 1 章那张表里,只是当时看不出来:</p>
+
+<table>
+<thead><tr><th>管子</th><th>$\kappa$</th><th>搭档的 $\kappa$</th><th>$\kappa_1\wedge\kappa_2$</th><th>$\kappa_1\vee\kappa_2$</th></tr></thead>
+<tbody>
+<tr><td>$P_1$ / $N_1$(都接 $A$)</td><td>$\bar{A}$</td><td>$A$</td><td><strong>0</strong></td><td><strong>1</strong></td></tr>
+<tr><td>$P_2$ / $N_2$(都接 $B$)</td><td>$\bar{B}$</td><td>$B$</td><td><strong>0</strong></td><td><strong>1</strong></td></tr>
+</tbody>
+</table>
+
+<div class="obs">
+<span class="lbl">观察 9</span>
+<p>每一对"栅极相同的 P 管和 N 管",它们的 $\kappa$ <strong>永远互补</strong>:一个通,另一个必断。</p>
+<p>结果是:上拉网络和下拉网络也互补——<strong>只要上拉通,下拉必不通</strong>。所以冲突（$|\mathcal{D}|\ge2$）从结构上被排除了。</p>
+</div>
+
+<p>这就是 <strong>互补 CMOS</strong>(complementary CMOS)那个"complementary"的全部含义。它不是名字,是<strong>一条纪律</strong>:</p>
+
+$$\boxed{\ f_{\text{上拉}}=\overline{f_{\text{下拉}}}\ }$$
+
+<p>而这条纪律,恰好又给了你第 3 章那个"对偶"的来源:上拉怎么写,下拉就取反。</p>
+
+<div class="q">
+<span class="lbl">留给第 10 章</span>
+<p>好,只要遵守这条纪律,一切都很美。</p>
+<p>👉 但如果有一天,你看到一个电路里<strong>某个 PMOS 的源极不是接 $V_{cc}$,而是接在另一条信号线上</strong>——那时第 1 章那句"$\kappa_P=\bar{g}$"还成立吗？</p>
+</div>
+
+<h2 id="s10"><span class="num">10</span>裂缝:源极不是电源</h2>
+
+<p>看一个真实的例子。这是讲义一图 1 里那个 6 管异或门的一个片段:</p>
+
+<div class="fig">
+<svg viewBox="0 0 560 260" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:520px">
+  <g font-family="-apple-system,Segoe UI,Noto Sans CJK SC,sans-serif" fill="#1c1c1e">
+  <line x1="60" y1="60" x2="380" y2="60" stroke="#1c1c1e" stroke-width="2.2"/>
+  <text x="54" y="48" font-size="14" fill="#6b6b70">这是一条信号线,不是电源!</text>
+  <text x="392" y="52" font-size="16" font-weight="600">A</text>
+  <circle cx="300" cy="60" r="4.5" fill="#1c1c1e"/>
+  <line x1="300" y1="60" x2="300" y2="120" stroke="#1c1c1e" stroke-width="2.2"/>
+  <line x1="300" y1="120" x2="300" y2="180" stroke="#1c1c1e" stroke-width="7" stroke-linecap="butt"/>
+  <line x1="289" y1="132" x2="289" y2="168" stroke="#1c1c1e" stroke-width="2.6"/>
+  <circle cx="283" cy="150" r="6" fill="#fff" stroke="#1c1c1e" stroke-width="1.9"/>
+  <line x1="277" y1="150" x2="190" y2="150" stroke="#1c1c1e" stroke-width="2.2"/>
+  <text x="180" y="156" text-anchor="end" font-size="17" font-weight="600">B</text>
+  <text x="318" y="155" font-size="16" font-weight="600">P2</text>
+  <line x1="300" y1="180" x2="300" y2="215" stroke="#1c1c1e" stroke-width="2.2"/>
+  <circle cx="300" cy="215" r="4.5" fill="#1c1c1e"/>
+  <line x1="300" y1="215" x2="430" y2="215" stroke="#1c1c1e" stroke-width="2.2"/>
+  <text x="442" y="221" font-size="17" font-weight="700">Y</text>
+  </g>
+</svg>
+<div class="cap">图 1　一个 PMOS,栅极接 $B$,<strong>但源极接在信号 $A$ 上</strong>。</div>
+</div>
+
+<p>现在认真问第 1 章那个问题:<strong>它什么时候通?</strong></p>
+
+<p>严格的判据不是"栅极=0",而是<strong>栅源电压</strong>:</p>
+
+$$V_{gs}=V_g-V_s=B-A\ \le\ -|V_t|\quad\Longrightarrow\quad B=0\ \textbf{且}\ A=1$$
+
+<div class="obs">
+<span class="lbl">观察 10</span>
+<p>同一个管子,栅极 $B$ 一直是 0。但当 $A=0$ 时它<strong>不通</strong>,$A=1$ 时它<strong>通</strong>。</p>
+<p>也就是说:<strong>$\kappa$ 不再只由栅极决定,而由"栅极 + 数据"共同决定。</strong></p>
+</div>
+
+<p>把它写出来:</p>
+
+$$\kappa_{P_2}=\bar{B}\ \text{(第 1 章的答案)}\qquad\longrightarrow\qquad \kappa_{P_2}=A\bar{B}\ \text{(真实答案)}$$
+
+<p>多出了一个 $A$。<strong>$\kappa$ 从"输入的一次式"变成了"输入的乘积式"。</strong></p>
+
+<div class="box err">
+  <span class="lbl">这就是那道裂缝</span>
+  <p>第 5 章那个漂亮的 $\vec{\kappa}=M\vec{s}\oplus\vec{c}$ ——<strong>在这里失效了</strong>。因为矩阵乘法只能产生输入的一次组合,产生不了 $A\bar{B}$ 这种乘积。</p>
+  <p>而这一步失效,正是讲义一第 8 章的主题,也是讲义二第 5 章那张表里那个 ❌ 的来源。</p>
+</div>
+
+<div class="q">
+<span class="lbl">通向讲义一</span>
+<p>但注意:失效的只是"$\kappa$ 怎么算"这一步。<strong>后面两步照样成立</strong>——我们仍然可以查通路($C$)、仍然可以查良构性($\mathcal{D}$)。</p>
+<p>👉 所以我们不用推翻这套工具,只需要<strong>把第 5 章那一格换掉</strong>。</p>
+<p>这件事——以及"换掉之后整个理论还剩下多少"——就是讲义一要讲的全部内容。</p>
+</div>
+
+<h2 id="s11"><span class="num">11</span>复盘:这条链是怎么长出来的</h2>
+
+<p>把十步的"观察 → 问题"排成一张表。你会发现<strong>每一步的问题,都是下一步的标题</strong>:</p>
+
+<table>
+<thead><tr><th>#</th><th>这一章的观察</th><th>留下的问题</th><th>答案在哪</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>管子只有通/断两态,由栅极决定</td><td>两个管子接在一起会怎样?</td><td>第 2 章</td></tr>
+<tr><td>2</td><td>串联 = $\wedge$,并联 = $\vee$(只差 $1+1$ 那一行)</td><td>节点的值由什么决定?</td><td>第 3 章</td></tr>
+<tr><td>3</td><td>节点是被"抢"出来的 → <strong>查通路</strong></td><td>输入多了还用查表吗?</td><td>第 4 章</td></tr>
+<tr><td>4</td><td>公式是压缩,真值表是指数展开</td><td>$\kappa$ 本身有规律吗?</td><td>第 5 章</td></tr>
+<tr><td>5</td><td>$\vec{\kappa}=M\vec{s}\oplus\vec{c}$,一个 4×2 矩阵够了</td><td>这 8 个数字是什么?</td><td>第 6 章</td></tr>
+<tr><td>6</td><td>$M$ 只编码栅极连线,缺了沟道连线</td><td>"谁挨着谁"能写成矩阵吗?</td><td>第 7 章</td></tr>
+<tr><td>7</td><td>邻接矩阵 $C$:拓扑永不改变,可复用</td><td>通路有三跳呢?两源对拉呢?</td><td>第 8 章</td></tr>
+<tr><td>8</td><td>$|\mathcal{D}|=1$ 良构 / $0$ 浮空 / $\ge2$ 冲突</td><td>为什么这里四种情况都良构?</td><td>第 9 章</td></tr>
+<tr><td>9</td><td>互补纪律:$f_{\text{上拉}}=\overline{f_{\text{下拉}}}$</td><td>源极不接电源时会怎样?</td><td>第 10 章</td></tr>
+<tr><td>10</td><td>$\kappa$ 变成乘积式,矩阵失效</td><td>那整套工具还剩下多少?</td><td><strong>讲义一</strong></td></tr>
+</tbody>
+</table>
+
+<div class="box note">
+  <span class="lbl">你其实已经自己走到了讲义一</span>
+  <p>对照一下讲义一的目录:</p>
+  <table style="margin:10px 0 0">
+  <thead><tr><th>讲义一的章</th><th>你在这里的第几步走到的</th></tr></thead>
+  <tbody>
+  <tr><td>第 1 章 三条翻译规则</td><td>第 1–2 章</td></tr>
+  <tr><td>第 2 章 NOR 的例子</td><td><strong>第 3 章</strong></td></tr>
+  <tr><td>第 3–4 章 矩阵与代数</td><td>第 5 章</td></tr>
+  <tr><td>第 5–6 章 拓扑矩阵与闭包</td><td><strong>第 7 章</strong></td></tr>
+  <tr><td>第 9 章 良构性判据</td><td><strong>第 8 章</strong></td></tr>
+  <tr><td>第 8 章 线性在哪里断掉</td><td><strong>第 10 章</strong></td></tr>
+  </tbody>
+  </table>
+  <p style="margin-top:10px">唯一的差别是:<strong>讲义一给的是定义、证明和判据;这里给的是观察、猜测和直觉。</strong> 而后者才是前者存在的理由。</p>
+</div>
+
+<hr>
+
+<h3>接下来读什么</h3>
+
+<table>
+<thead><tr><th>如果你想…</th><th>读</th></tr></thead>
+<tbody>
+<tr><td>把这套东西写成严格的矩阵与判据,并能证明"结构上不会错"</td><td><a href="formal-analysis.html"><strong>讲义一 · 从电路到代数</strong></a></td></tr>
+<tr><td>反过来问:给定逻辑,能不能自动造出电路、能不能求最少管数</td><td><a href="synthesis-inverse.html"><strong>讲义二 · 从代数到电路</strong></a></td></tr>
+</tbody>
+</table>
+
+<hr>
+
+<h3>两道热身题(读完第 3 章就能做)</h3>
+
+<p><strong>题 1</strong>　把图 0 里的 $P_1,P_2$ 从串联改成<strong>并联</strong>($N_1,N_2$ 不动),新的 $Y$ 是什么函数？</p>
+<details style="background:#f7f8fa;border:1px solid #e2e2e6;border-radius:10px;padding:12px 18px;margin:14px 0">
+<summary style="cursor:pointer;font-weight:600;color:#0f766e">答案</summary>
+<p style="margin-top:10px">上拉条件变成 $\bar{A}\vee\bar{B}$(并:任一通),下拉仍是 $A\vee B$。</p>
+<p>两者还互斥吗?$\bar{A}\vee\bar{B}=\overline{AB}$,而 $A\vee B$ 的反是 $\bar{A}\bar{B}$ ——<strong>不再互斥</strong>!例如 $A=1,B=0$ 时,上拉通($\bar{B}=1$),下拉也通($A=1$)。</p>
+<p>所以这个电路在 $A\ne B$ 时会<strong>冲突</strong>(V<sub>cc</sub> 直通 GND)。它不是一个合法门。</p>
+<p><strong>这一题就是第 9 章那条纪律的反例:串联/并联必须在上拉和下拉之间"对偶",否则会短路。</strong></p>
+</details>
+
+<p><strong>题 2</strong>　一个三输入门,下拉网络是"$A$ 与 $B$ 串联,再与 $C$ 并联"。写出 $f_{\text{下拉}}$、$f_{\text{上拉}}$ 和 $Y$。</p>
+<details style="background:#f7f8fa;border:1px solid #e2e2e6;border-radius:10px;padding:12px 18px;margin:14px 0">
+<summary style="cursor:pointer;font-weight:600;color:#0f766e">答案</summary>
+<p style="margin-top:10px">$f_{\text{下拉}}=AB\vee C$</p>
+<p>$f_{\text{上拉}}=\overline{AB\vee C}=(\bar{A}\vee\bar{B})\bar{C}$ —— 物理上就是"$P_A$ 与 $P_B$ 并联,再与 $P_C$ 串联"(对偶)。</p>
+<p>$Y=\overline{AB\vee C}$。这是一个 AOI21 门,共 3 个 NMOS + 3 个 PMOS = <strong>6 个晶体管</strong>。</p>
+<p class="small">讲义二第 3 章会用它当例子。</p>
+</details>
+
+<hr>
+
+<p class="small center" style="margin-top:40px">
+<strong>观察 → 提问 → 观察</strong><br>
+形式化不是从定义开始的,它是从"一个说不清但看着对的直觉"被追问到底之后长出来的。
+</p>
+
+</div>
+</body>
+</html>

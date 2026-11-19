@@ -1,0 +1,13 @@
+# 生成的输出
+out/
+cands/
+obj_dir/
+*.obj/
+__pycache__/
+*.pyc
+
+# 编辑器 / 系统
+.DS_Store
+.vscode/
+.idea/
+*.swp
