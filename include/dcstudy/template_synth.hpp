@@ -10,13 +10,21 @@
 
 namespace dcstudy {
 
-struct TemplateEdge {
-  int from = 0;
-  int to = 0;
+struct EdgeChoice {
   SwKind kind = SwKind::TGH;
   std::string lit;
   bool strong = false;
   int cost = 0;
+};
+
+struct TemplateEdge {
+  int from = 0;
+  int to = 0;
+  SwKind kind = SwKind::TGH;   // fallback if choices is empty
+  std::string lit;
+  bool strong = false;
+  int cost = 0;
+  std::vector<EdgeChoice> choices;
 };
 
 struct NetworkTemplate {
@@ -36,6 +44,7 @@ struct TemplateResult {
   int edge_cost = 0;
   int inverter_cost = 0;
   std::vector<int> selected_edges;
+  std::vector<int> selected_choices;  // -1 if an edge is not selected
   SwitchGraph graph;
 };
 

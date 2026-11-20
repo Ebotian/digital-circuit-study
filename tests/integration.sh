@@ -147,6 +147,9 @@ JSON
 [ "$(jq -r .verified "$TMP/mpath.json")" = "true" ] || fail "multi-output path verification"
 [ "$(jq -r '.outputs | length' "$TMP/mpath.json")" = "2" ] || fail "multi-output path output count"
 [ "$(jq -r .proof "$TMP/mpath.json")" = "true" ] || fail "multi-output path proof"
+"$BIN" multi template --spec "$TMP/halfadder.json" --json > "$TMP/mtemplate.json"   || fail "multi-output template"
+[ "$(jq -r .verified "$TMP/mtemplate.json")" = "true" ] || fail "multi-output template verification"
+[ "$(jq -r .proof "$TMP/mtemplate.json")" = "true" ] || fail "multi-output template proof"
 else
   echo "skip multi-output checks (no CDL/yosys/node)"
 fi
