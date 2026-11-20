@@ -258,7 +258,24 @@ SynthesisResult synthesize_min(const std::vector<std::string>& vars,
   // Materialize the solver candidates first, then path-check the whole batch.
   // The block-diagonal C_m closure is a tensor over candidates; it is used
   // whenever more than one candidate survived the cheap behavioral check.
+  auto design_key = [&](const Design& d) {
+    if (canonical) {
+      std::string best_key;
+      for (const auto& perm : autos) {
+        std::string k = canonical_key(d, perm, vars);
+        if (best_key.empty() || k < best_key) best_key = std::move(k);
+      }
+      return best_key;
+    }
+    std::vector<std::string> parts;
+    for (const auto& b : d.branches) parts.push_back(b.topo(vars));
+    std::sort(parts.begin(), parts.end());
+    std::string key;
+    for (const auto& p : parts) key += p + "/";
+    return key;
+  };
   std::vector<Design> candidates;
+  std::set<std::string> candidate_keys;
   for (const auto& ids : sol.designs) {
     std::vector<std::size_t> selected;
     selected.reserve(ids.size());
@@ -271,7 +288,11 @@ SynthesisResult synthesize_min(const std::vector<std::string>& vars,
     if (std::adjacent_find(selected.begin(), selected.end()) != selected.end())
       throw std::runtime_error("Z3 helper returned a duplicate branch id");
     Design d = design_from_indices(branches, selected, vars);
-    if (valid_design(d, target, sol.optimum)) candidates.push_back(std::move(d));
+    if (!valid_design(d, target, sol.optimum)) continue;
+    const std::string key = design_key(d);
+    if (!candidate_keys.insert(key).second) continue;
+    d.canonical = canonical;
+    candidates.push_back(std::move(d));
   }
   std::vector<DriverProfile> profiles;
   if (candidates.size() == 1) {
@@ -281,29 +302,10 @@ SynthesisResult synthesize_min(const std::vector<std::string>& vars,
     profiles = analyze_designs_drivers_batch(candidates, vars, targets);
   }
 
-  std::set<std::string> seen;
   for (std::size_t ci = 0; ci < candidates.size(); ++ci) {
     if (ci >= profiles.size() || !profiles[ci].valid) continue;
-    Design& d = candidates[ci];
-    std::string key;
-    if (canonical) {
-      std::string best_key;
-      for (const auto& perm : autos) {
-        std::string k = canonical_key(d, perm, vars);
-        if (best_key.empty() || k < best_key) best_key = std::move(k);
-      }
-      key = best_key;
-      d.canonical = true;
-    } else {
-      std::vector<std::string> parts;
-      for (const auto& b : d.branches) parts.push_back(b.topo(vars));
-      std::sort(parts.begin(), parts.end());
-      for (const auto& p : parts) key += p + "/";
-    }
-    if (seen.insert(key).second) {
-      res.designs.push_back(std::move(d));
-      if (res.designs.size() >= max_solutions) break;
-    }
+    res.designs.push_back(std::move(candidates[ci]));
+    if (res.designs.size() >= max_solutions) break;
   }
 
   res.feasible = !res.designs.empty();
