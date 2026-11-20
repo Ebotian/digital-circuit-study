@@ -1494,6 +1494,23 @@ int cmd_multi_path(const Args& a, const MultiSpec& spec) {
       synthesize_path_variables_multi(spec.funcs, spec.names, spec.vars, opt,
                                       a.is("tri-state"));
   const bool json = a.is("json");
+  if ((!r.ok || !r.verified) && !a.is("tri-state")) {
+    const StaticExactResult s =
+        synthesize_static_exact_multi(spec.funcs, spec.names, spec.vars);
+    if (s.ok && s.verified) {
+      Json j;
+      j["ok"] = true;
+      j["command"] = "multi.path";
+      j["mode"] = "static-exact-fallback";
+      j["total"] = s.total;
+      j["gate_cost"] = s.gate_cost;
+      j["inverter_cost"] = s.inverter_cost;
+      j["proof"] = s.proof;
+      j["verified"] = s.verified;
+      std::cout << j.dump() << "\n";
+      return 0;
+    }
+  }
   if (!r.ok || !r.verified) {
     if (json) {
       Json j;

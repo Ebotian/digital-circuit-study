@@ -145,12 +145,13 @@ JSON
   "$BIN" multi path --spec "$TMP/demux4.json" --tri-state --max-cost 40 --json     > "$TMP/demux4.tri" || fail "tri-state 1-to-4 demux"
   [ "$(jq -r .total "$TMP/demux4.tri")" = "6" ] || fail "tri 1-to-4 demux 6T"
   [ "$(jq -r .verified "$TMP/demux4.tri")" = "true" ] || fail "tri 1-to-4 verification"
-  if "$BIN" multi path --spec "$TMP/demux4.json" --max-cost 40 --json     >/dev/null 2>&1; then
-    fail "1-to-4 without tri-state unexpectedly solved"
-  fi
-  if "$BIN" multi path --spec "$TMP/decoder38.json" --max-cost 54 --json     >/dev/null 2>&1; then
-    fail "3-8 without tri-state unexpectedly solved"
-  fi
+  "$BIN" multi path --spec "$TMP/demux4.json" --max-cost 40 --json     > "$TMP/demux4.static" || fail "1-to-4 static path fallback"
+  [ "$(jq -r .total "$TMP/demux4.static")" = "20" ] || fail "1-to-4 static 20T"
+  [ "$(jq -r .verified "$TMP/demux4.static")" = "true" ] || fail "1-to-4 static verification"
+  [ "$(jq -r .mode "$TMP/demux4.static")" = "static-exact-fallback" ] || fail "1-to-4 static mode"
+  "$BIN" multi path --spec "$TMP/decoder38.json" --max-cost 54 --json     > "$TMP/decoder38.static" || fail "3-8 static path fallback"
+  [ "$(jq -r .total "$TMP/decoder38.static")" = "54" ] || fail "3-8 static 54T"
+  [ "$(jq -r .verified "$TMP/decoder38.static")" = "true" ] || fail "3-8 static verification"
   [ -f "$TMP/decoder38/index.html" ] || fail "decoder render index"
   [ -f "$TMP/decoder38/scheme-0.svg" ] || fail "decoder schematic"
   pass "multi-output circuit (decoder as spec)"
