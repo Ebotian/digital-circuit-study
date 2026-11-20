@@ -53,6 +53,11 @@ fi
 [ "$(jq -r '[.designs[].verification.yosys.ok] | all' "$TMP/nand.json")" = "true" ] || fail "NAND2 proof"
 pass "minimum design + Yosys"
 
+# General path construction: BDD-derived switch DAG.
+"$BIN" design bdd --expr 'A^B' --json > "$TMP/bdd.json" || fail "BDD switch construction"
+[ "$(jq -r .verified "$TMP/bdd.json")" = "true" ] || fail "BDD switch verification"
+[ "$(jq -r '.graph.edges | length' "$TMP/bdd.json")" = "6" ] || fail "BDD edge count"
+
 # TG/NP quotient + input-automorphism orbit blocking.
 "$BIN" design min --expr 'A^B' --max-cost 6 --max-chain 3 --all --canonical \
   --limit 8 --verify none --json > "$TMP/canon.json" || fail "canonical XOR"

@@ -4,7 +4,7 @@ FILC ?= filc++
 CMAKE ?= cmake
 SOURCES := $(wildcard src/*.cpp) $(wildcard include/dcstudy/*.hpp) \
            tests/unit_tests.cpp
-FILC_SOURCES := src/main.cpp src/boolfunc.cpp src/cdl.cpp src/cmos.cpp \
+FILC_SOURCES := src/main.cpp src/bdd_switch.cpp src/boolfunc.cpp src/cdl.cpp src/cmos.cpp \
                 src/designspace.cpp src/driver_profile.cpp src/math_client.cpp \
                 src/multistage.cpp src/static_exact.cpp src/switchlevel.cpp \
                 src/synthesis.cpp \

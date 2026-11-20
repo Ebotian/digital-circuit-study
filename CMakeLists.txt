@@ -21,6 +21,7 @@ endif()
 add_library(dcstudy_core STATIC
   src/boolfunc.cpp
   src/cdl.cpp
+  src/bdd_switch.cpp
   src/cmos.cpp
   src/driver_profile.cpp
   src/static_exact.cpp

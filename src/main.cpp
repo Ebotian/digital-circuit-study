@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "dcstudy/bdd_switch.hpp"
 #include "dcstudy/boolfunc.hpp"
 #include "dcstudy/cdl.hpp"
 #include "dcstudy/cmos.hpp"
@@ -339,6 +340,7 @@ Commands:
   cdl list       [--cdl FILE]
   cdl solve      --cell NAME [--cdl FILE] [--inputs A,B] [--exact]
                  [--graphblas] [--expect BITS]
+  design bdd     --expr EXPR | --tt BITS [--vars A,B]
   design min     --expr EXPR | --tt BITS [--max-cost N] [--max-chain N]
                  [--all] [--limit N] [--canonical] [--emit DIR]
                  [--verify none|yosys|sim|both|static] [--static-cmos] [--keep]
@@ -1022,7 +1024,66 @@ int cmd_design_static(const Args& a, const FuncSpec& spec,
   return check_ok ? 0 : 1;
 }
 
+int cmd_design_bdd(const Args& a, const FuncSpec& spec) {
+  const BddSwitchDesign d = synthesize_bdd_switch(spec.func, spec.vars);
+  const bool json = a.is("json");
+  if (!d.ok || !d.verified) {
+    if (json) {
+      Json j;
+      j["ok"] = false;
+      j["command"] = "design.bdd";
+      j["reason"] = d.reason;
+      std::cout << j.dump() << "\n";
+    } else {
+      std::cerr << "design bdd failed: " << d.reason << "\n";
+    }
+    return 1;
+  }
+  Json j;
+  j["ok"] = true;
+  j["command"] = "design.bdd";
+  j["model"] = "BDD-derived switch DAG";
+  j["total"] = d.total;
+  j["nodes"] = d.nodes;
+  j["inverters"] = d.inverters;
+  j["verified"] = d.verified;
+  j["truth"] = d.truths.empty() ? "" : d.truths[0];
+  Json graph;
+  Json nets = Json::Array{};
+  for (const auto& n : d.graph.nets) nets.push_back(n);
+  graph["nets"] = std::move(nets);
+  Json edges = Json::Array{};
+  for (const auto& e : d.graph.edges) {
+    Json ej;
+    ej["from"] = e.from;
+    ej["to"] = e.to;
+    ej["kind"] = switch_name(e.kind);
+    ej["lit"] = e.lit;
+    ej["strong"] = e.strong;
+    edges.push_back(std::move(ej));
+  }
+  graph["edges"] = std::move(edges);
+  Json sources = Json::Array{};
+  for (int s : d.graph.source_ids) sources.push_back(s);
+  graph["sources"] = std::move(sources);
+  graph["output"] = d.graph.output;
+  j["graph"] = std::move(graph);
+  if (json) {
+    std::cout << j.dump() << "\n";
+  } else {
+    std::cout << "BDD switch DAG: " << d.total << "T\n";
+    std::cout << "  nodes=" << d.nodes << "  input inverters="
+              << d.inverters << "\n";
+    std::cout << "  switch-level drivers: PASS\n";
+  }
+  return 0;
+}
+
 int cmd_design(const std::string& sub, int argc, char** argv) {
+  if (sub == "bdd") {
+    const Args a = parse_args(argc, argv, 3);
+    return cmd_design_bdd(a, get_spec(a));
+  }
   if (sub != "min") throw CliError("unknown design subcommand: " + sub);
   const Args a = parse_args(argc, argv, 3);
   const bool json = a.is("json");
