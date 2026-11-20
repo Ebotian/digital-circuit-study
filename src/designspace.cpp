@@ -253,6 +253,14 @@ std::vector<Branch> build_branches(const std::vector<std::string>& vars,
     std::uint32_t base_req = 0;
     if (src != "0" && src != "1") base_req = req_of(e, src);
     for (const auto& chain : chains) {
+      // A single transmission gate is exactly an N/P pair from the same
+      // source.  Keep the atomic N/P representation as canonical and reserve
+      // TGL/TGH for series chains, where expanding would duplicate the prefix
+      // and change cost.  This removes the TG-vs-pair encoding duality at the
+      // source of the design space.
+      if (chain.size() == 1 &&
+          (chain[0].kind == SwKind::TGL || chain[0].kind == SwKind::TGH))
+        continue;
       Branch br;
       br.source = src;
       br.chain = chain;

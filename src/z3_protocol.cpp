@@ -73,6 +73,13 @@ Json encode_synth_problem(const SynthProblem& p) {
     covers.push_back(std::move(ids));
   }
   j["covers"] = std::move(covers);
+  Json syms = Json::Array{};
+  for (const auto& sym : p.symmetries) {
+    Json a = Json::Array{};
+    for (int v : sym) a.push_back(v);
+    syms.push_back(std::move(a));
+  }
+  j["symmetries"] = std::move(syms);
   return j;
 }
 
@@ -100,6 +107,18 @@ SynthProblem decode_synth_problem(const Json& j) {
   }
   if (p.costs.size() != p.req.size())
     throw std::runtime_error("protocol: cost/req size mismatch");
+  if (j.contains("symmetries")) {
+    const Json& syms = j.at("symmetries");
+    if (!syms.is_array()) throw std::runtime_error("protocol: symmetries must be an array");
+    for (const auto& a : syms.array()) {
+      if (!a.is_array()) throw std::runtime_error("protocol: symmetry must be an array");
+      std::vector<int> sym;
+      for (const auto& v : a.array()) sym.push_back(static_cast<int>(v.as_int()));
+      if (sym.size() != p.costs.size())
+        throw std::runtime_error("protocol: symmetry size mismatch");
+      p.symmetries.push_back(std::move(sym));
+    }
+  }
   if (p.n_rows < 1 || p.n_inverters < 0 || p.limit < 1)
     throw std::runtime_error("protocol: bad synthesis dimensions");
   return p;

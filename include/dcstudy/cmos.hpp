@@ -12,6 +12,7 @@
 
 #include "dcstudy/bits.hpp"
 #include "dcstudy/boolfunc.hpp"
+#include "dcstudy/cdl.hpp"
 
 namespace dcstudy {
 
@@ -45,5 +46,15 @@ struct CmosDesign {
 };
 
 CmosDesign synthesize_cmos(const BoolFunc& f, const std::vector<std::string>& vars);
+
+// PUN as the De-Morgan dual of the PDN: product over PDN terms of the OR of
+// complemented literals.  This is a product-of-sums, not a Sop.
+std::string pull_up_expression(const CmosDesign& d,
+                               const std::vector<std::string>& vars);
+
+// Transistor-level single-stage complementary CMOS netlist (PDN + PUN).
+// Inputs are the positive variables; output is Y; supplies are VDD/VSS.
+Subckt build_static_cmos_subckt(const CmosDesign& d,
+                                const std::vector<std::string>& vars);
 
 }  // namespace dcstudy

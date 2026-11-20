@@ -33,6 +33,9 @@ class BoolFunc {
 
   // Monotone increasing: x <= y (bitwise) implies f(x) <= f(y).
   bool is_monotone() const;
+  // ANF-affine (XOR/XNOR are affine). This is NOT the kappa-linearity
+  // criterion used for static complementary CMOS.
+  bool is_anf_affine() const;
   bool is_self_dual() const;
   BoolFunc dual() const;  // f*(x) = !f(!x)
 

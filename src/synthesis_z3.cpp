@@ -158,8 +158,35 @@ SynthSolution z3_solve_synth(const SynthProblem& p) {
       }
     }
     if (selected.empty()) break;
-    out.designs.push_back(std::move(selected));
-    s.add(sum_expr(ctx, block) <= static_cast<int>(block.size()) - 1);
+    out.designs.push_back(selected);
+
+    auto block_set = [&](std::vector<int> set) {
+      std::sort(set.begin(), set.end());
+      set.erase(std::unique(set.begin(), set.end()), set.end());
+      if (set.empty()) return;
+      std::vector<z3::expr> terms;
+      for (int id : set) {
+        if (id < 0 || static_cast<std::size_t>(id) >= nb)
+          throw std::runtime_error("synth: symmetry image out of range");
+        terms.push_back(x[static_cast<std::size_t>(id)]);
+      }
+      s.add(sum_expr(ctx, terms) <= static_cast<int>(terms.size()) - 1);
+    };
+    block_set(selected);
+    // Block the whole automorphism orbit.  This is symmetry breaking in the
+    // solver, not an output filter: the next model is already a representative
+    // of a different equivalence class.
+    for (const auto& sym : p.symmetries) {
+      std::vector<int> image;
+      image.reserve(selected.size());
+      for (int id : selected) {
+        if (id < 0 || static_cast<std::size_t>(id) >= sym.size())
+          throw std::runtime_error("synth: bad symmetry permutation");
+        image.push_back(sym[static_cast<std::size_t>(id)]);
+      }
+      if (image == selected) continue;
+      block_set(std::move(image));
+    }
   }
 
   out.feasible = !out.designs.empty();

@@ -39,6 +39,8 @@ TEST_CASE("truth tables use big-endian minterms") {
   const FuncSpec nand = spec_from_expr("~(A&B)");
   REQUIRE(nand.func.truth_string() == "1110");
   REQUIRE((~nand.func).is_monotone());
+  REQUIRE_FALSE(nand.func.is_anf_affine());
+  REQUIRE(s.func.is_anf_affine());
 }
 
 TEST_CASE("Dedekind numbers") {
@@ -73,6 +75,18 @@ TEST_CASE("exact SOP of NAND2 and unrealisable XOR") {
   const FuncSpec x = spec_from_expr("A^B");
   const CmosDesign dx = synthesize_cmos(x.func, x.vars);
   REQUIRE_FALSE(dx.realizable);
+
+  for (const char* e : {"~(A&B)", "~(A|B)"}) {
+    const FuncSpec s = spec_from_expr(e);
+    const CmosDesign ds = synthesize_cmos(s.func, s.vars);
+    REQUIRE(ds.realizable);
+    REQUIRE(ds.total == 4);
+    const Subckt cell = build_static_cmos_subckt(ds, s.vars);
+    const auto sw = analyze_switch(cell, s.vars, {"Y"}, true);
+    std::string truth;
+    for (const auto& row : sw.rows) truth.push_back(logic_symbol(row.values[0]));
+    REQUIRE(truth == s.func.truth_string());
+  }
 }
 
 TEST_CASE("exact SOP covers the onset for every realisable n<=3 function") {

@@ -49,6 +49,75 @@ fi
 [ "$(jq -r '[.designs[].verification.yosys.ok] | all' "$TMP/nand.json")" = "true" ] || fail "NAND2 proof"
 pass "minimum design + Yosys"
 
+# TG/NP quotient + input-automorphism orbit blocking.
+"$BIN" design min --expr 'A^B' --max-cost 6 --max-chain 3 --all --canonical \
+  --limit 8 --verify none --json > "$TMP/canon.json" || fail "canonical XOR"
+[ "$(jq -r '.designs | length' "$TMP/canon.json")" = "1" ] || fail "XOR canonical class count"
+"$BIN" design min --expr 'A^B' --max-cost 6 --max-chain 3 --all \
+  --limit 8 --verify none --json > "$TMP/raw.json" || fail "raw XOR"
+[ "$(jq -r '.designs | length' "$TMP/raw.json")" = "2" ] || fail "XOR raw mirror count"
+pass "symmetry quotient"
+
+# Static complementary CMOS flag: monotone-complement + kappa-linear netlist.
+"$BIN" design min --expr '~(A&B)' --static-cmos --verify static \
+  --json > "$TMP/static.json" || fail "static CMOS NAND"
+[ "$(jq -r .space "$TMP/static.json")" = "static-cmos" ] || fail "static space"
+[ "$(jq -r .optimum "$TMP/static.json")" = "4" ] || fail "static NAND 4T"
+[ "$(jq -r .verification.static.ok "$TMP/static.json")" = "true" ] || fail "static switch-level"
+"$BIN" design min --expr 'A^B' --static-cmos --verify static \
+  --json > "$TMP/static-xor.json" || fail "multi-stage static XOR"
+[ "$(jq -r .single_stage "$TMP/static-xor.json")" = "false" ] || fail "static XOR single-stage flag"
+[ "$(jq -r .multi_stage "$TMP/static-xor.json")" = "true" ] || fail "static XOR multi-stage flag"
+[ "$(jq -r .optimum "$TMP/static-xor.json")" = "14" ] || fail "static XOR cost"
+[ "$(jq -r .verification.static.ok "$TMP/static-xor.json")" = "true" ] || fail "static XOR switch-level"
+"$BIN" design min --expr '~(A&B&C)' --vars A,B,C --static-cmos --verify static \
+  --json > "$TMP/nand3.json" || fail "static NAND3"
+[ "$(jq -r .optimum "$TMP/nand3.json")" = "6" ] || fail "static NAND3 6T"
+[ "$(jq -r .single_stage "$TMP/nand3.json")" = "true" ] || fail "static NAND3 single-stage"
+"$BIN" design min --expr '~(A&B&C)' --vars A,B,C --static-cmos --max-fanin 2 \
+  --verify static --json > "$TMP/nand3-10.json" || fail "static NAND3 fanin2"
+[ "$(jq -r .optimum "$TMP/nand3-10.json")" = "10" ] || fail "static NAND3 10T"
+[ "$(jq -r '[.designs[0].cells[].type] | sort | join(",")' "$TMP/nand3-10.json")" = "AND2_X1,NAND2_X1" ] || fail "NAND3 10T cells"
+[ "$(jq -r .verification.static.ok "$TMP/nand3-10.json")" = "true" ] || fail "NAND3 10T switch-level"
+pass "static CMOS constraint"
+
+# Automated schematic rendering (TS/Node worker by default).
+if command -v node >/dev/null 2>&1; then
+  "$BIN" render --expr '~(A^B)' --max-cost 6 --max-chain 3 --all --canonical \
+    --out "$TMP/render" --json > "$TMP/render.json" || fail "render"
+  [ "$(jq -r .ok "$TMP/render.json")" = "true" ] || fail "render ok"
+  [ -f "$TMP/render/index.html" ] || fail "render index"
+  [ -f "$TMP/render/scheme-0.svg" ] || fail "render svg"
+  [ -f "$TMP/render/logic.svg" ] || fail "render logic svg"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$TMP/render" <<'PY' || fail "render SVG XML"
+import pathlib, sys, xml.etree.ElementTree as ET
+for p in sorted(pathlib.Path(sys.argv[1]).glob("*.svg")):
+    ET.parse(p)
+PY
+  fi
+  "$BIN" render --expr '~(A&B)' --static-cmos \
+    --out "$TMP/static-render" --json > "$TMP/static-render.json" || fail "static render"
+  [ "$(jq -r '.designs[0].kind' "$TMP/static-render.json")" = "static-cmos" ] || fail "static render kind"
+  [ -f "$TMP/static-render/scheme-0.svg" ] || fail "static schematic"
+  [ -f "$TMP/static-render/logic.svg" ] || fail "static logic"
+  "$BIN" render --expr 'A^B' --static-cmos \
+    --out "$TMP/static-xor-render" --json > "$TMP/static-xor-render.json" || fail "static XOR render"
+  [ "$(jq -r '.designs[0].kind' "$TMP/static-xor-render.json")" = "static-cmos-multi" ] || fail "static XOR render kind"
+  [ -f "$TMP/static-xor-render/scheme-0.svg" ] || fail "static XOR schematic"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$TMP/static-render" "$TMP/static-xor-render" <<'PY' || fail "static render SVG XML"
+import pathlib, sys, xml.etree.ElementTree as ET
+for root in sys.argv[1:]:
+    for p in sorted(pathlib.Path(root).glob("*.svg")):
+        ET.parse(p)
+PY
+  fi
+  pass "render"
+else
+  echo "skip render (no node)"
+fi
+
 # A wrong DUT must be rejected (negative control).
 cat > "$TMP/bad.v" <<'EOF'
 module dut(input logic A, B, output logic Y, output logic ok);

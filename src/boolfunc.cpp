@@ -189,6 +189,13 @@ bool BoolFunc::is_monotone() const {
   return true;
 }
 
+bool BoolFunc::is_anf_affine() const {
+  const Bits a = anf();
+  for (std::uint32_t m = 0; m < num_minterms(); ++m)
+    if (__builtin_popcount(m) >= 2 && a.test(m)) return false;
+  return true;
+}
+
 bool BoolFunc::is_self_dual() const {
   const std::uint32_t N = static_cast<std::uint32_t>(num_minterms());
   const std::uint32_t mask = N - 1;

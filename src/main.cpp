@@ -16,6 +16,8 @@
 #include "dcstudy/cmos.hpp"
 #include "dcstudy/designspace.hpp"
 #include "dcstudy/json.hpp"
+#include "dcstudy/multistage.hpp"
+#include "dcstudy/render_client.hpp"
 #include "dcstudy/switchlevel.hpp"
 #include "dcstudy/synthesis.hpp"
 #include "dcstudy/verilog.hpp"
@@ -51,7 +53,7 @@ struct Args {
 
 const std::set<std::string> kBoolFlags = {
     "json", "all", "canonical", "exact", "keep", "help", "verbose", "no-tg",
-    "heavy"};
+    "heavy", "png", "no-logic", "static-cmos"};
 
 Args parse_args(int argc, char** argv, int start) {
   Args a;
@@ -150,6 +152,77 @@ Json design_json(const Design& d, const std::vector<std::string>& vars) {
   return j;
 }
 
+std::vector<std::string> cube_names(const Cube& c,
+                                      const std::vector<std::string>& vars) {
+  std::vector<std::string> out;
+  const std::size_t n = vars.size();
+  for (std::size_t i = 0; i < n; ++i) {
+    const std::uint64_t bit = std::uint64_t{1} << (n - 1 - i);
+    if (!(c.care & bit)) continue;
+    if (!(c.value & bit))
+      throw std::runtime_error("PD cube contains a negated literal");
+    out.push_back(vars[i]);
+  }
+  return out;
+}
+
+Json static_design_json(const CmosDesign& d,
+                        const std::vector<std::string>& vars) {
+  Json j;
+  j["kind"] = "static-cmos";
+  j["cost"] = d.total;
+  j["nfet"] = d.nfet;
+  j["pfet"] = d.pfet;
+  j["kappa_linear"] = true;
+  j["pun_dual"] = true;
+  j["inverters"] = Json::Array{};
+  j["branches"] = Json::Array{};
+  Json pd = Json::Array{};
+  Json pu = Json::Array{};
+  for (const auto& c : d.pull_down.terms) {
+    const auto names = cube_names(c, vars);
+    Json term = Json::Array{};
+    for (const auto& s : names) term.push_back(s);
+    pd.push_back(term);
+    // PUN is the dual: each PDN term becomes a parallel PMOS group, groups
+    // are in series.
+    pu.push_back(term);
+  }
+  j["pd_terms"] = std::move(pd);
+  j["pu_groups"] = std::move(pu);
+  j["pull_down"] = d.pull_down.expression(vars);
+  j["pull_up"] = pull_up_expression(d, vars);
+  j["topology"] = "PDN: " + d.pull_down.expression(vars) +
+                  "; PUN: " + pull_up_expression(d, vars);
+  return j;
+}
+
+std::string subckt_to_cdl(const Subckt& c) {
+  std::string out = ".SUBCKT " + c.name;
+  for (const auto& p : c.ports) out += " " + p;
+  out += "\n*.PININFO";
+  for (const auto& p : c.ports) {
+    const char dir = [&] {
+      switch (c.direction(p)) {
+        case PinDir::Input: return 'I';
+        case PinDir::Output: return 'O';
+        case PinDir::Power: return 'P';
+        case PinDir::Ground: return 'G';
+        default: return 'B';
+      }
+    }();
+    out += " " + p + ":" + dir;
+  }
+  out += "\n";
+  for (const auto& d : c.devices) {
+    const std::string bulk = d.pmos ? "VDD" : "VSS";
+    out += d.name + " " + d.drain + " " + d.gate + " " + d.source + " " +
+           bulk + " " + d.model + "\n";
+  }
+  out += ".ENDS\n";
+  return out;
+}
+
 void write_files(const fs::path& dir, const Design& d, const FuncSpec& spec) {
   fs::create_directories(dir);
   const std::string dut = emit_dut(d, spec.vars);
@@ -159,7 +232,7 @@ void write_files(const fs::path& dir, const Design& d, const FuncSpec& spec) {
   std::ofstream(dir / "tb.v") << emit_tb(spec.func, spec.vars);
 }
 
-enum class VerifyMode { None, Yosys, Sim, Both };
+enum class VerifyMode { None, Yosys, Sim, Both, Static };
 
 VerifyMode parse_verify(const Args& a, VerifyMode def) {
   const std::string v = a.get("verify");
@@ -168,7 +241,8 @@ VerifyMode parse_verify(const Args& a, VerifyMode def) {
   if (v == "yosys") return VerifyMode::Yosys;
   if (v == "sim") return VerifyMode::Sim;
   if (v == "both") return VerifyMode::Both;
-  throw CliError("--verify must be none|yosys|sim|both");
+  if (v == "static") return VerifyMode::Static;
+  throw CliError("--verify must be none|yosys|sim|both|static");
 }
 
 Json verify_json(const ToolResult& r) {
@@ -232,11 +306,14 @@ Commands:
   cdl solve      --cell NAME [--cdl FILE] [--inputs A,B] [--exact] [--expect BITS]
   design min     --expr EXPR | --tt BITS [--max-cost N] [--max-chain N]
                  [--all] [--limit N] [--canonical] [--emit DIR]
-                 [--verify none|yosys|sim|both] [--keep]
+                 [--verify none|yosys|sim|both|static] [--static-cmos] [--keep]
   verify equiv   --dut FILE --expr EXPR | --tt BITS [--vars A,B] [--keep]
   verify sim     --dut FILE --expr EXPR | --tt BITS [--vars A,B] [--keep]
   pipeline       --funcs 'name=EXPR,...' [--max-cost N] [--out DIR]
                  [--verify none|yosys|sim|both] [--canonical]
+  render         --expr EXPR | --tt BITS [--max-cost N] [--limit N]
+                 [--canonical] [--out DIR] [--png] [--no-logic]
+                 [--static-cmos]
 
 Options:
   --json         machine-readable output (also on errors)
@@ -246,6 +323,11 @@ Options:
   --all          enumerate all optimal designs (up to --limit)
   --limit        maximum enumerated designs (default 8)
   --canonical    quotient designs by input permutations that preserve f
+  --png          also rasterise rendered SVGs (needs rsvg-convert)
+  --no-logic     skip the logic-abstraction panel (and its LaTeX compile)
+  --static-cmos  restrict to static complementary CMOS (kappa-linear; rejects
+                 pass/TG; single-stage, with automatic multi-stage fallback)
+  --max-fanin N  static CMOS cell fan-in limit (e.g. 2); 0 = library default
   --heavy        allow the n=6 Dedekind count (about 40 s and 10 GB)
 
 Exit codes: 0 success, 1 verification/feasibility failure, 2 usage/runtime error.
@@ -321,6 +403,8 @@ int cmd_cmos(const std::string& sub, int argc, char** argv) {
     j["ok"] = true;
     j["command"] = "cmos.synth";
     j["realizable"] = d.realizable;
+    j["kappa_linear"] = d.realizable;
+    j["anf_affine"] = spec.func.is_anf_affine();
     j["vars"] = [&] {
       Json v = Json::Array{};
       for (const auto& s : spec.vars) v.push_back(s);
@@ -329,6 +413,8 @@ int cmd_cmos(const std::string& sub, int argc, char** argv) {
     j["truth"] = spec.func.truth_string();
     if (d.realizable) {
       j["pull_down"] = d.pull_down.expression(spec.vars);
+      j["pull_up"] = pull_up_expression(d, spec.vars);
+      j["monotone_complement"] = true;
       j["terms"] = static_cast<std::int64_t>(d.pull_down.terms.size());
       j["literals"] = d.pull_down.literals;
       j["nfet"] = d.nfet;
@@ -336,6 +422,7 @@ int cmd_cmos(const std::string& sub, int argc, char** argv) {
       j["total"] = d.total;
     } else {
       j["reason"] = d.reason;
+      j["monotone_complement"] = false;
     }
     std::cout << j.dump() << "\n";
   } else {
@@ -345,6 +432,7 @@ int cmd_cmos(const std::string& sub, int argc, char** argv) {
     } else {
       std::cout << "single-stage complementary CMOS: yes\n";
       std::cout << "pull-down = " << d.pull_down.expression(spec.vars) << "\n";
+      std::cout << "pull-up   = " << pull_up_expression(d, spec.vars) << "\n";
       std::cout << "NMOS=" << d.nfet << "  PMOS=" << d.pfet
                 << "  total=" << d.total << "T\n";
     }
@@ -472,14 +560,297 @@ int cmd_cdl(const std::string& sub, int argc, char** argv) {
   throw CliError("unknown cdl subcommand: " + sub);
 }
 
+struct StaticCheck {
+  bool ok = false;
+  std::string truth;
+  std::string target;
+};
+
+StaticCheck check_static_cmos(const CmosDesign& d, const FuncSpec& spec) {
+  const Subckt cell = build_static_cmos_subckt(d, spec.vars);
+  const SwitchAnalysis a =
+      analyze_switch(cell, spec.vars, {"Y"}, true, "VDD", "VSS");
+  StaticCheck c;
+  for (const auto& row : a.rows) c.truth.push_back(logic_symbol(row.values[0]));
+  c.target = spec.func.truth_string();
+  c.ok = c.truth == c.target;
+  return c;
+}
+
+Json multi_design_json(const MultiStageDesign& m) {
+  Json j;
+  j["kind"] = "static-cmos-multi";
+  j["cost"] = m.total;
+  j["nfet"] = m.nfet;
+  j["pfet"] = m.pfet;
+  j["inverters"] = Json::Array{};
+  j["branches"] = Json::Array{};
+  j["kappa_linear"] = true;
+  j["single_stage"] = false;
+  Json cells = Json::Array{};
+  std::string topology;
+  for (const auto& c : m.cells) {
+    Json cj;
+    cj["type"] = c.type;
+    Json ports;
+    for (const auto& [k, v] : c.ports) ports[k] = v;
+    cj["ports"] = std::move(ports);
+    cells.push_back(std::move(cj));
+    if (!topology.empty()) topology += " → ";
+    topology += c.type;
+  }
+  j["cells"] = std::move(cells);
+  j["topology"] = topology;
+  return j;
+}
+
+int cmd_design_static(const Args& a, const FuncSpec& spec,
+                      const SpaceOptions& opt, VerifyMode vmode, bool json) {
+  const CmosDesign d = synthesize_cmos(spec.func, spec.vars);
+  const int max_fanin = std::stoi(a.get("max-fanin", "0"));
+  if (max_fanin != 0 && (max_fanin < 2 || max_fanin > 4))
+    throw CliError("--max-fanin must be 0 or 2..4");
+  int single_fanin = 0;
+  for (const auto& c : d.pull_down.terms)
+    single_fanin = std::max(single_fanin, c.literals());
+  const bool fanin_ok = max_fanin == 0 || single_fanin <= max_fanin;
+  const bool single_ok = d.realizable && d.total <= opt.max_cost &&
+      !d.pull_down.terms.empty() &&
+      std::none_of(d.pull_down.terms.begin(), d.pull_down.terms.end(),
+                   [](const Cube& c) { return c.literals() == 0; }) && fanin_ok;
+  if (!single_ok) {
+    if (vmode != VerifyMode::None && vmode != VerifyMode::Static)
+      throw CliError("--static-cmos supports --verify static|none");
+    const MultiStageDesign m =
+        synthesize_multistage_static(spec.func, spec.vars, max_fanin);
+    if (!m.ok || !m.verified) {
+      if (json) {
+        Json j;
+        j["ok"] = false;
+        j["command"] = "design.min";
+        j["space"] = "static-cmos";
+        j["feasible"] = false;
+        j["message"] = m.reason.empty() ? "multi-stage synthesis failed" : m.reason;
+        j["truth"] = spec.func.truth_string();
+        j["single_stage"] = false;
+        j["anf_affine"] = spec.func.is_anf_affine();
+        std::cout << j.dump() << "\n";
+      } else {
+        std::cout << "static complementary CMOS: multi-stage failed: "
+                  << m.reason << "\n";
+      }
+      return 1;
+    }
+    if (m.total > opt.max_cost) {
+      if (json) {
+        Json j;
+        j["ok"] = false;
+        j["command"] = "design.min";
+        j["space"] = "static-cmos";
+        j["feasible"] = false;
+        j["message"] = "multi-stage static CMOS needs " +
+                       std::to_string(m.total) + "T, over --max-cost";
+        j["optimum"] = m.total;
+        std::cout << j.dump() << "\n";
+      } else {
+        std::cout << "multi-stage static CMOS needs " << m.total
+                  << "T, over --max-cost\n";
+      }
+      return 1;
+    }
+
+    Json design = multi_design_json(m);
+    Json j;
+    j["ok"] = true;
+    j["command"] = "design.min";
+    j["space"] = "static-cmos";
+    j["feasible"] = true;
+    j["single_stage"] = false;
+    j["multi_stage"] = true;
+    j["optimum"] = m.total;
+    j["truth"] = spec.func.truth_string();
+    j["kappa_linear"] = true;
+    j["pun_dual"] = true;
+    j["monotone_complement"] = false;
+    j["anf_affine"] = spec.func.is_anf_affine();
+    j["designs"] = [&] {
+      Json arr = Json::Array{};
+      arr.push_back(design);
+      return arr;
+    }();
+    j["verification"] = [&] {
+      Json v;
+      v["static"] = [&] {
+        Json s;
+        s["ok"] = m.verified;
+        s["truth"] = m.truth;
+        s["target"] = spec.func.truth_string();
+        s["mode"] = "z3 switch-level (flattened standard cells)";
+        return s;
+      }();
+      return v;
+    }();
+
+    if (a.has("emit")) {
+      const fs::path dir = fs::path(a.get("emit")) /
+                           ("static_multi_" + std::to_string(m.total) + "T");
+      fs::create_directories(dir);
+      std::ofstream(dir / "static-cmos.json") << design.dump() << "\n";
+      std::ofstream(dir / "gate-level.v") << m.verilog;
+      std::ofstream(dir / "netlist.json") << m.json;
+      std::ofstream(dir / "flattened.cdl") << m.cdl;
+      j["files"] = [&] {
+        Json v = Json::Array{};
+        v.push_back((dir / "static-cmos.json").string());
+        v.push_back((dir / "gate-level.v").string());
+        v.push_back((dir / "netlist.json").string());
+        v.push_back((dir / "flattened.cdl").string());
+        return v;
+      }();
+    }
+
+    if (json) {
+      std::cout << j.dump() << "\n";
+    } else {
+      std::cout << "multi-stage static CMOS: " << m.total << "T ("
+                << m.nfet << " NMOS + " << m.pfet << " PMOS)\n";
+      std::cout << "  cells:";
+      for (const auto& c : m.cells) std::cout << " " << c.type;
+      std::cout << "\n  switch-level: " << (m.verified ? "PASS" : "FAIL")
+                << "  truth=" << m.truth << "\n";
+      if (a.has("emit")) std::cout << "  emitted: " << a.get("emit") << "\n";
+    }
+    return 0;
+  }
+  if (!d.realizable) {
+    if (json) {
+      Json j;
+      j["ok"] = false;
+      j["command"] = "design.min";
+      j["space"] = "static-cmos";
+      j["feasible"] = false;
+      j["message"] = d.reason;
+      j["truth"] = spec.func.truth_string();
+      j["monotone_complement"] = false;
+      j["kappa_linear"] = false;
+      j["anf_affine"] = spec.func.is_anf_affine();
+      std::cout << j.dump() << "\n";
+    } else {
+      std::cout << "static complementary CMOS: no (" << d.reason << ")\n";
+    }
+    return 1;
+  }
+  if (d.pull_down.terms.empty() ||
+      std::any_of(d.pull_down.terms.begin(), d.pull_down.terms.end(),
+                  [](const Cube& c) { return c.literals() == 0; })) {
+    if (json) {
+      Json j;
+      j["ok"] = false;
+      j["command"] = "design.min";
+      j["space"] = "static-cmos";
+      j["feasible"] = false;
+      j["message"] = "constant functions are not supported by the static CMOS emitter";
+      std::cout << j.dump() << "\n";
+    } else {
+      std::cout << "static complementary CMOS: constant functions are not supported\n";
+    }
+    return 1;
+  }
+  if (d.total > opt.max_cost) {
+    if (json) {
+      Json j;
+      j["ok"] = false;
+      j["command"] = "design.min";
+      j["space"] = "static-cmos";
+      j["feasible"] = false;
+      j["message"] = "static CMOS needs " + std::to_string(d.total) +
+                     "T, over --max-cost";
+      j["optimum"] = d.total;
+      std::cout << j.dump() << "\n";
+    } else {
+      std::cout << "static CMOS needs " << d.total << "T, over --max-cost\n";
+    }
+    return 1;
+  }
+  if (vmode != VerifyMode::None && vmode != VerifyMode::Static)
+    throw CliError("--static-cmos supports --verify static|none");
+
+  Json verification;
+  bool check_ok = true;
+  if (vmode == VerifyMode::Static) {
+    const StaticCheck c = check_static_cmos(d, spec);
+    check_ok = c.ok;
+    verification["static"] = [&] {
+      Json v;
+      v["ok"] = c.ok;
+      v["truth"] = c.truth;
+      v["target"] = c.target;
+      v["mode"] = "z3 switch-level";
+      return v;
+    }();
+  }
+
+  Json design = static_design_json(d, spec.vars);
+  Json j;
+  j["ok"] = check_ok;
+  j["command"] = "design.min";
+  j["space"] = "static-cmos";
+  j["feasible"] = true;
+  j["single_stage"] = true;
+  j["multi_stage"] = false;
+  j["optimum"] = d.total;
+  j["truth"] = spec.func.truth_string();
+  j["monotone_complement"] = true;
+  j["kappa_linear"] = true;
+  j["pun_dual"] = true;
+  j["anf_affine"] = spec.func.is_anf_affine();
+  j["designs"] = [&] {
+    Json arr = Json::Array{};
+    arr.push_back(design);
+    return arr;
+  }();
+  if (vmode != VerifyMode::None) j["verification"] = verification;
+
+  if (a.has("emit")) {
+    const fs::path dir = fs::path(a.get("emit")) /
+                         ("static_" + std::to_string(d.total) + "T");
+    fs::create_directories(dir);
+    std::ofstream(dir / "static-cmos.json") << design.dump() << "\n";
+    std::ofstream(dir / "static-cmos.cdl")
+        << subckt_to_cdl(build_static_cmos_subckt(d, spec.vars));
+    j["files"] = [&] {
+      Json v = Json::Array{};
+      v.push_back((dir / "static-cmos.json").string());
+      v.push_back((dir / "static-cmos.cdl").string());
+      return v;
+    }();
+  }
+
+  if (json) {
+    std::cout << j.dump() << "\n";
+  } else {
+    std::cout << "static complementary CMOS: " << d.total << "T ("
+              << d.nfet << " NMOS + " << d.pfet << " PMOS)\n";
+    std::cout << "  PDN = " << d.pull_down.expression(spec.vars) << "\n";
+    std::cout << "  PUN = " << pull_up_expression(d, spec.vars) << "\n";
+    if (vmode == VerifyMode::Static)
+      std::cout << "  switch-level: " << (check_ok ? "PASS" : "FAIL")
+                << "  truth=" << verification["static"]["truth"].as_string()
+                << "\n";
+    if (a.has("emit")) std::cout << "  emitted: " << a.get("emit") << "\n";
+  }
+  return check_ok ? 0 : 1;
+}
+
 int cmd_design(const std::string& sub, int argc, char** argv) {
   if (sub != "min") throw CliError("unknown design subcommand: " + sub);
   const Args a = parse_args(argc, argv, 3);
   const bool json = a.is("json");
   const FuncSpec spec = get_spec(a);
   if (spec.vars.size() > 4) throw CliError("design min supports at most 4 variables");
+  const bool static_mode = a.is("static-cmos");
   SpaceOptions opt;
-  opt.max_cost = std::stoi(a.get("max-cost", "8"));
+  opt.max_cost = std::stoi(a.get("max-cost", static_mode ? "32" : "8"));
   opt.max_chain = std::stoi(a.get("max-chain", "4"));
   opt.allow_tg = !a.is("no-tg");
   if (opt.max_cost < 1 || opt.max_cost > 32) throw CliError("--max-cost out of range");
@@ -489,7 +860,10 @@ int cmd_design(const std::string& sub, int argc, char** argv) {
   if (limit_raw == 0 || limit_raw > 1024)
     throw CliError("--limit must be in 1..1024");
   const std::size_t limit = static_cast<std::size_t>(limit_raw);
-  const VerifyMode vmode = parse_verify(a, VerifyMode::Yosys);
+  const VerifyMode vmode =
+      parse_verify(a, static_mode ? VerifyMode::Static : VerifyMode::Yosys);
+  if (static_mode) return cmd_design_static(a, spec, opt, vmode, json);
+
   const auto result = synthesize_min(spec.vars, target_of(spec), opt, limit,
                                      a.is("canonical"));
 
@@ -594,6 +968,178 @@ int cmd_verify(const std::string& sub, int argc, char** argv) {
     std::cout << r.output;
   }
   return r.ok ? 0 : 1;
+}
+
+int cmd_render_static(const Args& a, const FuncSpec& spec,
+                      const SpaceOptions& opt, bool json) {
+  const CmosDesign d = synthesize_cmos(spec.func, spec.vars);
+  const std::string out = a.get("out", "out/render");
+  auto fail = [&](const std::string& message) {
+    if (json) {
+      Json j;
+      j["ok"] = false;
+      j["command"] = "render";
+      j["space"] = "static-cmos";
+      j["message"] = message;
+      std::cout << j.dump() << "\n";
+    } else {
+      std::cout << "static complementary CMOS: " << message << "\n";
+    }
+    return 1;
+  };
+  const int max_fanin = std::stoi(a.get("max-fanin", "0"));
+  if (max_fanin != 0 && (max_fanin < 2 || max_fanin > 4))
+    throw CliError("--max-fanin must be 0 or 2..4");
+  int single_fanin = 0;
+  for (const auto& c : d.pull_down.terms)
+    single_fanin = std::max(single_fanin, c.literals());
+  const bool fanin_ok = max_fanin == 0 || single_fanin <= max_fanin;
+  const bool single_ok = d.realizable && d.total <= opt.max_cost &&
+      !d.pull_down.terms.empty() &&
+      std::none_of(d.pull_down.terms.begin(), d.pull_down.terms.end(),
+                   [](const Cube& c) { return c.literals() == 0; }) && fanin_ok;
+
+  Json design;
+  int total = 0;
+  std::string topo;
+  if (single_ok) {
+    design = static_design_json(d, spec.vars);
+    total = d.total;
+    topo = design.at("topology").as_string();
+  } else {
+    const MultiStageDesign m =
+        synthesize_multistage_static(spec.func, spec.vars, max_fanin);
+    if (!m.ok || !m.verified) return fail(m.reason.empty() ? "multi-stage failed" : m.reason);
+    if (m.total > opt.max_cost)
+      return fail("multi-stage needs " + std::to_string(m.total) + "T, over --max-cost");
+    design = multi_design_json(m);
+    total = m.total;
+    topo = design.at("topology").as_string();
+  }
+
+  Json req;
+  req["op"] = "render";
+  req["out"] = out;
+  req["title"] = spec.description;
+  req["vars"] = [&] {
+    Json v = Json::Array{};
+    for (const auto& s : spec.vars) v.push_back(s);
+    return v;
+  }();
+  req["truth"] = spec.func.truth_string();
+  req["png"] = a.is("png");
+  req["canonical"] = false;
+  req["logic"] = !a.is("no-logic");
+  Json designs = Json::Array{};
+  designs.push_back(design);
+  req["designs"] = std::move(designs);
+
+  const Json resp = render_call(req);
+  Json j;
+  j["ok"] = true;
+  j["command"] = "render";
+  j["space"] = "static-cmos";
+  j["out"] = out;
+  j["optimum"] = total;
+  j["single_stage"] = single_ok;
+  j["topology"] = topo;
+  j["designs"] = [&] {
+    Json v = Json::Array{};
+    v.push_back(design);
+    return v;
+  }();
+  if (resp.contains("index")) j["index"] = resp.at("index");
+  if (resp.contains("files")) j["files"] = resp.at("files");
+  if (json) {
+    std::cout << j.dump() << "\n";
+  } else {
+    std::cout << "rendered static CMOS " << total << "T to " << out << "\n";
+    std::cout << "  " << topo << "\n";
+    if (resp.contains("index")) std::cout << "  index: " << resp.at("index").as_string() << "\n";
+  }
+  return 0;
+}
+
+int cmd_render(int argc, char** argv) {
+  const Args a = parse_args(argc, argv, 2);
+  const bool json = a.is("json");
+  const FuncSpec spec = get_spec(a);
+  if (spec.vars.size() > 4) throw CliError("render supports at most 4 variables");
+  const bool static_mode = a.is("static-cmos");
+  SpaceOptions opt;
+  opt.max_cost = std::stoi(a.get("max-cost", static_mode ? "32" : "8"));
+  opt.max_chain = std::stoi(a.get("max-chain", "4"));
+  opt.allow_tg = !a.is("no-tg");
+  if (opt.max_cost < 1 || opt.max_cost > 32) throw CliError("--max-cost out of range");
+  if (opt.max_chain < 1 || opt.max_chain > 8) throw CliError("--max-chain out of range");
+  const unsigned long limit_raw =
+      std::stoul(a.get("limit", a.is("all") ? "64" : "8"));
+  if (limit_raw == 0 || limit_raw > 1024)
+    throw CliError("--limit must be in 1..1024");
+  if (static_mode) return cmd_render_static(a, spec, opt, json);
+
+  const auto result = synthesize_min(
+      spec.vars, target_of(spec), opt, static_cast<std::size_t>(limit_raw),
+      a.is("canonical"));
+  if (!result.feasible) {
+    if (json) {
+      Json j;
+      j["ok"] = false;
+      j["command"] = "render";
+      j["optimum"] = result.optimum;
+      j["message"] = result.message;
+      std::cout << j.dump() << "\n";
+    } else {
+      std::cout << "no design: " << result.message << "\n";
+    }
+    return 1;
+  }
+
+  const std::string out = a.get("out", "out/render");
+  Json req;
+  req["op"] = "render";
+  req["out"] = out;
+  req["title"] = spec.description;
+  req["vars"] = [&] {
+    Json v = Json::Array{};
+    for (const auto& s : spec.vars) v.push_back(s);
+    return v;
+  }();
+  req["truth"] = spec.func.truth_string();
+  req["png"] = a.is("png");
+  req["canonical"] = a.is("canonical");
+  req["logic"] = !a.is("no-logic");
+  Json designs = Json::Array{};
+  for (const auto& d : result.designs) designs.push_back(design_json(d, spec.vars));
+  req["designs"] = std::move(designs);
+
+  const Json resp = render_call(req);
+  Json j;
+  j["ok"] = true;
+  j["command"] = "render";
+  j["out"] = out;
+  j["optimum"] = result.optimum;
+  j["designs"] = [&] {
+    Json v = Json::Array{};
+    for (const auto& d : result.designs) v.push_back(design_json(d, spec.vars));
+    return v;
+  }();
+  if (resp.contains("index")) j["index"] = resp.at("index");
+  if (resp.contains("files")) j["files"] = resp.at("files");
+  if (resp.contains("designs")) j["rendered"] = resp.at("designs");
+
+  if (json) {
+    std::cout << j.dump() << "\n";
+  } else {
+    std::cout << "rendered " << result.designs.size() << " design(s) to "
+              << out << "\n";
+    if (resp.contains("index"))
+      std::cout << "  index: " << resp.at("index").as_string() << "\n";
+    if (resp.contains("files"))
+      for (const auto& f : resp.at("files").array())
+        std::cout << "  " << f.as_string() << "\n";
+  }
+  return 0;
 }
 
 int cmd_pipeline(int argc, char** argv) {
@@ -724,6 +1270,7 @@ int main(int argc, char** argv) {
     if (cmd == "cdl") return cmd_cdl(sub, argc, argv);
     if (cmd == "design") return cmd_design(sub, argc, argv);
     if (cmd == "verify") return cmd_verify(sub, argc, argv);
+    if (cmd == "render") return cmd_render(argc, argv);
     if (cmd == "pipeline") return cmd_pipeline(argc, argv);
     throw CliError("unknown command: " + cmd);
   } catch (const CliError& e) {

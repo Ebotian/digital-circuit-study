@@ -225,10 +225,110 @@ CmosDesign synthesize_cmos(const BoolFunc& f,
   out.realizable = true;
   out.pull_down = exact_min_sop(pd.bits(), f.arity());
   out.nfet = out.pull_down.literals;
-  out.pfet = out.pull_down.literals;
+  // The PUN is the dual of the PDN: one PMOS per PDN literal.
+  out.pfet = out.nfet;
   out.total = out.nfet + out.pfet;
   (void)vars;
   return out;
+}
+
+std::string pull_up_expression(const CmosDesign& d,
+                               const std::vector<std::string>& vars) {
+  if (!d.realizable) return "0";
+  if (d.pull_down.terms.empty()) return "1";
+  const std::size_t n = vars.size();
+  std::string out;
+  for (const auto& c : d.pull_down.terms) {
+    std::string clause;
+    for (std::size_t i = 0; i < n; ++i) {
+      const std::uint64_t bit = std::uint64_t{1} << (n - 1 - i);
+      if (!(c.care & bit)) continue;
+      if (!clause.empty()) clause += " | ";
+      clause += "~" + vars[i];
+    }
+    if (clause.empty()) continue;
+    if (!out.empty()) out += " & ";
+    out += "(" + clause + ")";
+  }
+  return out.empty() ? "1" : out;
+}
+
+Subckt build_static_cmos_subckt(const CmosDesign& d,
+                                const std::vector<std::string>& vars) {
+  if (!d.realizable) throw std::runtime_error("static CMOS design is not realisable");
+  Subckt c;
+  c.name = "STATIC_CMOS";
+  for (const auto& v : vars) {
+    c.ports.push_back(v);
+    c.pin_dir[v] = PinDir::Input;
+  }
+  c.ports.push_back("Y");
+  c.ports.push_back("VDD");
+  c.ports.push_back("VSS");
+  c.pin_dir["Y"] = PinDir::Output;
+  c.pin_dir["VDD"] = PinDir::Power;
+  c.pin_dir["VSS"] = PinDir::Ground;
+
+  const std::size_t n = vars.size();
+  int dev_id = 0;
+  auto add = [&](const std::string& drain, const std::string& gate,
+                 const std::string& source, bool pmos) {
+    Device dev;
+    dev.name = "M_" + std::to_string(dev_id++);
+    dev.drain = drain;
+    dev.gate = gate;
+    dev.source = source;
+    dev.model = pmos ? "PMOS" : "NMOS";
+    dev.pmos = pmos;
+    c.devices.push_back(std::move(dev));
+  };
+
+  auto term_vars = [&](const Cube& cube) {
+    std::vector<std::string> out;
+    for (std::size_t i = 0; i < n; ++i) {
+      const std::uint64_t bit = std::uint64_t{1} << (n - 1 - i);
+      if (!(cube.care & bit)) continue;
+      if (!(cube.value & bit))
+        throw std::runtime_error("PDN cube contains a negated literal");
+      out.push_back(vars[i]);
+    }
+    return out;
+  };
+
+  // PDN: parallel branches of series NMOS.
+  const auto& terms = d.pull_down.terms;
+  for (std::size_t ti = 0; ti < terms.size(); ++ti) {
+    const auto lits = term_vars(terms[ti]);
+    if (lits.empty()) continue;  // constant; handled by caller if needed
+    std::vector<std::string> nodes;
+    nodes.push_back("Y");
+    for (std::size_t j = 1; j < lits.size(); ++j)
+      nodes.push_back("pd_" + std::to_string(ti) + "_" + std::to_string(j));
+    nodes.push_back("VSS");
+    for (std::size_t j = 0; j < lits.size(); ++j)
+      add(nodes[j], lits[j], nodes[j + 1], false);
+  }
+
+  // PUN: series groups, each group is parallel PMOS (dual of a PDN term).
+  std::string prev = "VDD";
+  for (std::size_t ti = 0; ti < terms.size(); ++ti) {
+    const auto lits = term_vars(terms[ti]);
+    const std::string next =
+        (ti + 1 == terms.size()) ? "Y" : ("pu_" + std::to_string(ti));
+    for (const auto& g : lits) add(prev, g, next, true);
+    prev = next;
+  }
+
+  // Formal kappa-linearity invariant: gates are inputs, and no signal input
+  // appears as a source/drain terminal (that would be a pass transistor).
+  for (const auto& dev : c.devices) {
+    if (std::find(vars.begin(), vars.end(), dev.gate) == vars.end())
+      throw std::runtime_error("static CMOS: gate is not an input");
+    if (std::find(vars.begin(), vars.end(), dev.drain) != vars.end() ||
+        std::find(vars.begin(), vars.end(), dev.source) != vars.end())
+      throw std::runtime_error("static CMOS: signal input used as channel terminal");
+  }
+  return c;
 }
 
 }  // namespace dcstudy

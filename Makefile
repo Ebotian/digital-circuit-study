@@ -5,9 +5,9 @@ CMAKE ?= cmake
 SOURCES := $(wildcard src/*.cpp) $(wildcard include/dcstudy/*.hpp) \
            tests/unit_tests.cpp
 FILC_SOURCES := src/main.cpp src/boolfunc.cpp src/cdl.cpp src/cmos.cpp \
-                src/designspace.cpp src/switchlevel.cpp src/synthesis.cpp \
-                src/verilog.cpp src/verify.cpp src/z3_client.cpp \
-                src/z3_protocol.cpp
+                src/designspace.cpp src/multistage.cpp src/switchlevel.cpp src/synthesis.cpp \
+                src/verilog.cpp src/verify.cpp src/worker_client.cpp \
+                src/z3_client.cpp src/render_client.cpp src/z3_protocol.cpp
 
 .PHONY: all build test integration filc filc-smoke clean
 

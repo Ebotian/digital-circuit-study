@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <map>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -13,13 +14,13 @@
 namespace dcstudy {
 namespace {
 
-std::vector<std::size_t> automorphisms(const std::vector<std::string>& vars,
-                                       const std::vector<int>& target) {
+std::vector<std::vector<std::size_t>> enumerate_automorphisms(
+    const std::vector<std::string>& vars, const std::vector<int>& target) {
   const std::size_t n = vars.size();
   const std::uint32_t rows = std::uint32_t{1} << n;
   std::vector<std::size_t> perm(n);
   for (std::size_t i = 0; i < n; ++i) perm[i] = i;
-  std::vector<std::size_t> good;
+  std::vector<std::vector<std::size_t>> good;
   do {
     bool ok = true;
     for (std::uint32_t m = 0; m < rows && ok; ++m) {
@@ -31,22 +32,34 @@ std::vector<std::size_t> automorphisms(const std::vector<std::string>& vars,
       }
       if (target[m] != target[mapped]) ok = false;
     }
-    if (ok) {
-      std::size_t code = 0;
-      for (auto p : perm) code = code * 10 + p;
-      good.push_back(code);
-    }
+    if (ok) good.push_back(perm);
   } while (std::next_permutation(perm.begin(), perm.end()));
   return good;
 }
 
-std::vector<std::size_t> decode_perm(std::size_t code, std::size_t n) {
-  std::vector<std::size_t> perm(n);
-  for (std::size_t i = n; i-- > 0;) {
-    perm[i] = code % 10;
-    code /= 10;
+std::vector<std::vector<std::size_t>> automorphisms(
+    const std::vector<std::string>& vars, const std::vector<int>& target) {
+  try {
+    Json req;
+    req["op"] = "symmetry";
+    req["n"] = static_cast<std::int64_t>(vars.size());
+    std::string truth;
+    for (int b : target) truth.push_back(b ? '1' : '0');
+    req["truth"] = truth;
+    const Json resp = z3_call(req);
+    if (resp.contains("permutations")) {
+      std::vector<std::vector<std::size_t>> out;
+      for (const auto& pj : resp.at("permutations").array()) {
+        std::vector<std::size_t> p;
+        for (const auto& v : pj.array()) p.push_back(static_cast<std::size_t>(v.as_int()));
+        if (p.size() == vars.size()) out.push_back(std::move(p));
+      }
+      if (!out.empty()) return out;
+    }
+  } catch (const std::exception&) {
+    // Fall through to the n! enumeration below (also works without a helper).
   }
-  return perm;
+  return enumerate_automorphisms(vars, target);
 }
 
 std::string permute_lit(const std::string& lit,
@@ -58,6 +71,32 @@ std::string permute_lit(const std::string& lit,
   if (it == vars.end()) return lit;
   std::size_t idx = std::size_t(it - vars.begin());
   return vars.at(perm.at(idx)) + (inv ? "b" : "");
+}
+
+std::string branch_key(const Branch& b) {
+  std::vector<std::pair<int, std::string>> chain;
+  for (const auto& el : b.chain)
+    chain.emplace_back(static_cast<int>(el.kind), el.lit);
+  std::sort(chain.begin(), chain.end());
+  std::string s = b.source + "|" + std::to_string(b.req_mask) + "|";
+  for (const auto& [kind, lit] : chain) {
+    s += switch_name(static_cast<SwKind>(kind));
+    s += "(" + lit + ");";
+  }
+  return s;
+}
+
+Branch permute_branch(const Branch& b, const std::vector<std::size_t>& perm,
+                      const std::vector<std::string>& vars) {
+  Branch out = b;
+  out.source = permute_lit(b.source, perm, vars);
+  for (auto& el : out.chain) el.lit = permute_lit(el.lit, perm, vars);
+  std::uint32_t req = 0;
+  for (std::size_t i = 0; i < vars.size(); ++i)
+    if (b.req_mask & (std::uint32_t{1} << i))
+      req |= std::uint32_t{1} << perm[i];
+  out.req_mask = req;
+  return out;
 }
 
 std::string canonical_key(const Design& d, const std::vector<std::size_t>& perm,
@@ -155,14 +194,37 @@ SynthesisResult synthesize_min(const std::vector<std::string>& vars,
     return res;
   }
 
+  const auto autos = canonical ? automorphisms(vars, target)
+                              : std::vector<std::vector<std::size_t>>{};
   SynthProblem problem;
   problem.n_rows = static_cast<int>(rows);
   problem.n_inverters = static_cast<int>(vars.size());
   problem.max_cost = opt.max_cost;
-  // Canonicalisation happens here, so ask for a few extra raw optima.
-  const std::size_t raw_limit =
-      canonical ? std::min<std::size_t>(max_solutions, 64) * 8 : max_solutions;
-  problem.limit = static_cast<int>(raw_limit);
+  problem.limit = static_cast<int>(max_solutions);
+
+  // Pass the action of the input automorphism group on branch indices to the
+  // worker.  It blocks the whole orbit of each emitted design, so the solver
+  // enumerates one representative per symmetry class directly.
+  if (canonical && autos.size() > 1) {
+    std::map<std::string, int> index;
+    for (std::size_t i = 0; i < branches.size(); ++i)
+      index.emplace(branch_key(branches[i]), static_cast<int>(i));
+    for (const auto& perm : autos) {
+      std::vector<int> image;
+      image.reserve(branches.size());
+      bool complete = true;
+      for (const auto& b : branches) {
+        const auto it = index.find(branch_key(permute_branch(b, perm, vars)));
+        if (it == index.end()) {
+          complete = false;
+          break;
+        }
+        image.push_back(it->second);
+      }
+      if (complete) problem.symmetries.push_back(std::move(image));
+    }
+  }
+
   problem.covers.assign(rows, {});
   for (std::size_t i = 0; i < branches.size(); ++i) {
     problem.costs.push_back(branches[i].cost);
@@ -179,7 +241,6 @@ SynthesisResult synthesize_min(const std::vector<std::string>& vars,
   if (!sol.message.empty()) res.message = sol.message;
   if (!sol.feasible) return res;
 
-  const auto autos = automorphisms(vars, target);
   std::set<std::string> seen;
   for (const auto& ids : sol.designs) {
     std::vector<std::size_t> selected;
@@ -198,8 +259,7 @@ SynthesisResult synthesize_min(const std::vector<std::string>& vars,
     std::string key;
     if (canonical) {
       std::string best_key;
-      for (auto code : autos) {
-        const auto perm = decode_perm(code, vars.size());
+      for (const auto& perm : autos) {
         std::string k = canonical_key(d, perm, vars);
         if (best_key.empty() || k < best_key) best_key = std::move(k);
       }
