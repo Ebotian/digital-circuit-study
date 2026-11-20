@@ -57,6 +57,8 @@ pass "minimum design + Yosys"
 "$BIN" design min --expr 'A^B' --max-cost 6 --max-chain 3 --all --canonical \
   --limit 8 --verify none --json > "$TMP/canon.json" || fail "canonical XOR"
 [ "$(jq -r '.designs | length' "$TMP/canon.json")" = "1" ] || fail "XOR canonical class count"
+  [ "$(jq -r '.designs[0].drivers.all_single' "$TMP/canon.json")" = "true" ] || fail "XOR dynamic driver exclusivity"
+  [ "$(jq -r '.designs[0].drivers.max_drivers' "$TMP/canon.json")" = "1" ] || fail "XOR dynamic driver count"
 "$BIN" design min --expr 'A^B' --max-cost 6 --max-chain 3 --all \
   --limit 8 --verify none --json > "$TMP/raw.json" || fail "raw XOR"
 [ "$(jq -r '.designs | length' "$TMP/raw.json")" = "2" ] || fail "XOR raw mirror count"

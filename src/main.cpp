@@ -14,6 +14,7 @@
 #include "dcstudy/boolfunc.hpp"
 #include "dcstudy/cdl.hpp"
 #include "dcstudy/cmos.hpp"
+#include "dcstudy/driver_profile.hpp"
 #include "dcstudy/designspace.hpp"
 #include "dcstudy/json.hpp"
 #include "dcstudy/math_client.hpp"
@@ -124,6 +125,33 @@ std::string join(const std::vector<std::string>& v, const std::string& sep) {
     out += s;
   }
   return out;
+}
+
+Json driver_profile_json(const DriverProfile& p) {
+  Json j;
+  j["all_single"] = p.all_single;
+  j["max_drivers"] = p.max_drivers;
+  j["power_steps"] = p.power_steps;
+  Json rows = Json::Array{};
+  for (std::size_t m = 0; m < p.rows.size(); ++m) {
+    const auto& r = p.rows[m];
+    Json row;
+    row["count"] = static_cast<int>(r.sources.size());
+    Json sources = Json::Array{};
+    Json values = Json::Array{};
+    Json strong = Json::Array{};
+    for (std::size_t i = 0; i < r.sources.size(); ++i) {
+      sources.push_back(r.sources[i]);
+      values.push_back(r.values[i]);
+      strong.push_back(r.strong[i]);
+    }
+    row["sources"] = std::move(sources);
+    row["values"] = std::move(values);
+    row["strong"] = std::move(strong);
+    rows.push_back(std::move(row));
+  }
+  j["rows"] = std::move(rows);
+  return j;
 }
 
 Json design_json(const Design& d, const std::vector<std::string>& vars) {
@@ -1046,6 +1074,9 @@ int cmd_design(const std::string& sub, int argc, char** argv) {
     if ((vmode == VerifyMode::Sim || vmode == VerifyMode::Both) && !v.sim)
       all_verified = false;
     Json dj = design_json(d, spec.vars);
+    if (!d.branches.empty())
+      dj["drivers"] = driver_profile_json(
+          analyze_design_drivers(d, spec.vars, target_of(spec)));
     if (vmode != VerifyMode::None) dj["verification"] = v.json;
     if (a.has("emit")) dj["files"] = emit_dir.string();
     designs.push_back(std::move(dj));
