@@ -16,10 +16,13 @@ type Design = {
   pull_down?: string; pull_up?: string; topology?: string;
   nfet?: number; pfet?: number;
   cells?: Array<{ type: string; ports: Record<string, string> }>;
+  outputs?: string[];
+  truths?: Record<string, string>;
 };
 type Request = {
   op: string; out: string; vars: string[]; truth: string; title?: string;
   png?: boolean; canonical?: boolean; logic?: boolean; designs: Design[];
+  outputs?: string[]; truths?: Record<string, string>;
 };
 
 function esc(value: unknown): string {
@@ -294,6 +297,7 @@ function tikzPort(type: string, n: number): string {
 function renderGateLevelSvg(d: Design, vars: string[], title: string): string {
   const cells = d.cells || [];
   if (cells.length === 0) throw new Error("multi-stage design has no cells");
+  const outs = d.outputs && d.outputs.length ? d.outputs : ["Y"];
   const outPort = (c: { type: string; ports: Record<string, string> }) => {
     for (const p of ["ZN", "Z", "Q", "Y", "CO", "S"]) if (c.ports[p]) return p;
     const keys = Object.keys(c.ports);
@@ -325,6 +329,12 @@ function renderGateLevelSvg(d: Design, vars: string[], title: string): string {
       }
     }
   }
+  // Primary outputs go in the rightmost column, even when a gate has no
+  // internal fanin.  This keeps output stubs out of the gate array.
+  const maxLevel = Math.max(...level, 0);
+  cells.forEach((c, i) => {
+    if (outs.indexOf(c.ports[outPort(c)]) >= 0) level[i] = maxLevel;
+  });
   const rows = new Map<number, number>();
   const pos = cells.map((_, i) => {
     const row = rows.get(level[i]) ?? 0;
@@ -352,21 +362,28 @@ function renderGateLevelSvg(d: Design, vars: string[], title: string): string {
       const net = c.ports[port];
       const src = producer.get(net);
       if (src !== undefined && src !== i) {
-        lines.push("\\draw (g" + src + ".out) -- ++(0.45,0) |- (g" + i +
-          inAnchor(i, j) + ");");
+        // Give every source cell its own vertical track, so unrelated nets
+        // never share a vertical segment.
+        const track = 0.45 + 0.11 * (src % 8);
+        const dy = (pos[i].y - pos[src].y).toFixed(3);
+        lines.push("\\draw (g" + src + ".out) -- ++(" + track.toFixed(2) +
+          ",0) -- ++(0," + dy + ") -- (g" + i + inAnchor(i, j) + ");");
       } else if (vars.indexOf(net) >= 0) {
         lines.push("\\draw (g" + i + inAnchor(i, j) +
           ") -- ++(-0.55,0) node[left]{" + net.replace(/_/g, "\\_") + "};");
       }
     });
   });
-  const ySrc = producer.get("Y");
-  if (ySrc !== undefined) {
-    lines.push("\\draw (g" + ySrc + ".out) -- ++(0.7,0) node[right]{Y};");
-  } else {
-    lines.push("\\node[right] at (" + (1.2 + (Math.max(...level, 0) + 1) * 3.2) +
-      ",-0.8) {Y};");
-  }
+  outs.forEach((net, oi) => {
+    const src = producer.get(net);
+    if (src !== undefined) {
+      lines.push("\\draw (g" + src + ".out) -- ++(0.7,0) node[right]{" +
+        net.replace(/_/g, "\\_") + "};");
+    } else {
+      lines.push("\\node[right] at (" + (1.2 + (Math.max(...level, 0) + 1) * 3.2) +
+        "," + (-0.8 - oi * 0.8) + ") {" + net.replace(/_/g, "\\_") + "};");
+    }
+  });
   lines.push("\\end{circuitikz}");
   lines.push("\\end{document}");
 
@@ -389,9 +406,663 @@ function renderGateLevelSvg(d: Design, vars: string[], title: string): string {
   }
 }
 
+// Two-level rail-matrix view, the classic decoder/PLA drawing: primary inputs
+// and their complements are vertical rails; product gates sit in one column and
+// tap the selected rails.  This is structural, not decoder-specific: any
+// two-level netlist (inverters from primary inputs + product gates over those
+// literals) qualifies.
+function renderGateLevelSvgRails(d: Design, vars: string[], title: string): string | null {
+  const cells = d.cells || [];
+  if (cells.length === 0) return null;
+  const outs = d.outputs && d.outputs.length ? d.outputs : ["Y"];
+  const outPort = (c: { type: string; ports: Record<string, string> }) => {
+    for (const p of ["ZN", "Z", "Q", "Y", "CO", "S"]) if (c.ports[p]) return p;
+    const keys = Object.keys(c.ports);
+    return keys.length ? keys[keys.length - 1] : "";
+  };
+  const inputsOf = (c: { type: string; ports: Record<string, string> }) =>
+    Object.keys(c.ports).filter((p) => p !== outPort(c)).sort();
+  const shapes = cells.map((c) => tikzPort(c.type, inputsOf(c).length));
+  if (shapes.some((s) => s === "")) return null;
+
+  const inv = new Map<string, { cell: number; input: string }>();
+  const product: number[] = [];
+  for (let i = 0; i < cells.length; ++i) {
+    const c = cells[i];
+    const ins = inputsOf(c);
+    if (c.type.startsWith("INV") || c.type.startsWith("NOT")) {
+      if (ins.length !== 1 || vars.indexOf(c.ports[ins[0]]) < 0) return null;
+      inv.set(c.ports[outPort(c)], { cell: i, input: c.ports[ins[0]] });
+    } else {
+      for (const p of ins) {
+        const n = c.ports[p];
+        if (vars.indexOf(n) < 0 && !inv.has(n)) return null;
+      }
+      product.push(i);
+    }
+  }
+  if (product.length === 0) return null;
+  // Product outputs must be primary outputs (a true two-level netlist).
+  for (const i of product) {
+    const n = cells[i].ports[outPort(cells[i])];
+    if (outs.indexOf(n) < 0) return null;
+  }
+
+  const railList: string[] = [];
+  const invForVar = new Map<string, string>();
+  for (const [out, info] of inv) invForVar.set(info.input, out);
+  for (const v of vars) {
+    railList.push(v);
+    const c = invForVar.get(v);
+    if (c) railList.push(c);
+  }
+  const railName = (net: string) => {
+    const ii = inv.get(net);
+    return ii ? ii.input + "'" : net;
+  };
+  const xOf = new Map<string, number>();
+  let x = 0.5;
+  for (const v of vars) {
+    xOf.set(v, x);
+    const c = invForVar.get(v);
+    if (c) {
+      xOf.set(c, x + 0.85);
+      x += 1.7;
+    } else {
+      x += 0.85;
+    }
+  }
+  const gateX = x + 2.1;
+  product.sort((a, b) => {
+    const ka = outs.indexOf(cells[a].ports[outPort(cells[a])]);
+    const kb = outs.indexOf(cells[b].ports[outPort(cells[b])]);
+    return (ka < 0 ? 1e6 : ka) - (kb < 0 ? 1e6 : kb);
+  });
+  const headerY = 1.3;
+  const yOf = (row: number) => -0.9 - row * 2.0;
+  const bottom = yOf(product.length) + 0.4;
+
+  const lines: string[] = [];
+  lines.push("\\documentclass[border=12pt]{standalone}");
+  lines.push("\\usepackage[american]{circuitikz}");
+  lines.push("\\begin{document}");
+  lines.push("\\begin{circuitikz}[x=1cm,y=1cm]");
+  for (const net of railList) {
+    const rx = xOf.get(net)!;
+    lines.push("\\coordinate (r_" + net.replace(/[^A-Za-z0-9_]/g, "_") +
+      ") at (" + rx.toFixed(2) + ",0);");
+    lines.push("\\draw (" + rx.toFixed(2) + "," + headerY.toFixed(2) + ") -- (" +
+      rx.toFixed(2) + "," + bottom.toFixed(2) + ");");
+    lines.push("\\node[font=\\scriptsize,fill=white,inner sep=1pt] at (" +
+      rx.toFixed(2) + "," + (headerY + 0.75).toFixed(2) + ") {" +
+      texEscape(railName(net)) + "};");
+  }
+  // Inverter header: primary rail in, complement rail out.
+  for (const [out, info] of inv) {
+    const base = xOf.get(info.input)!;
+    const comp = xOf.get(out)!;
+    lines.push("\\node[not port,scale=0.75] (inv_" + out.replace(/[^A-Za-z0-9_]/g, "_") +
+      ") at (" + ((base + comp) / 2).toFixed(2) + "," + headerY.toFixed(2) + ") {};");
+    lines.push("\\draw (" + base.toFixed(2) + "," + headerY.toFixed(2) +
+      ") -- (inv_" + out.replace(/[^A-Za-z0-9_]/g, "_") + ".in);");
+    lines.push("\\draw (inv_" + out.replace(/[^A-Za-z0-9_]/g, "_") + ".out) -- (" +
+      comp.toFixed(2) + "," + headerY.toFixed(2) + ");");
+  }
+  // Product gates, one row per minterm/product term.
+  product.forEach((ci, row) => {
+    const c = cells[ci];
+    const y = yOf(row);
+    lines.push("\\node[" + shapes[ci] + "] (g" + ci + ") at (" + gateX.toFixed(2) +
+      "," + y.toFixed(2) + ") {};");
+    lines.push("\\node[above=2pt,font=\\tiny,fill=white,inner sep=1pt] at (g" + ci +
+      ".north) {" + c.type.replace(/_/g, "\\_") + "};");
+    inputsOf(c).forEach((p, j) => {
+      const net = c.ports[p];
+      const rx = xOf.get(net)!;
+      const rn = "r_" + net.replace(/[^A-Za-z0-9_]/g, "_");
+      const pin = "g" + ci + (shapes[ci] === "not port" || shapes[ci] === "buffer port"
+        ? ".in" : ".in " + (j + 1));
+      lines.push("\\draw (" + pin + " -| " + rn + ") -- (" + pin + ");");
+      lines.push("\\fill (" + pin + " -| " + rn + ") circle (1.1pt);");
+    });
+    lines.push("\\draw (g" + ci + ".out) -- ++(0.95,0) node[above=2pt,right,fill=white,inner sep=1pt]{" +
+      texEscape(c.ports[outPort(c)]) + "};");
+  });
+  lines.push("\\end{circuitikz}");
+  lines.push("\\end{document}");
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dcstudy-gates-rails-"));
+  try {
+    const tex = path.join(dir, "gate.tex");
+    const pdf = path.join(dir, "gate.pdf");
+    const svg = path.join(dir, "gate.svg");
+    fs.writeFileSync(tex, lines.join("\n"), "utf8");
+    const r = spawnSync("pdflatex",
+      ["-interaction=nonstopmode", "-halt-on-error", "-output-directory", dir, tex],
+      { cwd: dir, encoding: "utf8" });
+    if (r.status !== 0) return null;
+    const c = spawnSync("pdftocairo", ["-svg", pdf, svg], { cwd: dir, encoding: "utf8" });
+    if (c.status !== 0 || !fs.existsSync(svg)) return null;
+    return fs.readFileSync(svg, "utf8");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// Local-bus view: each level is a row band, the primary input bus runs on the
+// left, and every signal that crosses a column boundary gets a vertical track
+// in that boundary's channel.  A primary input used by a later level is copied
+// into that level's channel by a short feeder in the inter-band gap, so no
+// signal has to detour over the whole gate array.  Only nets that skip a logic
+// level fall back to the global top bus.
+function renderGateLevelSvgLocalBus(d: Design, vars: string[], title: string): string {
+  const cells = d.cells || [];
+  if (cells.length === 0) throw new Error("multi-stage design has no cells");
+  const outs = d.outputs && d.outputs.length ? d.outputs : ["Y"];
+  const outPort = (c: { type: string; ports: Record<string, string> }) => {
+    for (const p of ["ZN", "Z", "Q", "Y", "CO", "S"]) if (c.ports[p]) return p;
+    const keys = Object.keys(c.ports);
+    return keys.length ? keys[keys.length - 1] : "";
+  };
+  const inputsOf = (c: { type: string; ports: Record<string, string> }) =>
+    Object.keys(c.ports).filter((p) => p !== outPort(c)).sort();
+  const shapes = cells.map((c) => tikzPort(c.type, inputsOf(c).length));
+  if (shapes.some((s) => s === ""))
+    return renderGateLevelSvgBoxes(d, vars, title);
+  if (spawnSync("pdflatex", ["--version"]).status !== 0 ||
+      spawnSync("pdftocairo", ["-v"]).status !== 0)
+    return renderGateLevelSvgBoxes(d, vars, title);
+
+  const producer = new Map<string, number>();
+  cells.forEach((c, i) => {
+    const p = outPort(c);
+    if (c.ports[p]) producer.set(c.ports[p], i);
+  });
+  const level = new Array<number>(cells.length).fill(0);
+  for (let iter = 0; iter < cells.length; iter++) {
+    for (let i = 0; i < cells.length; i++) {
+      for (const p of inputsOf(cells[i])) {
+        const src = producer.get(cells[i].ports[p]);
+        if (src !== undefined && src !== i)
+          level[i] = Math.max(level[i], level[src] + 1);
+      }
+    }
+  }
+  const maxLevel = Math.max(...level, 0);
+  const usedAsInput = new Set<string>();
+  for (const c of cells)
+    for (const p of inputsOf(c)) usedAsInput.add(c.ports[p]);
+  cells.forEach((c, i) => {
+    const net = c.ports[outPort(c)];
+    if (outs.indexOf(net) >= 0 && !usedAsInput.has(net)) level[i] = maxLevel;
+  });
+  const outRank = (i: number) => {
+    const net = cells[i].ports[outPort(cells[i])];
+    const k = outs.indexOf(net);
+    return k >= 0 ? k : 1_000_000;
+  };
+  const order = cells.map((_, i) => i).sort((a, b) => {
+    if (level[a] !== level[b]) return level[a] - level[b];
+    const ra = outRank(a), rb = outRank(b);
+    if (ra !== rb) return ra - rb;
+    return a - b;
+  });
+
+  type Sink = { cell: number; port: string };
+  const sinks = new Map<string, Sink[]>();
+  for (let i = 0; i < cells.length; ++i) {
+    for (const p of inputsOf(cells[i])) {
+      const net = cells[i].ports[p];
+      const list = sinks.get(net) || [];
+      list.push({ cell: i, port: p });
+      sinks.set(net, list);
+    }
+  }
+
+  // Long internal nets skip a level; keep the global-bus fallback for them.
+  for (const [net, list] of sinks) {
+    const src = producer.get(net);
+    if (src === undefined) continue;
+    for (const sk of list)
+      if (level[sk.cell] > level[src] + 1)
+        return renderGateLevelSvgBus(d, vars, title);
+  }
+
+  // Level-banded rows.  Before level L, reserve one feeder row per primary
+  // input used at that level, plus one blank row.
+  const perLevel = new Map<number, number[]>();
+  order.forEach((i) => {
+    const list = perLevel.get(level[i]) || [];
+    list.push(i);
+    perLevel.set(level[i], list);
+  });
+  const levelInputs = new Map<number, string[]>();
+  for (const net of vars) {
+    const ls = new Set<number>();
+    for (const sk of sinks.get(net) || []) if (level[sk.cell] > 0) ls.add(level[sk.cell]);
+    for (const l of ls) {
+      const list = levelInputs.get(l) || [];
+      list.push(net);
+      levelInputs.set(l, list);
+    }
+  }
+  const yAt = (row: number) => -1 - row * 1.8;
+  const rowOf = new Map<number, number>();
+  const feedY = new Map<string, number>();
+  let row = 0;
+  for (let l = 0; l <= maxLevel; ++l) {
+    if (l > 0) {
+      const ins = levelInputs.get(l) || [];
+      const gap = ins.length;
+      ins.forEach((net, i) => feedY.set(l + ":" + net, yAt(row + i)));
+      row += gap;
+    }
+    for (const i of perLevel.get(l) || []) rowOf.set(i, row++);
+  }
+  const baseX = 0.35 + Math.max(1, vars.length) * 0.45 + 1.8;
+  const pos = cells.map((_, i) => ({
+    x: baseX + level[i] * 4.2,
+    y: yAt(rowOf.get(i) || 0),
+  }));
+
+  const display = new Map<string, string>();
+  for (const v of vars) display.set(v, v);
+  for (const o of outs) display.set(o, o);
+  const visiting = new Set<string>();
+  let internal = 0;
+  const netName = (net: string): string => {
+    const known = display.get(net);
+    if (known !== undefined) return known;
+    if (visiting.has(net)) return net;
+    visiting.add(net);
+    const src = producer.get(net);
+    let result = "";
+    if (src !== undefined) {
+      const c = cells[src];
+      const ip = inputsOf(c);
+      if ((c.type.startsWith("INV") || c.type.startsWith("NOT")) && ip.length === 1)
+        result = netName(c.ports[ip[0]]) + "'";
+      else
+        result = "n" + (++internal);
+    } else {
+      result = net;
+    }
+    visiting.delete(net);
+    display.set(net, result);
+    return result;
+  };
+  for (const [net] of producer) netName(net);
+  const texNet = (net: string) => texEscape(netName(net));
+
+  // Assign channel tracks per level.  A key is "level:net"; the same primary
+  // input may have a different local track at each level.
+  const trackX = new Map<string, number>();
+  const trackKind = new Map<string, "internal" | "input">();
+  for (let l = 1; l <= maxLevel; ++l) {
+    const internalNets: string[] = [];
+    for (const [net, src] of producer) {
+      const list = sinks.get(net) || [];
+      if (list.length === 0) continue;
+      if (level[src] !== l - 1) continue;
+      if (Math.max(...list.map((s) => level[s.cell])) !== l) continue;
+      internalNets.push(net);
+    }
+    internalNets.sort((a, b) => (producer.get(a) || 0) - (producer.get(b) || 0));
+    const inputs = levelInputs.get(l) || [];
+    const keys = [
+      ...internalNets.map((n) => "internal:" + n),
+      ...inputs.map((n) => "input:" + n),
+    ];
+    const n = keys.length;
+    if (n === 0) continue;
+    const base = (baseX + (l - 1) * 4.2 + baseX + l * 4.2) / 2 -
+      (n - 1) * 0.20 / 2;
+    keys.forEach((key, i) => {
+      const kind = key.startsWith("internal:") ? "internal" : "input";
+      const net = key.slice(kind.length + 1);
+      const k = l + ":" + net;
+      trackX.set(k, base + i * 0.20);
+      trackKind.set(k, kind);
+    });
+  }
+
+  const lines: string[] = [];
+  lines.push("\\documentclass[border=12pt]{standalone}");
+  lines.push("\\usepackage[american]{circuitikz}");
+  lines.push("\\begin{document}");
+  lines.push("\\begin{circuitikz}[x=1cm,y=1cm]");
+  cells.forEach((c, i) => {
+    const p = pos[i];
+    lines.push("\\node[" + shapes[i] + "] (g" + i + ") at (" + p.x + "," + p.y + ") {};");
+    lines.push("\\node[above=2pt,anchor=south west,font=\\tiny,fill=white,inner sep=1pt] at (g" + i +
+      ".north) {" + c.type.replace(/_/g, "\\_") + "};");
+  });
+  const inAnchor = (i: number, j: number) => {
+    const s = shapes[i];
+    return (s === "not port" || s === "buffer port") ? ".in" : ".in " + (j + 1);
+  };
+
+  // Primary-input bus: directly feeds level 0; each later level gets a short
+  // feeder in its inter-band gap and a local channel track.
+  const inputNets = vars.filter((v) => sinks.has(v));
+  const inputBusX = new Map<string, number>();
+  inputNets.forEach((net, i) => inputBusX.set(net, 0.35 + i * 0.45));
+  inputNets.forEach((net, bi) => {
+    const x = inputBusX.get(net)!;
+    const bus = "in" + bi;
+    lines.push("\\coordinate (" + bus + ") at (" + x.toFixed(2) + ",0);");
+    const list = sinks.get(net) || [];
+    const direct = list.filter((s) => level[s.cell] === 0);
+    const feeds: number[] = [];
+    for (let l = 1; l <= maxLevel; ++l)
+      if ((levelInputs.get(l) || []).indexOf(net) >= 0) feeds.push(l);
+    const ys: number[] = [];
+    for (const s of direct) ys.push(pos[s.cell].y - 1.2);
+    for (const l of feeds) ys.push(feedY.get(l + ":" + net)!);
+    if (ys.length === 0) return;
+    const lastY = Math.min(...ys);
+    lines.push("\\draw (" + x.toFixed(2) + ",1.3) -- (" + x.toFixed(2) + "," +
+      lastY.toFixed(2) + ");");
+    lines.push("\\node[above=2pt,font=\\scriptsize,fill=white,inner sep=1pt] at (" +
+      x.toFixed(2) + ",1.3) {" + texNet(net) + "};");
+    for (const sk of direct) {
+      const j = inputsOf(cells[sk.cell]).indexOf(sk.port);
+      const pin = "g" + sk.cell + inAnchor(sk.cell, j);
+      lines.push("\\draw (" + pin + ") -- (" + pin + " -| " + bus + ");");
+      lines.push("\\fill (" + pin + " -| " + bus + ") circle (1.1pt);");
+    }
+    for (const l of feeds) {
+      const fy = feedY.get(l + ":" + net)!;
+      const tx = trackX.get(l + ":" + net)!;
+      lines.push("\\draw (" + x.toFixed(2) + "," + fy.toFixed(2) + ") -- (" +
+        tx.toFixed(2) + "," + fy.toFixed(2) + ");");
+      lines.push("\\fill (" + x.toFixed(2) + "," + fy.toFixed(2) + ") circle (1.1pt);");
+      lines.push("\\node[above=2pt,font=\\scriptsize,anchor=west,fill=white,inner sep=1pt] at (" +
+        tx.toFixed(2) + "," + fy.toFixed(2) + ") {" + texNet(net) + "};");
+    }
+  });
+
+  // Draw every channel track and its sink stubs.
+  for (const [key, x] of trackX) {
+    const l = Number(key.slice(0, key.indexOf(":")));
+    const net = key.slice(key.indexOf(":") + 1);
+    const kind = trackKind.get(key)!;
+    const list = sinks.get(net) || [];
+    const tname = "t" + l + "_" + net.replace(/[^A-Za-z0-9_]/g, "_");
+    lines.push("\\coordinate (" + tname + ") at (" + x.toFixed(2) + ",0);");
+    let source = "";
+    if (kind === "internal") {
+      const src = producer.get(net)!;
+      const snet = "(g" + src + ".out -| " + tname + ")";
+      lines.push("\\draw (g" + src + ".out) -- " + snet + ";");
+      lines.push("\\fill " + snet + " circle (1.1pt);");
+      if (outs.indexOf(net) < 0 || usedAsInput.has(net))
+        lines.push("\\node[above=2pt,anchor=south west,xshift=4pt,font=\\scriptsize,fill=white,inner sep=1pt] at " +
+          snet + " {" + texNet(net) + "};");
+      source = snet;
+    } else {
+      source = "(" + x.toFixed(2) + "," + feedY.get(key)!.toFixed(2) + ")";
+      lines.push("\\fill " + source + " circle (1.1pt);");
+    }
+    for (const sk of list) {
+      const j = inputsOf(cells[sk.cell]).indexOf(sk.port);
+      const pin = "g" + sk.cell + inAnchor(sk.cell, j);
+      const dnet = "(" + pin + " -| " + tname + ")";
+      lines.push("\\draw " + source + " -- " + dnet + ";");
+      lines.push("\\draw " + dnet + " -- (" + pin + ");");
+      lines.push("\\fill " + dnet + " circle (1.1pt);");
+    }
+  }
+
+  cells.forEach((c, i) => {
+    const op = outPort(c);
+    const net = c.ports[op];
+    if (outs.indexOf(net) >= 0 && !usedAsInput.has(net)) {
+      lines.push("\\draw (g" + i + ".out) -- ++(0.95,0) node[above=2pt,right,fill=white,inner sep=1pt]{" +
+        texNet(net) + "};");
+    }
+  });
+
+  lines.push("\\end{circuitikz}");
+  lines.push("\\end{document}");
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dcstudy-gates-localbus-"));
+  try {
+    const tex = path.join(dir, "gate.tex");
+    const pdf = path.join(dir, "gate.pdf");
+    const svg = path.join(dir, "gate.svg");
+    fs.writeFileSync(tex, lines.join("\n"), "utf8");
+    const r = spawnSync("pdflatex",
+      ["-interaction=nonstopmode", "-halt-on-error", "-output-directory", dir, tex],
+      { cwd: dir, encoding: "utf8" });
+    if (r.status !== 0) return renderGateLevelSvgBoxes(d, vars, title);
+    const c = spawnSync("pdftocairo", ["-svg", pdf, svg], { cwd: dir, encoding: "utf8" });
+    if (c.status !== 0 || !fs.existsSync(svg))
+      return renderGateLevelSvgBoxes(d, vars, title);
+    return fs.readFileSync(svg, "utf8");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// Global top-bus fallback for nets that skip a logic level.
+function renderGateLevelSvgBus(d: Design, vars: string[], title: string): string {
+  const cells = d.cells || [];
+  if (cells.length === 0) throw new Error("multi-stage design has no cells");
+  const outs = d.outputs && d.outputs.length ? d.outputs : ["Y"];
+  const outPort = (c: { type: string; ports: Record<string, string> }) => {
+    for (const p of ["ZN", "Z", "Q", "Y", "CO", "S"]) if (c.ports[p]) return p;
+    const keys = Object.keys(c.ports);
+    return keys.length ? keys[keys.length - 1] : "";
+  };
+  const inputsOf = (c: { type: string; ports: Record<string, string> }) =>
+    Object.keys(c.ports).filter((p) => p !== outPort(c)).sort();
+  const shapes = cells.map((c) => tikzPort(c.type, inputsOf(c).length));
+  if (shapes.some((s) => s === ""))
+    return renderGateLevelSvgBoxes(d, vars, title);
+  if (spawnSync("pdflatex", ["--version"]).status !== 0 ||
+      spawnSync("pdftocairo", ["-v"]).status !== 0)
+    return renderGateLevelSvgBoxes(d, vars, title);
+
+  const producer = new Map<string, number>();
+  cells.forEach((c, i) => {
+    const p = outPort(c);
+    if (c.ports[p]) producer.set(c.ports[p], i);
+  });
+  const level = new Array<number>(cells.length).fill(0);
+  for (let iter = 0; iter < cells.length; iter++) {
+    for (let i = 0; i < cells.length; i++) {
+      for (const p of inputsOf(cells[i])) {
+        const src = producer.get(cells[i].ports[p]);
+        if (src !== undefined && src !== i)
+          level[i] = Math.max(level[i], level[src] + 1);
+      }
+    }
+  }
+  const maxLevel = Math.max(...level, 0);
+  cells.forEach((c, i) => {
+    if (outs.indexOf(c.ports[outPort(c)]) >= 0) level[i] = maxLevel;
+  });
+  const outRank = (i: number) => {
+    const net = cells[i].ports[outPort(cells[i])];
+    const k = outs.indexOf(net);
+    return k >= 0 ? k : 1_000_000;
+  };
+  const order = cells.map((_, i) => i).sort((a, b) => {
+    if (level[a] !== level[b]) return level[a] - level[b];
+    const ra = outRank(a), rb = outRank(b);
+    if (ra !== rb) return ra - rb;
+    return a - b;
+  });
+  const rows = new Map<number, number>();
+  const pos = new Array<{ x: number; y: number }>(cells.length);
+  for (const i of order) {
+    const row = rows.get(level[i]) ?? 0;
+    rows.set(level[i], row + 1);
+    pos[i] = { x: 1.8 + level[i] * 4.0, y: -1.0 - row * 2.2 };
+  }
+
+  // Display names: primary I/O keep their names; inverter outputs become X';
+  // other internal nets get stable n1, n2, ... names.
+  const display = new Map<string, string>();
+  for (const v of vars) display.set(v, v);
+  for (const o of outs) display.set(o, o);
+  const visiting = new Set<string>();
+  let internal = 0;
+  const netName = (net: string): string => {
+    const known = display.get(net);
+    if (known !== undefined) return known;
+    if (visiting.has(net)) return net;
+    visiting.add(net);
+    const src = producer.get(net);
+    let result = "";
+    if (src !== undefined) {
+      const c = cells[src];
+      const ip = inputsOf(c);
+      if ((c.type.startsWith("INV") || c.type.startsWith("NOT")) && ip.length === 1)
+        result = netName(c.ports[ip[0]]) + "'";
+      else
+        result = "n" + (++internal);
+    } else {
+      result = net;
+    }
+    visiting.delete(net);
+    display.set(net, result);
+    return result;
+  };
+  for (const [net] of producer) netName(net);
+
+  type Sink = { cell: number; port: string };
+  const sinks = new Map<string, Sink[]>();
+  for (let i = 0; i < cells.length; ++i) {
+    for (const p of inputsOf(cells[i])) {
+      const net = cells[i].ports[p];
+      const list = sinks.get(net) || [];
+      list.push({ cell: i, port: p });
+      sinks.set(net, list);
+    }
+  }
+  const busNets: string[] = [];
+  for (const v of vars) if (sinks.has(v)) busNets.push(v);
+  cells.forEach((c) => {
+    const net = c.ports[outPort(c)];
+    if (net && sinks.has(net) && busNets.indexOf(net) < 0) busNets.push(net);
+  });
+  const busY = new Map<string, number>();
+  busNets.forEach((net, i) => busY.set(net, 1.4 + i * 0.36));
+
+  const srcOff = new Map<number, number>();
+  const colSrcCount = new Map<number, number>();
+  const sinkOff = new Map<string, number>();
+  const colSinkCount = new Map<number, number>();
+  const offForSink = (net: string, lvl: number) => {
+    const key = net + "@" + lvl;
+    const old = sinkOff.get(key);
+    if (old !== undefined) return old;
+    const n = colSinkCount.get(lvl) || 0;
+    colSinkCount.set(lvl, n + 1);
+    const off = 0.55 + 0.18 * n;
+    sinkOff.set(key, off);
+    return off;
+  };
+  const offForSource = (cell: number, lvl: number) => {
+    const old = srcOff.get(cell);
+    if (old !== undefined) return old;
+    const n = colSrcCount.get(lvl) || 0;
+    colSrcCount.set(lvl, n + 1);
+    const off = 0.55 + 0.18 * n;
+    srcOff.set(cell, off);
+    return off;
+  };
+
+  const lines: string[] = [];
+  lines.push("\\documentclass[border=12pt]{standalone}");
+  lines.push("\\usepackage[american]{circuitikz}");
+  lines.push("\\begin{document}");
+  lines.push("\\begin{circuitikz}[x=1cm,y=1cm]");
+  cells.forEach((c, i) => {
+    const p = pos[i];
+    lines.push("\\node[" + shapes[i] + "] (g" + i + ") at (" + p.x + "," + p.y + ") {};");
+    lines.push("\\node[above=1pt,font=\\tiny] at (g" + i +
+      ".north) {" + c.type.replace(/_/g, "\\_") + "};");
+  });
+
+  const inAnchor = (i: number, j: number) => {
+    const s = shapes[i];
+    return (s === "not port" || s === "buffer port") ? ".in" : ".in " + (j + 1);
+  };
+  const texNet = (net: string) => texEscape(netName(net));
+
+  busNets.forEach((net, bi) => {
+    const y = busY.get(net)!;
+    const bus = "bus" + bi;
+    lines.push("\\coordinate (" + bus + ") at (0," + y.toFixed(3) + ");");
+    const src = producer.get(net);
+    let sourceTop: string;
+    if (src === undefined) {
+      // Primary input: track starts at the left edge.
+      sourceTop = "s" + bi;
+      lines.push("\\coordinate (" + sourceTop + ") at (0.25," + y.toFixed(3) + ");");
+      lines.push("\\node[left=2pt] at (" + sourceTop + ") {" + texNet(net) + "};");
+    } else {
+      const off = offForSource(src, level[src]);
+      sourceTop = "s" + bi;
+      lines.push("\\draw (g" + src + ".out) -- ++(" + off.toFixed(2) +
+        ",0) coordinate (" + sourceTop + ") -- (" + sourceTop + " |- " + bus + ");");
+      lines.push("\\fill (" + sourceTop + " |- " + bus + ") circle (1.1pt);");
+      lines.push("\\node[above=1pt,font=\\scriptsize] at (" + sourceTop + " |- " +
+        bus + ") {" + texNet(net) + "};");
+    }
+    const list = sinks.get(net) || [];
+    list.forEach((sk, si) => {
+      const off = offForSink(net, level[sk.cell]);
+      const d = "d" + bi + "_" + si;
+      const j = inputsOf(cells[sk.cell]).indexOf(sk.port);
+      lines.push("\\draw (g" + sk.cell + inAnchor(sk.cell, j) + ") -- ++(-" +
+        off.toFixed(2) + ",0) coordinate (" + d + ") -- (" + d + " |- " + bus + ");");
+      lines.push("\\draw (" + sourceTop + " |- " + bus + ") -- (" + d + " |- " +
+        bus + ");");
+      lines.push("\\fill (" + d + " |- " + bus + ") circle (1.1pt);");
+    });
+  });
+
+  // Primary outputs leave from the rightmost column.  They are not part of the
+  // distribution bus unless they also feed an internal gate.
+  cells.forEach((c, i) => {
+    const op = outPort(c);
+    const net = c.ports[op];
+    if (outs.indexOf(net) >= 0) {
+      lines.push("\\draw (g" + i + ".out) -- ++(0.95,0) node[right]{" +
+        texNet(net) + "};");
+    }
+  });
+
+  lines.push("\\end{circuitikz}");
+  lines.push("\\end{document}");
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dcstudy-gates-bus-"));
+  try {
+    const tex = path.join(dir, "gate.tex");
+    const pdf = path.join(dir, "gate.pdf");
+    const svg = path.join(dir, "gate.svg");
+    fs.writeFileSync(tex, lines.join("\n"), "utf8");
+    const r = spawnSync("pdflatex",
+      ["-interaction=nonstopmode", "-halt-on-error", "-output-directory", dir, tex],
+      { cwd: dir, encoding: "utf8" });
+    if (r.status !== 0) return renderGateLevelSvgBoxes(d, vars, title);
+    const c = spawnSync("pdftocairo", ["-svg", pdf, svg], { cwd: dir, encoding: "utf8" });
+    if (c.status !== 0 || !fs.existsSync(svg))
+      return renderGateLevelSvgBoxes(d, vars, title);
+    return fs.readFileSync(svg, "utf8");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): string {
   const cells = d.cells || [];
   if (cells.length === 0) throw new Error("multi-stage design has no cells");
+  const outs = d.outputs && d.outputs.length ? d.outputs : ["Y"];
   const outPort = (c: { type: string; ports: Record<string, string> }) => {
     for (const p of ["ZN", "Z", "Q", "Y", "CO", "S"]) if (c.ports[p]) return p;
     const keys = Object.keys(c.ports);
@@ -419,6 +1090,10 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
     const list = levels.get(level[i]) || [];
     list.push(i);
     levels.set(level[i], list);
+  });
+  const maxLevel0 = Math.max(...level, 0);
+  cells.forEach((c, i) => {
+    if (outs.indexOf(c.ports[outPort(c)]) >= 0) level[i] = maxLevel0;
   });
   const maxLevel = Math.max(...level, 0);
   const width = Math.max(760, 220 + (maxLevel + 1) * 210);
@@ -457,7 +1132,7 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
         const sp = pos.get(src)!;
         const sx = sp.x + boxW;
         const sy0 = sp.y + boxH / 2;
-        const mid = (sx + dst.x) / 2;
+        const mid = (sx + dst.x) / 2 + 10 * (src % 7);
         parts.push('<path d="M ' + sx + " " + sy0 + " H " + mid + " V " + sy +
           " H " + dst.x + '" fill="none" stroke="#1c1c1e" stroke-width="1.8"/>');
       } else if (vars.indexOf(net) >= 0) {
@@ -483,12 +1158,13 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
     const op = outPort(c);
     parts.push(text(posi.x + boxW - 8, posi.y + boxH / 2 + 4, op, "small", "end"));
   });
-  const ySrc = producer.get("Y");
-  if (ySrc !== undefined) {
-    const p = pos.get(ySrc)!;
+  outs.forEach((net) => {
+    const src = producer.get(net);
+    if (src === undefined) return;
+    const p = pos.get(src)!;
     parts.push(line(p.x + boxW, p.y + boxH / 2, p.x + boxW + 55, p.y + boxH / 2, "w"));
-    parts.push(text(p.x + boxW + 68, p.y + boxH / 2 + 6, "Y", "lbl"));
-  }
+    parts.push(text(p.x + boxW + 68, p.y + boxH / 2 + 6, net, "lbl"));
+  });
   parts.push(text(55, height - 26, "gate-level view · each cell is a static complementary CMOS standard cell"));
   parts.push("</svg>");
   return parts.join("\n");
@@ -533,8 +1209,14 @@ function foldTgBranches(d: Design): Design {
 function renderDesignSvg(d: Design, vars: string[], title: string): { svg: string; inverters: string[] } {
   if (d.kind === "static-cmos")
     return { svg: renderStaticCmosSvg(d, title), inverters: [] };
-  if (d.kind === "static-cmos-multi")
-    return { svg: renderGateLevelSvg(d, vars, title), inverters: [] };
+  if (d.kind === "static-cmos-multi") {
+    let svg = "";
+    if (d.outputs && d.outputs.length > 1)
+      svg = renderGateLevelSvgRails(d, vars, title) || renderGateLevelSvgLocalBus(d, vars, title);
+    else
+      svg = renderGateLevelSvg(d, vars, title);
+    return { svg, inverters: [] };
+  }
   if (d.branches.length === 0) throw new Error("design has no branches");
   d = foldTgBranches(d);
   const inverters = Array.from(new Set(d.inverters.map(String)));
@@ -838,6 +1520,26 @@ function truthTable(vars: string[], truth: string): string {
   return "<table><thead><tr>" + head + "</tr></thead><tbody>" + rows.join("") + "</tbody></table>";
 }
 
+function truthTableMulti(vars: string[], outputs: string[],
+                         truths: Record<string, string>): string {
+  const n = vars.length;
+  const len = 1 << n;
+  for (const o of outputs) {
+    if ((truths[o] || "").length !== len)
+      throw new Error("truth table length does not match vars for " + o);
+  }
+  let head = vars.map((v) => "<th>" + esc(v) + "</th>").join("") +
+    outputs.map((o) => "<th>" + esc(o) + "</th>").join("");
+  const rows: string[] = [];
+  for (let m = 0; m < len; m++) {
+    let cells = "";
+    for (let i = 0; i < n; i++) cells += "<td>" + ((m >> (n - 1 - i)) & 1) + "</td>";
+    for (const o of outputs) cells += "<td>" + (truths[o] || "")[m] + "</td>";
+    rows.push("<tr>" + cells + "</tr>");
+  }
+  return "<table><thead><tr>" + head + "</tr></thead><tbody>" + rows.join("") + "</tbody></table>";
+}
+
 function renderIndexHtml(req: Request, svgNames: string[], inverterNames: Array<{ varName: string; svg: string }>, logic: LogicInfo | null): string {
   const title = req.title || "design";
   const optimum = req.designs.length ? req.designs[0].cost : 0;
@@ -857,6 +1559,9 @@ function renderIndexHtml(req: Request, svgNames: string[], inverterNames: Array<
       "<h2><span class=\"num\">" + String.fromCharCode(65 + i) + "</span>方案 " + (i + 1) + " · " + d.cost + "T</h2>" +
       "<div class=\"fig\"><img src=\"" + esc(svgNames[i]) + "\" alt=\"schematic " + i + "\">" +
       "<div class=\"cap\">图 " + String.fromCharCode(65 + i) + "　" + esc(cap) + "</div></div>" +
+      (d.kind === "static-cmos-multi" && d.outputs && d.outputs.length > 1
+        ? "<p class=\"small\">多输出门级图：两级网络画成输入/反相轨 + 乘积项阵列，多级网络画成局部通道总线；实心点 = 连接，交叉无点 = 不连接。</p>"
+        : "") +
       (isStatic ? "" : "<p class=\"small\">反相器：" + esc(invs) + "</p>") +
       "<ul>" + branches + "</ul>");
   });
@@ -867,8 +1572,12 @@ function renderIndexHtml(req: Request, svgNames: string[], inverterNames: Array<
       invHtml += "<div class=\"fig\"><img src=\"" + esc(item.svg) + "\" alt=\"inverter " + esc(item.varName) + "\"></div>";
     }
   }
-  const isStatic = req.designs.some((d) => d.kind === "static-cmos");
+  const isStatic = req.designs.some((d) => d.kind === "static-cmos" || d.kind === "static-cmos-multi");
   const isMulti = req.designs.some((d) => d.kind === "static-cmos-multi");
+  const multiOutputs = req.outputs && req.outputs.length
+    ? req.outputs
+    : (isMulti && req.designs[0].outputs ? req.designs[0].outputs : []);
+  const multiTruths = req.truths || (req.designs[0] && req.designs[0].truths) || null;
   const canonicalText = isMulti
     ? "多级静态互补 CMOS：每个标准单元都是静态 CMOS"
     : (isStatic
@@ -903,10 +1612,16 @@ function renderIndexHtml(req: Request, svgNames: string[], inverterNames: Array<
     ".logic{text-align:center}.logic img{display:block;width:100%;max-width:360px;height:auto;margin:8px auto;background:#fff}\n" +
     "@media(max-width:760px){.grid{grid-template-columns:1fr}}\n" +
     "</style>\n</head>\n<body>\n<header><div class=\"wrap\">\n<h1>" + esc(title) + " · 电路渲染</h1>\n" +
-    "<p><code>dcstudy render</code> 自动生成 · truth = " + esc(req.truth) + " · optimum = " + optimum + "T</p>\n" +
+    "<p><code>dcstudy</code> 自动生成 · " +
+    (multiOutputs.length
+      ? "outputs = " + esc(multiOutputs.join(", ")) + " · multi-output"
+      : "truth = " + esc(req.truth)) +
+    " · optimum = " + optimum + "T</p>\n" +
     "<p>" + esc(canonicalText) + "；晶体管符号与讲义一致。</p>\n</div></header>\n<div class=\"wrap\">\n" +
     "<div class=\"grid\"><div class=\"box\"><p><strong>真值表</strong>（输入顺序 " + esc(req.vars.join(", ")) + "）</p>" +
-    truthTable(req.vars, req.truth) + "</div>" +
+    (multiOutputs.length && multiTruths
+      ? truthTableMulti(req.vars, multiOutputs, multiTruths)
+      : truthTable(req.vars, req.truth)) + "</div>" +
     (logic ? "<div class=\"box logic\"><p><strong>逻辑抽象</strong> · " + esc(logic.label) + "</p>" +
       "<img src=\"" + esc(logic.svg) + "\" alt=\"logic abstraction\">" +
       "<p class=\"small\">行为等价，不是结构分解。" +
@@ -957,7 +1672,7 @@ function main(): number {
       let pngPath: string | null = null;
       if (haveRsvg) {
         const p = path.join(out, "scheme-" + i + ".png");
-        const r = spawnSync(rsvg as string, ["-w", "1600", svgPath, "-o", p], { encoding: "utf8" });
+        const r = spawnSync(rsvg as string, ["-w", "1600", "-b", "white", svgPath, "-o", p], { encoding: "utf8" });
         if (r.status === 0) {
           pngPath = path.resolve(p);
           files.push(pngPath);
@@ -975,7 +1690,7 @@ function main(): number {
       files.push(path.resolve(p));
     });
 
-    const logic = req.logic === false ? null : renderLogicPanel(req, out);
+    const logic = req.logic === false || req.truths ? null : renderLogicPanel(req, out);
     if (logic) {
       files.push(path.resolve(path.join(out, logic.svg)));
       if (logic.tex) files.push(path.resolve(path.join(out, logic.tex)));

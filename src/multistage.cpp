@@ -137,9 +137,17 @@ std::string default_liberty_path() {
   return "nangate45/lib/Nangate45_typ.lib";
 }
 
-MultiStageDesign synthesize_multistage_static(
-    const BoolFunc& f, const std::vector<std::string>& vars, int max_fanin) {
-  MultiStageDesign out;
+namespace {
+
+MultiStageMultiDesign synthesize_multistage_static_multi_impl(
+    const std::vector<BoolFunc>& funcs, const std::vector<std::string>& out_names,
+    const std::vector<std::string>& vars, int max_fanin) {
+  MultiStageMultiDesign out;
+  out.outputs = out_names;
+  if (funcs.empty() || funcs.size() != out_names.size()) {
+    out.reason = "multi-stage synthesis needs one name per output";
+    return out;
+  }
   if (vars.empty() || vars.size() > 4) {
     out.reason = "multi-stage synthesis supports 1..4 inputs";
     return out;
@@ -164,8 +172,14 @@ MultiStageDesign synthesize_multistage_static(
     std::ofstream os(rtl);
     os << "module top(";
     for (const auto& v : vars) os << "input logic " << v << ", ";
-    os << "output logic Y);\n  assign Y = " << f.sop(vars)
-       << ";\nendmodule\n";
+    for (std::size_t i = 0; i < out_names.size(); ++i) {
+      os << "output logic " << out_names[i];
+      if (i + 1 < out_names.size()) os << ", ";
+    }
+    os << ");\n";
+    for (std::size_t i = 0; i < funcs.size(); ++i)
+      os << "  assign " << out_names[i] << " = " << funcs[i].sop(vars) << ";\n";
+    os << "endmodule\n";
   }
 
   std::string dont_use =
@@ -249,8 +263,10 @@ MultiStageDesign synthesize_multistage_static(
       flat.ports.push_back(v);
       flat.pin_dir[v] = PinDir::Input;
     }
-    flat.ports.push_back("Y");
-    flat.pin_dir["Y"] = PinDir::Output;
+    for (const auto& name : out_names) {
+      flat.ports.push_back(name);
+      flat.pin_dir[name] = PinDir::Output;
+    }
     flat.ports.push_back("VDD");
     flat.pin_dir["VDD"] = PinDir::Power;
     flat.ports.push_back("VSS");
@@ -286,10 +302,15 @@ MultiStageDesign synthesize_multistage_static(
     out.json = read_file(net_json);
 
     const SwitchAnalysis a =
-        analyze_switch(flat, vars, {"Y"}, true, "VDD", "VSS");
-    for (const auto& row : a.rows)
-      out.truth.push_back(logic_symbol(row.values[0]));
-    out.verified = out.truth == f.truth_string();
+        analyze_switch(flat, vars, out_names, true, "VDD", "VSS");
+    out.verified = true;
+    for (std::size_t k = 0; k < out_names.size(); ++k) {
+      std::string truth;
+      for (const auto& row : a.rows)
+        truth.push_back(logic_symbol(row.values[k]));
+      out.truths.push_back(truth);
+      if (truth != funcs[k].truth_string()) out.verified = false;
+    }
     out.ok = true;
     if (!out.verified) out.reason = "switch-level truth mismatch";
     return out;
@@ -297,6 +318,33 @@ MultiStageDesign synthesize_multistage_static(
     out.reason = std::string("multi-stage parse failed: ") + e.what();
     return out;
   }
+}
+
+}  // namespace
+
+MultiStageMultiDesign synthesize_multistage_static_multi(
+    const std::vector<BoolFunc>& funcs, const std::vector<std::string>& out_names,
+    const std::vector<std::string>& vars, int max_fanin) {
+  return synthesize_multistage_static_multi_impl(funcs, out_names, vars, max_fanin);
+}
+
+MultiStageDesign synthesize_multistage_static(
+    const BoolFunc& f, const std::vector<std::string>& vars, int max_fanin) {
+  MultiStageMultiDesign m =
+      synthesize_multistage_static_multi_impl({f}, {"Y"}, vars, max_fanin);
+  MultiStageDesign out;
+  out.ok = m.ok;
+  out.reason = m.reason;
+  out.total = m.total;
+  out.nfet = m.nfet;
+  out.pfet = m.pfet;
+  out.cells = std::move(m.cells);
+  out.verilog = std::move(m.verilog);
+  out.json = std::move(m.json);
+  out.cdl = std::move(m.cdl);
+  out.truth = m.truths.empty() ? "" : m.truths.front();
+  out.verified = m.verified;
+  return out;
 }
 
 }  // namespace dcstudy

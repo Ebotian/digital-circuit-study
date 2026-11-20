@@ -31,9 +31,28 @@ struct MultiStageDesign {
   bool verified = false;
 };
 
+// General multi-output variant: one gate-level netlist with shared logic.
+struct MultiStageMultiDesign {
+  bool ok = false;
+  std::string reason;
+  int total = 0;
+  int nfet = 0;
+  int pfet = 0;
+  std::vector<std::string> outputs;
+  std::vector<GateInstance> cells;
+  std::string verilog;
+  std::string json;
+  std::string cdl;
+  std::vector<std::string> truths;  // parallel to outputs
+  bool verified = false;
+};
+
 std::string default_liberty_path();
 MultiStageDesign synthesize_multistage_static(const BoolFunc& f,
                                                const std::vector<std::string>& vars,
                                                int max_fanin = 0);
+MultiStageMultiDesign synthesize_multistage_static_multi(
+    const std::vector<BoolFunc>& funcs, const std::vector<std::string>& out_names,
+    const std::vector<std::string>& vars, int max_fanin = 0);
 
 }  // namespace dcstudy

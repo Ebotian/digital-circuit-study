@@ -1,0 +1,338 @@
+#include "dcstudy/static_exact.hpp"
+
+#include <algorithm>
+#include <cstdint>
+#include <limits>
+#include <map>
+#include <set>
+#include <sstream>
+#include <stdexcept>
+#include <utility>
+
+#include "dcstudy/switchlevel.hpp"
+
+namespace dcstudy {
+namespace {
+
+Bits cover_of(std::uint64_t care, std::uint64_t value, std::size_t n) {
+  const std::uint32_t N = std::uint32_t{1} << n;
+  Bits cover(N);
+  for (std::uint32_t m = 0; m < N; ++m)
+    if ((static_cast<std::uint64_t>(m) & care) == value) cover.set(m);
+  return cover;
+}
+
+struct CubeSearch {
+  const std::vector<Cube>& cubes;
+  const Bits& onset;
+  std::vector<std::vector<std::size_t>> by_minterm;
+  int best_cost = std::numeric_limits<int>::max();
+  std::vector<std::size_t> best;
+
+  CubeSearch(const std::vector<Cube>& c, const Bits& o)
+      : cubes(c), onset(o), by_minterm(o.size()) {
+    for (std::size_t i = 0; i < cubes.size(); ++i)
+      for (std::uint32_t m = 0; m < onset.size(); ++m)
+        if (cubes[i].cover.test(m)) by_minterm[m].push_back(i);
+  }
+
+  void search(Bits uncovered, int cost, std::vector<std::size_t>& chosen) {
+    if (uncovered.none()) {
+      if (cost < best_cost) {
+        best_cost = cost;
+        best = chosen;
+      }
+      return;
+    }
+    if (cost >= best_cost) return;
+    const std::uint32_t m = static_cast<std::uint32_t>(uncovered.find_first());
+    const auto& cand = by_minterm[m];
+    for (std::size_t ci : cand) {
+      const auto& c = cubes[ci];
+      if (!uncovered.intersects(c.cover)) continue;
+      const int add = c.literals();
+      if (cost + add >= best_cost) continue;
+      chosen.push_back(ci);
+      search(uncovered & ~c.cover, cost + add, chosen);
+      chosen.pop_back();
+    }
+  }
+};
+
+std::string inv_name(std::size_t i) { return "inv_" + std::to_string(i); }
+
+std::string literal_name(const std::vector<std::string>& vars,
+                         std::size_t i, bool positive) {
+  return positive ? vars[i] : inv_name(i);
+}
+
+std::string cdl_from_subckt(const Subckt& c) {
+  std::string out = ".SUBCKT " + c.name;
+  for (const auto& p : c.ports) out += " " + p;
+  out += "\n*.PININFO";
+  for (const auto& p : c.ports) {
+    char d = 'B';
+    switch (c.direction(p)) {
+      case PinDir::Input: d = 'I'; break;
+      case PinDir::Output: d = 'O'; break;
+      case PinDir::Power: d = 'P'; break;
+      case PinDir::Ground: d = 'G'; break;
+      default: break;
+    }
+    out += " " + p + ":" + d;
+  }
+  out += "\n";
+  for (const auto& dev : c.devices) {
+    const std::string bulk = dev.pmos ? "VDD" : "VSS";
+    out += dev.name + " " + dev.drain + " " + dev.gate + " " + dev.source +
+           " " + bulk + " " + dev.model + "\n";
+  }
+  out += ".ENDS\n";
+  return out;
+}
+
+}  // namespace
+
+bool exact_min_dnf_literals(const Bits& onset, std::size_t n,
+                            std::uint64_t neg_allowed, Sop& out) {
+  out = Sop{};
+  if (onset.size() != (std::size_t{1} << n))
+    throw std::invalid_argument("onset width does not match n");
+  if (onset.none()) return true;  // constant 0
+  if (onset.count() == onset.size()) {
+    // Constant 1: a zero-literal term.  The caller treats this as a hard tie.
+    Cube c;
+    c.care = 0;
+    c.value = 0;
+    c.cover = Bits::ones(onset.size());
+    out.terms.push_back(std::move(c));
+    return true;
+  }
+
+  // Enumerate every cube over the available literals.  A variable can be
+  // absent, positive, or (if neg_allowed) negative.
+  std::vector<Cube> cubes;
+  std::set<std::pair<std::uint64_t, std::uint64_t>> seen;
+  std::uint64_t total = 1;
+  for (std::size_t i = 0; i < n; ++i) total *= 3;
+  for (std::uint64_t code = 0; code < total; ++code) {
+    std::uint64_t care = 0, value = 0, x = code;
+    bool valid = true;
+    for (std::size_t i = 0; i < n; ++i) {
+      const int d = static_cast<int>(x % 3);
+      x /= 3;
+      const std::uint64_t bit = std::uint64_t{1} << (n - 1 - i);
+      if (d == 0) continue;
+      if (d == 2 && !((neg_allowed >> i) & 1U)) {
+        valid = false;
+        break;
+      }
+      care |= bit;
+      if (d == 1) value |= bit;
+    }
+    if (!valid || care == 0) continue;
+    if (!seen.emplace(care, value).second) continue;
+    Cube c;
+    c.care = care;
+    c.value = value;
+    c.cover = cover_of(care, value, n);
+    if (!c.cover.subset_of(onset)) continue;
+    if (!c.cover.intersects(onset)) continue;
+    cubes.push_back(std::move(c));
+  }
+  if (cubes.empty()) return false;
+
+  CubeSearch cs(cubes, onset);
+  Bits uncovered = onset;
+  std::vector<std::size_t> chosen;
+  cs.search(uncovered, 0, chosen);
+  if (cs.best.empty()) return false;
+  std::sort(cs.best.begin(), cs.best.end());
+  cs.best.erase(std::unique(cs.best.begin(), cs.best.end()), cs.best.end());
+  for (std::size_t i : cs.best) {
+    out.terms.push_back(cubes[i]);
+    out.literals += cubes[i].literals();
+  }
+  return true;
+}
+
+StaticExactResult synthesize_static_exact_multi(
+    const std::vector<BoolFunc>& funcs, const std::vector<std::string>& names,
+    const std::vector<std::string>& vars) {
+  StaticExactResult out;
+  out.outputs = names;
+  if (funcs.empty() || funcs.size() != names.size()) {
+    out.reason = "one output name per function is required";
+    return out;
+  }
+  const std::size_t n = vars.size();
+  if (n == 0 || n > 4) {
+    out.reason = "exact single-stage static CMOS supports 1..4 inputs";
+    return out;
+  }
+  for (const auto& f : funcs) {
+    if (f.arity() != n) {
+      out.reason = "all outputs must use the same input variables";
+      return out;
+    }
+  }
+
+  int best_total = std::numeric_limits<int>::max();
+  int best_gate_cost = 0;
+  int best_inv_cost = 0;
+  std::uint64_t best_mask = 0;
+  std::vector<Sop> best_pdn;
+
+  const std::uint64_t masks = std::uint64_t{1} << n;
+  for (std::uint64_t mask = 0; mask < masks; ++mask) {
+    int gate_cost = 0;
+    bool feasible = true;
+    std::vector<Sop> pdn;
+    for (std::size_t k = 0; k < funcs.size(); ++k) {
+      const Bits onset = ~funcs[k].bits();
+      Sop sop;
+      if (!exact_min_dnf_literals(onset, n, mask, sop)) {
+        feasible = false;
+        break;
+      }
+      if (sop.terms.empty() ||
+          (sop.terms.size() == 1 && sop.terms[0].care == 0)) {
+        // Constant outputs need an ideal rail tie; the current Subckt model
+        // only has transistor devices, so leave constants unsupported.
+        feasible = false;
+        break;
+      }
+      gate_cost += 2 * sop.literals;
+      pdn.push_back(std::move(sop));
+    }
+    if (!feasible) continue;
+    const int inv_cost = 2 * static_cast<int>(__builtin_popcountll(mask));
+    const int total = gate_cost + inv_cost;
+    if (total < best_total) {
+      best_total = total;
+      best_gate_cost = gate_cost;
+      best_inv_cost = inv_cost;
+      best_mask = mask;
+      best_pdn = std::move(pdn);
+    }
+  }
+
+  if (best_total == std::numeric_limits<int>::max()) {
+    out.reason = "no single-stage static CMOS implementation in this model";
+    return out;
+  }
+
+  // Build the flattened transistor netlist.
+  Subckt c;
+  c.name = "STATIC_EXACT_MULTI";
+  for (const auto& v : vars) {
+    c.ports.push_back(v);
+    c.pin_dir[v] = PinDir::Input;
+  }
+  for (const auto& o : names) {
+    c.ports.push_back(o);
+    c.pin_dir[o] = PinDir::Output;
+  }
+  c.ports.push_back("VDD");
+  c.ports.push_back("VSS");
+  c.pin_dir["VDD"] = PinDir::Power;
+  c.pin_dir["VSS"] = PinDir::Ground;
+
+  int dev_id = 0;
+  int nfet = 0, pfet = 0;
+  auto add = [&](const std::string& drain, const std::string& gate,
+                 const std::string& source, bool pmos) {
+    Device d;
+    d.name = "M_" + std::to_string(dev_id++);
+    d.drain = drain;
+    d.gate = gate;
+    d.source = source;
+    d.pmos = pmos;
+    d.model = pmos ? "PMOS" : "NMOS";
+    c.devices.push_back(std::move(d));
+    if (pmos) ++pfet; else ++nfet;
+  };
+
+  // Shared input inverters.
+  for (std::size_t i = 0; i < n; ++i) {
+    if (!((best_mask >> i) & 1U)) continue;
+    const std::string x = vars[i];
+    const std::string xb = inv_name(i);
+    add(xb, x, "VSS", false);
+    add(xb, x, "VDD", true);
+  }
+
+  for (std::size_t k = 0; k < names.size(); ++k) {
+    const std::string& y = names[k];
+    const Sop& sop = best_pdn[k];
+    // PDN: parallel product terms, each a series chain from Y to VSS.
+    for (std::size_t ti = 0; ti < sop.terms.size(); ++ti) {
+      const Cube& cube = sop.terms[ti];
+      std::vector<std::string> lits;
+      for (std::size_t i = 0; i < n; ++i) {
+        const std::uint64_t bit = std::uint64_t{1} << (n - 1 - i);
+        if (!(cube.care & bit)) continue;
+        const bool one = (cube.value & bit) != 0;
+        lits.push_back(literal_name(vars, i, one));
+      }
+      if (lits.empty()) {
+        out.reason = "constant output not supported";
+        return out;
+      }
+      std::vector<std::string> nodes;
+      nodes.push_back(y);
+      for (std::size_t j = 1; j < lits.size(); ++j)
+        nodes.push_back("pd_" + std::to_string(k) + "_" +
+                        std::to_string(ti) + "_" + std::to_string(j));
+      nodes.push_back("VSS");
+      for (std::size_t j = 0; j < lits.size(); ++j)
+        add(nodes[j], lits[j], nodes[j + 1], false);
+    }
+
+    // PUN: series of parallel groups, the dual of the PDN.
+    std::string prev = "VDD";
+    for (std::size_t ti = 0; ti < sop.terms.size(); ++ti) {
+      const Cube& cube = sop.terms[ti];
+      std::vector<std::string> lits;
+      for (std::size_t i = 0; i < n; ++i) {
+        const std::uint64_t bit = std::uint64_t{1} << (n - 1 - i);
+        if (!(cube.care & bit)) continue;
+        const bool one = (cube.value & bit) != 0;
+        lits.push_back(literal_name(vars, i, one));
+      }
+      const std::string next =
+          (ti + 1 == sop.terms.size()) ? y
+                                       : ("pu_" + std::to_string(k) + "_" +
+                                          std::to_string(ti));
+      for (const auto& lit : lits) add(prev, lit, next, true);
+      prev = next;
+    }
+  }
+
+  out.netlist = std::move(c);
+  out.cdl = cdl_from_subckt(out.netlist);
+  out.gate_cost = best_gate_cost;
+  out.inverter_cost = best_inv_cost;
+  out.total = best_total;
+  out.inverted_mask = best_mask;
+  out.pdn = std::move(best_pdn);
+  out.nfet = nfet;
+  out.pfet = pfet;
+  out.proof = true;
+  out.ok = true;
+
+  const SwitchAnalysis a =
+      analyze_switch(out.netlist, vars, names, true, "VDD", "VSS");
+  out.verified = true;
+  for (std::size_t k = 0; k < names.size(); ++k) {
+    std::string truth;
+    for (const auto& row : a.rows)
+      truth.push_back(logic_symbol(row.values[k]));
+    out.truths.push_back(truth);
+    if (truth != funcs[k].truth_string()) out.verified = false;
+  }
+  if (!out.verified) out.reason = "switch-level truth mismatch";
+  return out;
+}
+
+}  // namespace dcstudy

@@ -19,6 +19,7 @@
 #include "dcstudy/math_client.hpp"
 #include "dcstudy/multistage.hpp"
 #include "dcstudy/render_client.hpp"
+#include "dcstudy/static_exact.hpp"
 #include "dcstudy/switchlevel.hpp"
 #include "dcstudy/synthesis.hpp"
 #include "dcstudy/verilog.hpp"
@@ -315,6 +316,9 @@ Commands:
   verify sim     --dut FILE --expr EXPR | --tt BITS [--vars A,B] [--keep]
   pipeline       --funcs 'name=EXPR,...' [--max-cost N] [--out DIR]
                  [--verify none|yosys|sim|both] [--canonical]
+  multi synth    --spec FILE [--out DIR] [--png] [--max-fanin N]
+                 [--json]
+  multi exact    --spec FILE [--out DIR] [--json]
   render         --expr EXPR | --tt BITS [--max-cost N] [--limit N]
                  [--canonical] [--out DIR] [--png] [--no-logic]
                  [--static-cmos]
@@ -332,6 +336,7 @@ Options:
   --static-cmos  restrict to static complementary CMOS (kappa-linear; rejects
                  pass/TG; single-stage, with automatic multi-stage fallback)
   --graphblas    use the GraphBLAS worker for switch-level reachability closure
+  --spec         JSON circuit spec: {"inputs":[...],"outputs":[{"name":...,"expr":...}]}
   --max-fanin N  static CMOS cell fan-in limit (e.g. 2); 0 = library default
   --heavy        allow the n=6 Dedekind count (about 40 s and 10 GB)
 
@@ -686,6 +691,22 @@ StaticCheck check_static_cmos(const CmosDesign& d, const FuncSpec& spec) {
   return c;
 }
 
+Json cells_json(const std::vector<GateInstance>& instances) {
+  Json cells = Json::Array{};
+  std::string topology;
+  for (const auto& c : instances) {
+    Json cj;
+    cj["type"] = c.type;
+    Json ports;
+    for (const auto& [k, v] : c.ports) ports[k] = v;
+    cj["ports"] = std::move(ports);
+    cells.push_back(std::move(cj));
+    if (!topology.empty()) topology += " → ";
+    topology += c.type;
+  }
+  return cells;
+}
+
 Json multi_design_json(const MultiStageDesign& m) {
   Json j;
   j["kind"] = "static-cmos-multi";
@@ -696,19 +717,39 @@ Json multi_design_json(const MultiStageDesign& m) {
   j["branches"] = Json::Array{};
   j["kappa_linear"] = true;
   j["single_stage"] = false;
-  Json cells = Json::Array{};
+  j["cells"] = cells_json(m.cells);
   std::string topology;
   for (const auto& c : m.cells) {
-    Json cj;
-    cj["type"] = c.type;
-    Json ports;
-    for (const auto& [k, v] : c.ports) ports[k] = v;
-    cj["ports"] = std::move(ports);
-    cells.push_back(std::move(cj));
     if (!topology.empty()) topology += " → ";
     topology += c.type;
   }
-  j["cells"] = std::move(cells);
+  j["topology"] = topology;
+  return j;
+}
+
+Json multi_design_json(const MultiStageMultiDesign& m) {
+  Json j;
+  j["kind"] = "static-cmos-multi";
+  j["cost"] = m.total;
+  j["nfet"] = m.nfet;
+  j["pfet"] = m.pfet;
+  j["inverters"] = Json::Array{};
+  j["branches"] = Json::Array{};
+  j["kappa_linear"] = true;
+  j["single_stage"] = false;
+  Json outs = Json::Array{};
+  for (const auto& o : m.outputs) outs.push_back(o);
+  j["outputs"] = std::move(outs);
+  j["cells"] = cells_json(m.cells);
+  Json truths;
+  for (std::size_t i = 0; i < m.outputs.size(); ++i)
+    truths[m.outputs[i]] = m.truths.at(i);
+  j["truths"] = std::move(truths);
+  std::string topology;
+  for (const auto& c : m.cells) {
+    if (!topology.empty()) topology += " → ";
+    topology += c.type;
+  }
   j["topology"] = topology;
   return j;
 }
@@ -1079,6 +1120,253 @@ int cmd_verify(const std::string& sub, int argc, char** argv) {
   return r.ok ? 0 : 1;
 }
 
+struct MultiSpec {
+  std::string title;
+  std::vector<std::string> vars;
+  std::vector<std::string> names;
+  std::vector<BoolFunc> funcs;
+};
+
+MultiSpec load_multi_spec(const std::string& path) {
+  std::ifstream in(path);
+  if (!in) throw CliError("cannot read spec: " + path);
+  std::ostringstream os;
+  os << in.rdbuf();
+  const Json root = Json::parse(os.str());
+  MultiSpec s;
+  s.title = root.contains("name") ? root.at("name").as_string() : fs::path(path).stem().string();
+  const Json& vars = root.at("inputs");
+  if (!vars.is_array() || vars.array().empty())
+    throw CliError("spec.inputs must be a non-empty array");
+  for (const auto& v : vars.array()) s.vars.push_back(v.as_string());
+  if (s.vars.size() > 4) throw CliError("multi synth supports at most 4 inputs");
+  const Json& outs = root.at("outputs");
+  if (!outs.is_array() || outs.array().empty())
+    throw CliError("spec.outputs must be a non-empty array");
+  for (const auto& o : outs.array()) {
+    std::string name, expr;
+    if (o.is_object()) {
+      name = o.at("name").as_string();
+      expr = o.at("expr").as_string();
+    } else if (o.is_string()) {
+      const std::string t = o.as_string();
+      const auto eq = t.find('=');
+      if (eq == std::string::npos) throw CliError("output string must be name=expr");
+      name = t.substr(0, eq);
+      expr = t.substr(eq + 1);
+    } else {
+      throw CliError("each output must be {name, expr} or name=expr");
+    }
+    if (name.empty() || name == "VDD" || name == "VSS")
+      throw CliError("bad output name: " + name);
+    if (std::find(s.names.begin(), s.names.end(), name) != s.names.end())
+      throw CliError("duplicate output name: " + name);
+    if (std::find(s.vars.begin(), s.vars.end(), name) != s.vars.end())
+      throw CliError("output collides with input: " + name);
+    s.names.push_back(name);
+    s.funcs.push_back(spec_from_expr(expr, s.vars).func);
+  }
+  return s;
+}
+
+int cmd_multi_exact(const Args& a, const MultiSpec& spec) {
+  const StaticExactResult r =
+      synthesize_static_exact_multi(spec.funcs, spec.names, spec.vars);
+  const bool json = a.is("json");
+  if (!r.ok || !r.verified) {
+    if (json) {
+      Json j;
+      j["ok"] = false;
+      j["command"] = "multi.exact";
+      j["reason"] = r.reason;
+      j["verified"] = r.verified;
+      std::cout << j.dump() << "\n";
+    } else {
+      std::cerr << "multi exact failed: " << r.reason << "\n";
+    }
+    return 1;
+  }
+
+  Json j;
+  j["ok"] = true;
+  j["command"] = "multi.exact";
+  j["model"] = "single-stage static complex CMOS with shared input inverters";
+  j["title"] = spec.title;
+  j["optimal"] = r.total;
+  j["total"] = r.total;
+  j["gate_cost"] = r.gate_cost;
+  j["inverter_cost"] = r.inverter_cost;
+  j["nfet"] = r.nfet;
+  j["pfet"] = r.pfet;
+  j["proof"] = r.proof;
+  j["verified"] = r.verified;
+  Json outs = Json::Array{};
+  Json truths;
+  Json inverted = Json::Array{};
+  Json gates = Json::Array{};
+  for (std::size_t i = 0; i < spec.vars.size(); ++i)
+    if ((r.inverted_mask >> i) & 1U) inverted.push_back(spec.vars[i]);
+  for (std::size_t k = 0; k < r.outputs.size(); ++k) {
+    outs.push_back(r.outputs[k]);
+    truths[r.outputs[k]] = r.truths.at(k);
+    Json g;
+    g["output"] = r.outputs[k];
+    g["pdn"] = r.pdn.at(k).expression(spec.vars);
+    g["literals"] = r.pdn.at(k).literals;
+    g["transistors"] = 2 * r.pdn.at(k).literals;
+    gates.push_back(std::move(g));
+  }
+  j["outputs"] = std::move(outs);
+  j["truths"] = std::move(truths);
+  j["inverted"] = std::move(inverted);
+  j["gates"] = std::move(gates);
+
+  const std::string out_dir = a.get("out");
+  if (!out_dir.empty()) {
+    const fs::path dir(out_dir);
+    fs::create_directories(dir);
+    std::ofstream(dir / "flattened.cdl") << r.cdl;
+    std::ofstream(dir / "exact.json") << j.dump() << "\n";
+    Json files = Json::Array{};
+    for (const char* f : {"flattened.cdl", "exact.json"})
+      files.push_back((dir / f).string());
+    j["files"] = std::move(files);
+  }
+
+  if (json) {
+    std::cout << j.dump() << "\n";
+  } else {
+    std::cout << "multi-output exact static CMOS: " << spec.title << "\n";
+    std::cout << "  " << r.total << "T  ("
+              << r.gate_cost << "T gates + " << r.inverter_cost
+              << "T shared inverters)\n";
+    std::cout << "  " << r.nfet << " NMOS + " << r.pfet << " PMOS\n";
+    std::cout << "  inverted inputs:";
+    bool any = false;
+    for (std::size_t i = 0; i < spec.vars.size(); ++i)
+      if ((r.inverted_mask >> i) & 1U) {
+        std::cout << " " << spec.vars[i];
+        any = true;
+      }
+    if (!any) std::cout << " none";
+    std::cout << "\n";
+    std::cout << "  proof: exhaustive over all 2^" << spec.vars.size()
+              << " inverter sets + exact minimum DNF per output\n";
+    std::cout << "  switch-level: PASS\n";
+  }
+  return 0;
+}
+
+int cmd_multi(const std::string& sub, int argc, char** argv) {
+  const Args a = parse_args(argc, argv, 3);
+  if (sub == "exact") {
+    const MultiSpec spec = load_multi_spec(a.need("spec"));
+    return cmd_multi_exact(a, spec);
+  }
+  if (sub != "synth") throw CliError("unknown multi subcommand: " + sub);
+  const MultiSpec spec = load_multi_spec(a.need("spec"));
+  const int max_fanin = std::stoi(a.get("max-fanin", "0"));
+  if (max_fanin != 0 && (max_fanin < 2 || max_fanin > 4))
+    throw CliError("--max-fanin must be 0 or 2..4");
+  const MultiStageMultiDesign m =
+      synthesize_multistage_static_multi(spec.funcs, spec.names, spec.vars,
+                                         max_fanin);
+  const bool json = a.is("json");
+  if (!m.ok || !m.verified) {
+    if (json) {
+      Json j;
+      j["ok"] = false;
+      j["command"] = "multi.synth";
+      j["reason"] = m.reason;
+      j["verified"] = m.verified;
+      Json truths;
+      for (std::size_t i = 0; i < m.outputs.size() && i < m.truths.size(); ++i)
+        truths[m.outputs[i]] = m.truths[i];
+      j["truths"] = std::move(truths);
+      std::cout << j.dump() << "\n";
+    } else {
+      std::cerr << "multi synth failed: " << m.reason << "\n";
+      for (std::size_t i = 0; i < m.outputs.size() && i < m.truths.size(); ++i)
+        std::cerr << "  " << m.outputs[i] << " = " << m.truths[i] << "\n";
+    }
+    return 1;
+  }
+
+  Json design = multi_design_json(m);
+  const std::string out_dir = a.get("out");
+  Json j;
+  j["ok"] = true;
+  j["command"] = "multi.synth";
+  j["title"] = spec.title;
+  j["total"] = m.total;
+  j["nfet"] = m.nfet;
+  j["pfet"] = m.pfet;
+  j["cells"] = static_cast<int>(m.cells.size());
+  Json outs = Json::Array{};
+  for (const auto& o : m.outputs) outs.push_back(o);
+  j["outputs"] = std::move(outs);
+  Json truths;
+  for (std::size_t i = 0; i < m.outputs.size(); ++i)
+    truths[m.outputs[i]] = m.truths[i];
+  j["truths"] = truths;
+  j["verified"] = m.verified;
+  j["design"] = design;
+
+  if (!out_dir.empty()) {
+    const fs::path dir(out_dir);
+    fs::create_directories(dir);
+    std::ofstream(dir / "gate-level.v") << m.verilog;
+    std::ofstream(dir / "netlist.json") << m.json;
+    std::ofstream(dir / "flattened.cdl") << m.cdl;
+    std::ofstream(dir / "design.json") << design.dump() << "\n";
+    Json files = Json::Array{};
+    for (const char* f : {"gate-level.v", "netlist.json", "flattened.cdl",
+                          "design.json"})
+      files.push_back((dir / f).string());
+    j["files"] = std::move(files);
+
+    Json req;
+    req["op"] = "render";
+    req["out"] = dir.string();
+    req["vars"] = [&] {
+      Json v = Json::Array{};
+      for (const auto& s : spec.vars) v.push_back(s);
+      return v;
+    }();
+    req["title"] = spec.title;
+    req["truth"] = m.truths.empty() ? "" : m.truths.front();
+    req["truths"] = truths;
+    req["outputs"] = [&] {
+      Json v = Json::Array{};
+      for (const auto& o : m.outputs) v.push_back(o);
+      return v;
+    }();
+    req["png"] = a.is("png");
+    req["logic"] = false;
+    req["designs"] = Json::Array{design};
+    const Json resp = render_call(req);
+    j["render"] = resp;
+  } else if (a.is("png")) {
+    throw CliError("--png requires --out DIR");
+  }
+
+  if (json) {
+    std::cout << j.dump() << "\n";
+  } else {
+    std::cout << "multi-output static CMOS: " << spec.title << "\n";
+    std::cout << "  " << m.total << "T  (" << m.nfet << " NMOS + "
+              << m.pfet << " PMOS), " << m.cells.size() << " cells\n";
+    std::cout << "  outputs: " << join(m.outputs, ", ") << "\n";
+    for (std::size_t i = 0; i < m.outputs.size(); ++i)
+      std::cout << "  " << m.outputs[i] << " = " << m.truths[i] << "\n";
+    std::cout << "  switch-level: PASS\n";
+    if (j.contains("render"))
+      std::cout << "  rendered: " << j.at("render").at("index").as_string()
+                << "\n";
+  }
+  return 0;
+}
+
 int cmd_render_static(const Args& a, const FuncSpec& spec,
                       const SpaceOptions& opt, bool json) {
   const CmosDesign d = synthesize_cmos(spec.func, spec.vars);
@@ -1380,6 +1668,7 @@ int main(int argc, char** argv) {
     if (cmd == "cdl") return cmd_cdl(sub, argc, argv);
     if (cmd == "design") return cmd_design(sub, argc, argv);
     if (cmd == "verify") return cmd_verify(sub, argc, argv);
+    if (cmd == "multi") return cmd_multi(sub, argc, argv);
     if (cmd == "render") return cmd_render(argc, argv);
     if (cmd == "pipeline") return cmd_pipeline(argc, argv);
     throw CliError("unknown command: " + cmd);

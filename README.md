@@ -215,7 +215,7 @@ optimum: 6T  designs=...
 - 每个器件 gate-only；`--no-tg` 不能替代 `--static-cmos`
 - `--verify static` 对生成的多级网表做 **CDL flatten → Z3 switch-level** 全输入证明
 - `--emit` 单级写 `static-cmos.json/cdl`；多级写 `gate-level.v`、`netlist.json`、`flattened.cdl`
-- `render --static-cmos` 单级画 PUN/PDN 互补图，多级画门级静态单元图 + 行为等价逻辑符号；多级门级图的 AND/NAND/NOR 等直接复用 circuitikz 标准端口（AOI/OAI 等无单端口标准符号时才退回方块）
+- `render --static-cmos` 单级画 PUN/PDN 互补图，多级画门级静态单元图 + 行为等价逻辑符号；多级门级图的 AND/NAND/NOR 等直接复用 circuitikz 标准端口（AOI/OAI 等无单端口标准符号时才退回方块）；`multi synth` 的两级网表自动用输入轨/乘积项阵列，多级用局部通道总线
 
 ```bash
 ./build/dcstudy render --expr '~(A&B)' --static-cmos --out /tmp/nand-static --png
@@ -236,6 +236,83 @@ optimum: 6T  designs=...
 ./build/dcstudy render --expr '~(A&B&C)' --vars A,B,C --static-cmos --out /tmp/nand3-6t --png
 ./build/dcstudy render --expr '~(A&B&C)' --vars A,B,C --static-cmos --max-fanin 2 --out /tmp/nand3-10t --png
 ```
+
+#### 多输出电路：译码器只是一个 spec 实例
+
+工具没有内置 `decoder` 特例；多输出电路统一走 `multi synth`：
+输入变量和多个输出表达式写在 JSON 里，Yosys/ABC 把它们当**一个多输出网络**综合，
+共享输入反相器、fanout 和中间逻辑，再把每个标准单元展开成 CDL，
+用现有的 `analyze_switch` 对**所有输出**做全输入 switch-level 证明。
+
+`/tmp/decoder38.json`：
+
+```json
+{
+  "name": "decoder3to8",
+  "inputs": ["A", "B", "C"],
+  "outputs": [
+    {"name": "Y0", "expr": "~A&~B&~C"},
+    {"name": "Y1", "expr": "~A&~B&C"},
+    {"name": "Y2", "expr": "~A&B&~C"},
+    {"name": "Y3", "expr": "~A&B&C"},
+    {"name": "Y4", "expr": "A&~B&~C"},
+    {"name": "Y5", "expr": "A&~B&C"},
+    {"name": "Y6", "expr": "A&B&~C"},
+    {"name": "Y7", "expr": "A&B&C"}
+  ]
+}
+```
+
+```bash
+./build/dcstudy multi synth --spec /tmp/decoder38.json \
+  --out /tmp/decoder38 --png --json
+```
+
+输出：
+
+```text
+multi-output static CMOS: decoder3to8
+  54T  (27 NMOS + 27 PMOS), 11 cells
+  outputs: Y0, Y1, Y2, Y3, Y4, Y5, Y6, Y7
+  ...
+  switch-level: PASS
+```
+
+- 这是 **3 个共享 INV + 8 个 NOR3**，不是 8 个独立单输出电路；
+- 所有输出一起经过 CDL flatten / Z3 switch-level 验证；
+- 两级网络自动使用**输入/反相轨 + 乘积项阵列**（Mano 图 5-8 的画法）：A/A'、B/B'、C/C' 是竖直轨，8 个 NOR3 排成行，每个门从对应三根轨取输入；
+- 多级网络使用**局部通道总线**：每个逻辑层占独立行带，信号在相邻列之间的通道里竖直走线，主输入在层间空隙引到该层，不把中间信号抬到整个图的上方；
+- 实心点表示连接，交叉无点表示不连接；输出按 `Y0..Y7` 排序，避免 Yosys 内部单元顺序影响可读性；
+- `--max-fanin 2` 同样适用于多输出综合。
+
+#### 严格最优：单级静态复杂 CMOS
+
+`multi synth` 是 Yosys/ABC 的启发式映射，不证明最优。严格版本用 `multi exact`：
+
+```bash
+./build/dcstudy multi exact --spec /tmp/decoder38.json --out /tmp/decoder-exact --json
+```
+
+优化模型是明确限定的：
+
+- 每个输出一个**单级静态复杂 CMOS 门**（PDN + 对偶 PUN）；
+- PDN 是输入字面量的精确最小 DNF；
+- 输入反相器是共享的 2T 反相器；
+- 不允许 TG/pass-transistor、不允许门间共享、不允许输出反相器。
+
+优化器穷举全部 `2^n` 个反相器集合，并对每个输出求精确最小 DNF，因此在这个模型内是**带最优性证明**的。3-8 译码器：
+
+```text
+optimal: 54T
+  48T gates + 6T shared inverters
+  27 NMOS + 27 PMOS
+  proof: exhaustive over all 8 inverter sets + exact minimum DNF per output
+  switch-level: PASS
+```
+
+`--out` 会写出 `flattened.cdl` 和 `exact.json`。
+
+标准画法参考：Mano《Digital Design》3-to-8 decoder 图（3 个反相器提供补码，8 个与门产生 minterm），以及 KFUPM EE200 讲义中的同款画法；低有效输出版本通常直接用 8 个 NAND 门。这里因为走静态互补 CMOS，所以实际单元是 NOR3（与 AND3 在 De Morgan 意义下等价）。
 
 ### 5. 一条命令复现讲义数字
 

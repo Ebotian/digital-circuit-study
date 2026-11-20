@@ -85,6 +85,42 @@ pass "symmetry quotient"
 [ "$(jq -r .verification.static.ok "$TMP/nand3-10.json")" = "true" ] || fail "NAND3 10T switch-level"
 pass "static CMOS constraint"
 
+# General multi-output synthesis: the 3-to-8 decoder is only a spec file.
+if [ -f "$CDL" ] && command -v yosys >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
+  cat > "$TMP/decoder38.json" <<'JSON'
+{
+  "name": "decoder3to8",
+  "inputs": ["A", "B", "C"],
+  "outputs": [
+    {"name": "Y0", "expr": "~A&~B&~C"},
+    {"name": "Y1", "expr": "~A&~B&C"},
+    {"name": "Y2", "expr": "~A&B&~C"},
+    {"name": "Y3", "expr": "~A&B&C"},
+    {"name": "Y4", "expr": "A&~B&~C"},
+    {"name": "Y5", "expr": "A&~B&C"},
+    {"name": "Y6", "expr": "A&B&~C"},
+    {"name": "Y7", "expr": "A&B&C"}
+  ]
+}
+JSON
+  "$BIN" multi synth --spec "$TMP/decoder38.json" --out "$TMP/decoder38"     --json > "$TMP/decoder38.out" || fail "multi-output decoder"
+  [ "$(jq -r .verified "$TMP/decoder38.out")" = "true" ] || fail "multi-output verify"
+  [ "$(jq -r .total "$TMP/decoder38.out")" = "54" ] || fail "decoder 54T"
+  [ "$(jq -r '.truths.Y0' "$TMP/decoder38.out")" = "10000000" ] || fail "decoder Y0"
+  [ "$(jq -r '.truths.Y7' "$TMP/decoder38.out")" = "00000001" ] || fail "decoder Y7"
+  "$BIN" multi exact --spec "$TMP/decoder38.json" --json > "$TMP/decoder38.exact"     || fail "multi-output exact"
+  [ "$(jq -r .optimal "$TMP/decoder38.exact")" = "54" ] || fail "decoder exact 54T"
+  [ "$(jq -r .proof "$TMP/decoder38.exact")" = "true" ] || fail "decoder optimality proof"
+  [ "$(jq -r .verified "$TMP/decoder38.exact")" = "true" ] || fail "decoder exact verification"
+  [ "$(jq -r .nfet "$TMP/decoder38.exact")" = "27" ] || fail "decoder exact NMOS"
+  [ "$(jq -r '.inverted | length' "$TMP/decoder38.exact")" = "3" ] || fail "decoder exact inverters"
+  [ -f "$TMP/decoder38/index.html" ] || fail "decoder render index"
+  [ -f "$TMP/decoder38/scheme-0.svg" ] || fail "decoder schematic"
+  pass "multi-output circuit (decoder as spec)"
+else
+  echo "skip multi-output checks (no CDL/yosys/node)"
+fi
+
 # Automated schematic rendering (TS/Node worker by default).
 if command -v node >/dev/null 2>&1; then
   "$BIN" render --expr '~(A^B)' --max-cost 6 --max-chain 3 --all --canonical \

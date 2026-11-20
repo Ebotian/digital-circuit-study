@@ -22,6 +22,7 @@ add_library(dcstudy_core STATIC
   src/boolfunc.cpp
   src/cdl.cpp
   src/cmos.cpp
+  src/static_exact.cpp
   src/designspace.cpp
   src/math_client.cpp
   src/multistage.cpp
