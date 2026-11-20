@@ -248,6 +248,10 @@ TEST_CASE("batched driver profile matches single-design analysis") {
       analyze_designs_drivers_batch(r.designs, s.vars, targets);
   const auto batch_matrix =
       analyze_designs_drivers_batch(r.designs, s.vars, targets, true);
+  setenv("DCSTUDY_DRIVER_GRAPHBLAS", "1", 1);
+  const auto batch_graphblas =
+      analyze_designs_drivers_batch(r.designs, s.vars, targets, true);
+  unsetenv("DCSTUDY_DRIVER_GRAPHBLAS");
   REQUIRE(batch.size() == r.designs.size());
   for (std::size_t i = 0; i < r.designs.size(); ++i) {
     const auto single =
@@ -263,6 +267,8 @@ TEST_CASE("batched driver profile matches single-design analysis") {
     REQUIRE(batch[i].all_single == single.all_single);
     REQUIRE(batch[i].max_drivers == single.max_drivers);
     REQUIRE(batch[i].driver_count == single.driver_count);
+    REQUIRE(batch_graphblas[i].valid == single.valid);
+    REQUIRE(batch_graphblas[i].driver_count == single.driver_count);
   }
 }
 

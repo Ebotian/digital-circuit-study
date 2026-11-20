@@ -2,12 +2,14 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <map>
 #include <set>
 #include <string>
 #include <vector>
 
 #include "dcstudy/boolmatrix.hpp"
+#include "dcstudy/math_client.hpp"
 
 namespace dcstudy {
 namespace {
@@ -131,11 +133,12 @@ BoolMatrix power_closure(const BoolMatrix& c, std::size_t n, int& steps) {
   return reach;
 }
 
-DriverRow extract_row(const Graph& g, const BoolMatrix& reach,
-                      std::size_t offset, std::uint32_t m,
-                      const std::vector<std::string>& vars,
-                      const std::vector<int>& target, bool& valid,
-                      bool& all_single, int& max_drivers) {
+template <typename Reach>
+DriverRow extract_row_t(const Graph& g, const Reach& reach,
+                        std::size_t offset, std::uint32_t m,
+                        const std::vector<std::string>& vars,
+                        const std::vector<int>& target, bool& valid,
+                        bool& all_single, int& max_drivers) {
   DriverRow row;
   std::map<std::string, bool> strong_for;
   for (const auto& p : g.paths) {
@@ -168,6 +171,61 @@ DriverRow extract_row(const Graph& g, const BoolMatrix& reach,
     valid = false;
   }
   return row;
+}
+
+struct SparseReach {
+  const std::vector<std::vector<int>>& rows;
+  bool test(std::size_t i, std::size_t j) const {
+    if (i >= rows.size()) return false;
+    return std::binary_search(rows[i].begin(), rows[i].end(),
+                              static_cast<int>(j));
+  }
+};
+
+void collect_edges(std::vector<std::pair<int, int>>& edges,
+                   const Graph& g, std::uint32_t m,
+                   const std::vector<std::string>& vars,
+                   std::size_t offset) {
+  BoolMatrix c(g.names.size());
+  fill_matrix(c, g, m, vars, 0);
+  for (std::size_t i = 0; i < g.names.size(); ++i)
+    for (std::size_t j = 0; j < g.names.size(); ++j)
+      if (c.test(i, j))
+        edges.emplace_back(static_cast<int>(offset + i),
+                           static_cast<int>(offset + j));
+}
+
+bool graphblas_batch(const std::vector<Graph>& graphs,
+                     const std::vector<std::size_t>& offsets, std::size_t total,
+                     const std::vector<Design>& designs,
+                     const std::vector<std::string>& vars,
+                     const std::vector<std::vector<int>>& targets,
+                     std::vector<DriverProfile>& out) {
+  const std::uint32_t rows = std::uint32_t{1} << vars.size();
+  const std::size_t full_total = total * static_cast<std::size_t>(rows);
+  if (full_total == 0 || full_total > 20000) return false;
+  std::vector<std::pair<int, int>> edges;
+  for (std::uint32_t m = 0; m < rows; ++m)
+    for (std::size_t k = 0; k < designs.size(); ++k) {
+      const std::size_t base =
+          static_cast<std::size_t>(m) * total + offsets[k];
+      collect_edges(edges, graphs[k], m, vars, base);
+    }
+  const auto reach = graph_closure(static_cast<int>(full_total), edges);
+  SparseReach sr{reach};
+  for (std::uint32_t m = 0; m < rows; ++m)
+    for (std::size_t k = 0; k < designs.size(); ++k) {
+      const std::size_t base =
+          static_cast<std::size_t>(m) * total + offsets[k];
+      const auto& target = targets.size() == 1 ? targets[0] : targets.at(k);
+      out[k].rows[m] = extract_row_t(graphs[k], sr, base, m, vars, target,
+                                     out[k].valid, out[k].all_single,
+                                     out[k].max_drivers);
+      out[k].driver_count[m] =
+          static_cast<int>(out[k].rows[m].sources.size());
+      out[k].power_steps = static_cast<int>(full_total);
+    }
+  return true;
 }
 
 }  // namespace
@@ -238,8 +296,8 @@ DriverProfile analyze_design_drivers(const Design& d,
     fill_matrix(c, g, m, vars, 0);
     out.power_steps += static_cast<int>(g.names.size());
     BoolMatrix reach = power_closure(c, g.names.size(), out.power_steps);
-    out.rows[m] = extract_row(g, reach, 0, m, vars, target, out.valid,
-                              out.all_single, out.max_drivers);
+    out.rows[m] = extract_row_t(g, reach, 0, m, vars, target, out.valid,
+                                out.all_single, out.max_drivers);
     out.driver_count[m] = static_cast<int>(out.rows[m].sources.size());
   }
   return out;
@@ -274,6 +332,17 @@ std::vector<DriverProfile> analyze_designs_drivers_batch(
     p.rows.resize(rows);
     p.driver_count.resize(rows, 0);
   }
+  const char* gb_env = std::getenv("DCSTUDY_DRIVER_GRAPHBLAS");
+  const bool force_gb = gb_env && std::string(gb_env) == "1";
+  const std::size_t full_total = total * static_cast<std::size_t>(rows);
+  if (force_gb || full_total >= 256) {
+    try {
+      if (graphblas_batch(graphs, offsets, total, designs, vars, targets, out))
+        return out;
+    } catch (const std::exception&) {
+      // Fall back to the local Boolean closure if the worker is unavailable.
+    }
+  }
   for (std::uint32_t m = 0; m < rows; ++m) {
     BoolMatrix c(total);
     for (std::size_t k = 0; k < designs.size(); ++k)
@@ -282,9 +351,9 @@ std::vector<DriverProfile> analyze_designs_drivers_batch(
     BoolMatrix reach = power_closure(c, total, steps);
     for (std::size_t k = 0; k < designs.size(); ++k) {
       const auto& target = targets.size() == 1 ? targets[0] : targets.at(k);
-      out[k].rows[m] = extract_row(graphs[k], reach, offsets[k], m, vars,
-                                   target, out[k].valid, out[k].all_single,
-                                   out[k].max_drivers);
+      out[k].rows[m] = extract_row_t(graphs[k], reach, offsets[k], m, vars,
+                                     target, out[k].valid, out[k].all_single,
+                                     out[k].max_drivers);
       out[k].driver_count[m] =
           static_cast<int>(out[k].rows[m].sources.size());
       out[k].power_steps += steps;
