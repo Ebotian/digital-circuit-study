@@ -346,7 +346,7 @@ optimal: 54T
 | 静态标准单元 | Yosys/ABC + Nangate45 静态单元 | **174T**(87N + 87P) | 逐输出 switch-level PASS |
 | 定制单级复杂 CMOS | 每输出一个 PDN/PUN,共享输入反相器 | **180T**(90N + 90P) | 模型内 proof + PASS |
 
-“定制”在这里指**定制复杂门**,不是 pass-transistor 全定制。无三态的 `multi path` 现在会先走 PUN/PDN 双轨路径搜索;对这个七段 spec 目前仍找不到完整 cover,会回退到上面的 180T 静态模型。对 1-to-4 分路器和 3-to-8 译码器,双轨搜索已经给出 14T / 26T 的无三态网络。
+“定制”在这里指**定制复杂门**,不是 pass-transistor 全定制。无三态的 `multi path` 现在会先走 PUN/PDN 双轨路径搜索;对这个七段 spec,双轨搜索目前仍未在 45 秒预算内完成,静态 180T 仍是可用的无三态实现。对 1-to-4 分路器和 3-to-8 译码器,双轨搜索已经给出 14T / 26T 的无三态网络。
 
 #### 三态输出：`--tri-state`
 
