@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -27,6 +28,49 @@ z3::check_result checked(z3::optimize& o) {
   const auto r = o.check();
   if (r == z3::unknown) throw std::runtime_error("Z3 returned unknown");
   return r;
+}
+
+// Exactly one source net may drive the output per input row.  Branches from
+// the same source are one driver (notably the two halves of a TG), while two
+// different sources are a structural conflict even if they happen to carry
+// the same value.
+std::vector<z3::expr> driver_constraints(
+    z3::context& ctx, const SynthProblem& p,
+    const std::vector<z3::expr>& x) {
+  std::vector<z3::expr> out;
+  if (p.conducts.empty()) return out;
+  if (p.conducts.size() != static_cast<std::size_t>(p.n_rows))
+    throw std::runtime_error("synth: conducts size mismatch");
+  if (p.groups.size() != x.size())
+    throw std::runtime_error("synth: groups size mismatch");
+  for (int m = 0; m < p.n_rows; ++m) {
+    std::map<int, std::vector<int>> by_group;
+    for (int id : p.conducts[static_cast<std::size_t>(m)]) {
+      if (id < 0 || static_cast<std::size_t>(id) >= x.size())
+        throw std::runtime_error("synth: conducts index out of range");
+      const int g = p.groups[static_cast<std::size_t>(id)];
+      if (g < 0) throw std::runtime_error("synth: branch has no source group");
+      by_group[g].push_back(id);
+    }
+    std::vector<z3::expr> ys;
+    for (const auto& [g, ids] : by_group) {
+      z3::expr y = ctx.int_const(("y_" + std::to_string(m) + "_" +
+                                  std::to_string(g)).c_str());
+      out.push_back(y >= 0);
+      out.push_back(y <= 1);
+      std::vector<z3::expr> terms;
+      for (int id : ids) {
+        terms.push_back(x[static_cast<std::size_t>(id)]);
+        out.push_back(y >= x[static_cast<std::size_t>(id)]);
+      }
+      out.push_back(y <= sum_expr(ctx, terms));
+      ys.push_back(std::move(y));
+    }
+    if (ys.empty())
+      throw std::runtime_error("synth: no conducting source for a row");
+    out.push_back(sum_expr(ctx, ys) == 1);
+  }
+  return out;
 }
 
 }  // namespace
@@ -89,6 +133,7 @@ SynthSolution z3_solve_synth(const SynthProblem& p) {
     }
     optz.add(sum_expr(ctx, terms) >= 1);
   }
+  for (const auto& c : driver_constraints(ctx, p, x)) optz.add(c);
 
   for (std::size_t i = 0; i < nb; ++i) {
     for (std::size_t j = 0; j < inv_bits.size(); ++j)
@@ -132,6 +177,7 @@ SynthSolution z3_solve_synth(const SynthProblem& p) {
     for (int id : p.covers[m]) terms.push_back(x[static_cast<std::size_t>(id)]);
     s.add(sum_expr(ctx, terms) >= 1);
   }
+  for (const auto& c : driver_constraints(ctx, p, x)) s.add(c);
   for (std::size_t i = 0; i < nb; ++i)
     for (std::size_t j = 0; j < inv_bits.size(); ++j)
       if (p.req[i] & (std::uint32_t{1} << inv_bits[j])) s.add(x[i] <= inv[j]);

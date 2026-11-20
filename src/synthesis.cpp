@@ -151,6 +151,10 @@ bool valid_design(const Design& d, const std::vector<int>& target, int optimum) 
       }
     }
     if (!ok) return false;
+    std::set<std::string> drivers;
+    for (const auto& b : d.branches)
+      if (b.behavior.at(m).conducts) drivers.insert(b.source);
+    if (drivers.size() != 1) return false;
   }
   return true;
 }
@@ -226,12 +230,21 @@ SynthesisResult synthesize_min(const std::vector<std::string>& vars,
   }
 
   problem.covers.assign(rows, {});
+  problem.conducts.assign(rows, {});
+  std::map<std::string, int> group_of;
   for (std::size_t i = 0; i < branches.size(); ++i) {
     problem.costs.push_back(branches[i].cost);
     problem.req.push_back(branches[i].req_mask);
-    for (std::uint32_t m = 0; m < rows; ++m)
+    auto [it, inserted] =
+        group_of.emplace(branches[i].source, static_cast<int>(group_of.size()));
+    (void)inserted;
+    problem.groups.push_back(it->second);
+    for (std::uint32_t m = 0; m < rows; ++m) {
       if (branches[i].covers_strong(m, target[m]))
         problem.covers[m].push_back(static_cast<int>(i));
+      if (branches[i].behavior.at(m).conducts)
+        problem.conducts[m].push_back(static_cast<int>(i));
+    }
   }
 
   const SynthSolution sol =

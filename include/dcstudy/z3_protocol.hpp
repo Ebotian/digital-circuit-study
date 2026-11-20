@@ -19,6 +19,8 @@ struct SynthProblem {
   std::vector<int> costs;                 // per branch
   std::vector<std::uint32_t> req;         // per branch, inverter bitmask
   std::vector<std::vector<int>> covers;   // per row, strongly-correct branch ids
+  std::vector<std::vector<int>> conducts; // per row, all conducting branch ids
+  std::vector<int> groups;                // per branch, source-net group id
   // Optional input-automorphism action on branch indices.  When non-empty,
   // the worker blocks the whole orbit of every solution it emits, so the
   // enumeration only produces one representative per symmetry class.

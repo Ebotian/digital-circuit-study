@@ -63,6 +63,7 @@ Json encode_synth_problem(const SynthProblem& p) {
     Json b;
     b["cost"] = p.costs[i];
     b["req"] = static_cast<std::int64_t>(p.req[i]);
+    if (i < p.groups.size()) b["group"] = p.groups[i];
     branches.push_back(std::move(b));
   }
   j["branches"] = std::move(branches);
@@ -73,6 +74,15 @@ Json encode_synth_problem(const SynthProblem& p) {
     covers.push_back(std::move(ids));
   }
   j["covers"] = std::move(covers);
+  if (!p.conducts.empty()) {
+    Json conducts = Json::Array{};
+    for (const auto& row : p.conducts) {
+      Json ids = Json::Array{};
+      for (int id : row) ids.push_back(id);
+      conducts.push_back(std::move(ids));
+    }
+    j["conducts"] = std::move(conducts);
+  }
   Json syms = Json::Array{};
   for (const auto& sym : p.symmetries) {
     Json a = Json::Array{};
@@ -94,6 +104,7 @@ SynthProblem decode_synth_problem(const Json& j) {
   for (const auto& b : bs.array()) {
     p.costs.push_back(static_cast<int>(need(b, "cost").as_int()));
     p.req.push_back(static_cast<std::uint32_t>(need(b, "req").as_int()));
+    p.groups.push_back(b.contains("group") ? static_cast<int>(b.at("group").as_int()) : -1);
   }
   const Json& cs = need(j, "covers");
   if (!cs.is_array()) throw std::runtime_error("protocol: covers must be an array");
@@ -105,8 +116,19 @@ SynthProblem decode_synth_problem(const Json& j) {
     for (const auto& c : row.array()) ids.push_back(static_cast<int>(c.as_int()));
     p.covers.push_back(std::move(ids));
   }
-  if (p.costs.size() != p.req.size())
-    throw std::runtime_error("protocol: cost/req size mismatch");
+  if (p.costs.size() != p.req.size() || p.groups.size() != p.costs.size())
+    throw std::runtime_error("protocol: cost/req/group size mismatch");
+  if (j.contains("conducts")) {
+    const Json& rows = j.at("conducts");
+    if (!rows.is_array() || static_cast<int>(rows.size()) != p.n_rows)
+      throw std::runtime_error("protocol: conducts size mismatch");
+    for (const auto& row : rows.array()) {
+      if (!row.is_array()) throw std::runtime_error("protocol: conducts row must be an array");
+      std::vector<int> ids;
+      for (const auto& id : row.array()) ids.push_back(static_cast<int>(id.as_int()));
+      p.conducts.push_back(std::move(ids));
+    }
+  }
   if (j.contains("symmetries")) {
     const Json& syms = j.at("symmetries");
     if (!syms.is_array()) throw std::runtime_error("protocol: symmetries must be an array");
