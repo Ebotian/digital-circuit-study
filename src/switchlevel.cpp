@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "dcstudy/boolmatrix.hpp"
+#include "dcstudy/math_client.hpp"
 #include "dcstudy/z3_client.hpp"
 #include "dcstudy/z3_protocol.hpp"
 
@@ -54,7 +55,8 @@ struct FixedPoint {
 
 FixedPoint run_fixpoint(const Subckt& cell, const NetIndex& ni,
                         const std::vector<std::size_t>& input_idx,
-                        std::uint32_t minterm, std::size_t vdd, std::size_t vss) {
+                        std::uint32_t minterm, std::size_t vdd, std::size_t vss,
+                        bool graphblas) {
   const std::size_t n = ni.names.size();
   FixedPoint fp;
   fp.f0.assign(n, 0);
@@ -110,15 +112,34 @@ FixedPoint run_fixpoint(const Subckt& cell, const NetIndex& ni,
                            : (fp.f1[gi] && (fp.f0[di] || fp.f0[si]));
     if (on) edges.emplace_back(di, si);
   }
-  BoolMatrix m = BoolMatrix::undirected(n, edges);
-  m.closure(true);
   std::vector<char> fixed(n, 0);
   fixed[vdd] = fixed[vss] = 1;
   for (auto i : input_idx) fixed[i] = 1;
-  for (std::size_t i = 0; i < n; ++i) {
-    if (fixed[i]) continue;
-    if (fp.f0[i] && !m.test(vss, i)) fp.invariant_ok = false;
-    if (fp.f1[i] && !m.test(vdd, i)) fp.invariant_ok = false;
+  if (graphblas) {
+    std::vector<std::pair<int, int>> ge;
+    ge.reserve(edges.size());
+    for (auto [u, v] : edges) {
+      ge.emplace_back(static_cast<int>(u), static_cast<int>(v));
+      ge.emplace_back(static_cast<int>(v), static_cast<int>(u));
+    }
+    const auto reach = graph_closure(static_cast<int>(n), ge);
+    auto reaches = [&](std::size_t src, std::size_t dst) {
+      const auto& row = reach.at(src);
+      return std::find(row.begin(), row.end(), static_cast<int>(dst)) != row.end();
+    };
+    for (std::size_t i = 0; i < n; ++i) {
+      if (fixed[i]) continue;
+      if (fp.f0[i] && !reaches(vss, i)) fp.invariant_ok = false;
+      if (fp.f1[i] && !reaches(vdd, i)) fp.invariant_ok = false;
+    }
+  } else {
+    BoolMatrix m = BoolMatrix::undirected(n, edges);
+    m.closure(true);
+    for (std::size_t i = 0; i < n; ++i) {
+      if (fixed[i]) continue;
+      if (fp.f0[i] && !m.test(vss, i)) fp.invariant_ok = false;
+      if (fp.f1[i] && !m.test(vdd, i)) fp.invariant_ok = false;
+    }
   }
 
   for (const auto& d : cell.devices) {
@@ -154,7 +175,7 @@ SwitchAnalysis analyze_switch(const Subckt& cell,
                               const std::vector<std::string>& inputs,
                               const std::vector<std::string>& outputs,
                               bool exact, const std::string& vdd,
-                              const std::string& vss) {
+                              const std::string& vss, bool graphblas) {
   if (inputs.size() > 8)
     throw std::invalid_argument("switch-level analysis supports at most 8 inputs");
   if (outputs.empty()) throw std::invalid_argument("cell has no output port");
@@ -188,7 +209,7 @@ SwitchAnalysis analyze_switch(const Subckt& cell,
   bool need_exact = exact;
   for (std::uint32_t m = 0; m < rows; ++m) {
     minterms.push_back(m);
-    fps.push_back(run_fixpoint(cell, ni, input_idx, m, vdd_i, vss_i));
+    fps.push_back(run_fixpoint(cell, ni, input_idx, m, vdd_i, vss_i, graphblas));
     if (!fps.back().floating_gates.empty() || !fps.back().invariant_ok)
       need_exact = true;
   }

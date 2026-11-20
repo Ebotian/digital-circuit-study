@@ -39,7 +39,8 @@ SwitchAnalysis analyze_switch(const Subckt& cell,
                               const std::vector<std::string>& outputs,
                               bool exact = false,
                               const std::string& vdd = "VDD",
-                              const std::string& vss = "VSS");
+                              const std::string& vss = "VSS",
+                              bool graphblas = false);
 
 char logic_symbol(Logic v);
 

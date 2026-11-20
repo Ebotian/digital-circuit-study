@@ -37,6 +37,7 @@ if [ -f "$CDL" ]; then
   [ "$("$BIN" cdl solve --cdl "$CDL" --cell XOR2_X1 --json | jq -r .truth.Z)" = "0110" ] || fail "CDL XOR2"
   [ "$("$BIN" cdl solve --cdl "$CDL" --cell XNOR2_X1 --exact --json | jq -r .truth.ZN)" = "1001" ] || fail "CDL XNOR2 exact"
   [ "$("$BIN" cdl solve --cdl "$CDL" --cell NAND2_X1 --json | jq -r .truth.ZN)" = "1110" ] || fail "CDL NAND2"
+  [ "$("$BIN" cdl solve --cdl "$CDL" --cell XOR2_X1 --graphblas --json | jq -r .truth.Z)" = "0110" ] || fail "CDL XOR2 GraphBLAS"
   pass "CDL switch level"
 else
   echo "skip CDL checks (no $CDL)"

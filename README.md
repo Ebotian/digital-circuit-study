@@ -269,6 +269,7 @@ xdg-open /tmp/xnor-render/index.html
 - `closure`: GraphBLAS 布尔半环 `(OR, AND)` 的可达闭包;
 - `gf2`: FLINT 在 GF(2) 上的秩/零空间;
 - `symmetry`: bliss 输入自同构群(内部使用)。
+- `cdl solve --graphblas` 可以把开关级连通闭包切到 GraphBLAS worker;默认仍用本地 bitset BoolMatrix(小网表更快)。
 
 > 渲染性能(同请求,hyperfine 20 次,仅 worker):Python 22.8 ms / 15.9 MiB;TS/Node 无逻辑面板 42.1 ms / 89.2 MiB;TS + circuitikz 热缓存 47.9 ms / 89.5 MiB,首次编译约 324 ms。Node 的启动和堆是固定成本,渲染又是可选功能,所以优先保留更好读的 TS 布局。
 

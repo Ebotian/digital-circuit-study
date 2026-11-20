@@ -181,6 +181,10 @@ TEST_CASE("switch-level fixed point on a synthetic NOR2") {
   REQUIRE(re.mode == "z3");
   for (std::size_t i = 0; i < r.rows.size(); ++i)
     REQUIRE(re.rows[i].values[0] == r.rows[i].values[0]);
+  const auto rg = analyze_switch(c, {"A", "B"}, {"Z"}, false, "VDD", "VSS", true);
+  REQUIRE(rg.mode == "fixpoint");
+  for (std::size_t i = 0; i < r.rows.size(); ++i)
+    REQUIRE(rg.rows[i].values[0] == r.rows[i].values[0]);
 }
 
 TEST_CASE("JSON parser and Z3 protocol round-trip") {

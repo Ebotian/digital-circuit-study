@@ -54,7 +54,7 @@ struct Args {
 
 const std::set<std::string> kBoolFlags = {
     "json", "all", "canonical", "exact", "keep", "help", "verbose", "no-tg",
-    "heavy", "png", "no-logic", "static-cmos"};
+    "heavy", "png", "no-logic", "static-cmos", "graphblas"};
 
 Args parse_args(int argc, char** argv, int start) {
   Args a;
@@ -306,7 +306,8 @@ Commands:
   math closure   --n N --edges 0-1,1-2 [--json]
   math gf2       --rows '1,1;0,1' [--ncols N] [--json]
   cdl list       [--cdl FILE]
-  cdl solve      --cell NAME [--cdl FILE] [--inputs A,B] [--exact] [--expect BITS]
+  cdl solve      --cell NAME [--cdl FILE] [--inputs A,B] [--exact]
+                 [--graphblas] [--expect BITS]
   design min     --expr EXPR | --tt BITS [--max-cost N] [--max-chain N]
                  [--all] [--limit N] [--canonical] [--emit DIR]
                  [--verify none|yosys|sim|both|static] [--static-cmos] [--keep]
@@ -330,6 +331,7 @@ Options:
   --no-logic     skip the logic-abstraction panel (and its LaTeX compile)
   --static-cmos  restrict to static complementary CMOS (kappa-linear; rejects
                  pass/TG; single-stage, with automatic multi-stage fallback)
+  --graphblas    use the GraphBLAS worker for switch-level reachability closure
   --max-fanin N  static CMOS cell fan-in limit (e.g. 2); 0 = library default
   --heavy        allow the n=6 Dedekind count (about 40 s and 10 GB)
 
@@ -591,7 +593,8 @@ int cmd_cdl(const std::string& sub, int argc, char** argv) {
     const bool exact = a.is("exact");
     const SwitchAnalysis r = analyze_switch(cell, inputs, outputs, exact,
                                            a.get("vdd", "VDD"),
-                                           a.get("vss", "VSS"));
+                                           a.get("vss", "VSS"),
+                                           a.is("graphblas"));
     std::vector<std::string> truth(outputs.size());
     for (const auto& row : r.rows)
       for (std::size_t oi = 0; oi < outputs.size(); ++oi)
