@@ -272,6 +272,33 @@ TEST_CASE("batched driver profile matches single-design analysis") {
   }
 }
 
+TEST_CASE("switch graph path closure handles shared internal nodes") {
+  SwitchGraph g;
+  const int a = g.add_net("A");
+  const int b = g.add_net("B");
+  const int n = g.add_net("n");
+  const int y = g.add_net("Y");
+  g.output = y;
+  g.source_ids = {a, b};
+  auto tg = [&](int from, int to) {
+    SwitchGraphEdge e;
+    e.from = from;
+    e.to = to;
+    e.kind = SwKind::TGH;
+    e.lit = "1";
+    e.strong = true;
+    g.edges.push_back(e);
+  };
+  tg(a, n);
+  tg(b, n);
+  tg(n, y);
+  const auto p = analyze_switch_graph(g, {"A", "B"}, {0, 0, 0, 0});
+  REQUIRE(p.max_drivers == 2);
+  REQUIRE_FALSE(p.all_single);
+  REQUIRE_FALSE(p.valid);
+  REQUIRE(p.rows[0].sources == std::vector<std::string>{"A", "B"});
+}
+
 TEST_CASE("CDL parser handles a small subckt") {
   const auto dir = std::filesystem::temp_directory_path() / "dcstudy-test-cdl";
   std::filesystem::create_directories(dir);

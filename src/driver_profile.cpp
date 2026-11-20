@@ -230,6 +230,119 @@ bool graphblas_batch(const std::vector<Graph>& graphs,
 
 }  // namespace
 
+int SwitchGraph::add_net(const std::string& name) {
+  const int id = static_cast<int>(nets.size());
+  nets.push_back(name);
+  return id;
+}
+
+SwitchGraph switch_graph_from_design(const Design& d) {
+  SwitchGraph g;
+  std::map<std::string, int> ids;
+  auto node = [&](const std::string& n) {
+    auto it = ids.find(n);
+    if (it != ids.end()) return it->second;
+    const int id = g.add_net(n);
+    ids.emplace(n, id);
+    return id;
+  };
+  g.output = node("Y");
+  std::set<std::string> sources;
+  for (const auto& b : d.branches) {
+    sources.insert(b.source);
+    int prev = node(b.source);
+    for (std::size_t j = 0; j < b.chain.size(); ++j) {
+      const int next = g.add_net("n" + std::to_string(g.edges.size()) + "_" +
+                                 std::to_string(j));
+      SwitchGraphEdge e;
+      e.from = prev;
+      e.to = next;
+      e.kind = b.chain[j].kind;
+      e.lit = b.chain[j].lit;
+      e.strong = (b.chain[j].kind == SwKind::TGL || b.chain[j].kind == SwKind::TGH);
+      g.edges.push_back(std::move(e));
+      prev = next;
+    }
+    SwitchGraphEdge wire;
+    wire.from = prev;
+    wire.to = g.output;
+    wire.kind = SwKind::TGH;
+    wire.lit = "1";  // wire represented as an always-on TG edge
+    wire.strong = true;
+    g.edges.push_back(std::move(wire));
+  }
+  for (const auto& s : sources) g.source_ids.push_back(node(s));
+  return g;
+}
+
+DriverProfile analyze_switch_graph(const SwitchGraph& g,
+                                  const std::vector<std::string>& vars,
+                                  const std::vector<int>& target) {
+  DriverProfile out;
+  if (g.nets.empty() || g.source_ids.empty() || vars.empty()) {
+    out.valid = false;
+    return out;
+  }
+  const std::uint32_t rows = std::uint32_t{1} << vars.size();
+  if (target.size() != rows) {
+    out.valid = false;
+    return out;
+  }
+  out.rows.resize(rows);
+  out.driver_count.resize(rows, 0);
+  for (std::uint32_t m = 0; m < rows; ++m) {
+    BoolMatrix c0(g.nets.size()), c1(g.nets.size());
+    BoolMatrix s0(g.nets.size()), s1(g.nets.size());
+    for (const auto& e : g.edges) {
+      const int gate = literal_value(e.lit, m, vars);
+      auto add = [&](BoolMatrix& c, BoolMatrix& s) {
+        c.set(static_cast<std::size_t>(e.from), static_cast<std::size_t>(e.to));
+        c.set(static_cast<std::size_t>(e.to), static_cast<std::size_t>(e.from));
+        if (e.strong) {
+          s.set(static_cast<std::size_t>(e.from), static_cast<std::size_t>(e.to));
+          s.set(static_cast<std::size_t>(e.to), static_cast<std::size_t>(e.from));
+        }
+      };
+      if (switch_on(e.kind, gate, 0)) add(c0, s0);
+      if (switch_on(e.kind, gate, 1)) add(c1, s1);
+    }
+    int steps = 0;
+    const BoolMatrix r0 = power_closure(c0, g.nets.size(), steps);
+    const BoolMatrix r1 = power_closure(c1, g.nets.size(), steps);
+    const BoolMatrix q0 = power_closure(s0, g.nets.size(), steps);
+    const BoolMatrix q1 = power_closure(s1, g.nets.size(), steps);
+    out.power_steps += steps;
+
+    DriverRow row;
+    std::set<int> seen_sources;
+    for (int s : g.source_ids) {
+      if (!seen_sources.insert(s).second) continue;
+      const std::string& name = g.nets[static_cast<std::size_t>(s)];
+      const int value = source_value(name, m, vars);
+      const BoolMatrix& r = value == 0 ? r0 : r1;
+      if (!r.test(static_cast<std::size_t>(s),
+                  static_cast<std::size_t>(g.output)))
+        continue;
+      row.source_ids.push_back(s);
+      row.sources.push_back(name);
+      row.values.push_back(value);
+      const BoolMatrix& q = value == 0 ? q0 : q1;
+      row.strong.push_back(q.test(static_cast<std::size_t>(s),
+                                  static_cast<std::size_t>(g.output)));
+    }
+    out.max_drivers = std::max(out.max_drivers, static_cast<int>(row.sources.size()));
+    if (row.sources.size() != 1) {
+      out.all_single = false;
+      out.valid = false;
+    } else if (row.values[0] != target[m] || !row.strong[0]) {
+      out.valid = false;
+    }
+    out.driver_count[m] = static_cast<int>(row.sources.size());
+    out.rows[m] = std::move(row);
+  }
+  return out;
+}
+
 DriverProfile analyze_design_drivers_simple(
     const Design& d, const std::vector<std::string>& vars,
     const std::vector<int>& target) {

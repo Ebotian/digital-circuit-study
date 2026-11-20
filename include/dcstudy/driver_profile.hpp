@@ -15,6 +15,27 @@
 
 namespace dcstudy {
 
+struct SwitchGraphEdge {
+  int from = 0;
+  int to = 0;
+  SwKind kind = SwKind::TGH;
+  std::string lit;
+  bool strong = false;
+};
+
+struct SwitchGraph {
+  std::vector<std::string> nets;
+  std::vector<SwitchGraphEdge> edges;
+  std::vector<int> source_ids;
+  int output = 0;
+  int add_net(const std::string& name);
+};
+
+// Build a switch graph from the flat branch design (each branch is a chain;
+// internal nodes are currently private, but the graph representation can be
+// supplied with shared nodes by future constructors).
+SwitchGraph switch_graph_from_design(const Design& d);
+
 struct DriverRow {
   std::vector<int> source_ids;      // node ids of connected sources
   std::vector<std::string> sources; // source net names, unique
@@ -31,6 +52,10 @@ struct DriverProfile {
   bool valid = true;  // exactly one strong driver carrying the target value
   bool simple = false; // closed-form parallel-series fast path
 };
+
+DriverProfile analyze_switch_graph(const SwitchGraph& g,
+                                  const std::vector<std::string>& vars,
+                                  const std::vector<int>& target);
 
 DriverProfile analyze_design_drivers(const Design& d,
                                     const std::vector<std::string>& vars,
