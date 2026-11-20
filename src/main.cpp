@@ -1344,7 +1344,7 @@ MultiSpec load_multi_spec(const std::string& path) {
 
 int cmd_multi_path(const Args& a, const MultiSpec& spec) {
   SpaceOptions opt;
-  opt.max_cost = std::stoi(a.get("max-cost", "8"));
+  opt.max_cost = std::stoi(a.get("max-cost", "32"));
   opt.max_chain = std::stoi(a.get("max-chain", "4"));
   opt.allow_tg = !a.is("no-tg");
   const MultiPathSynthesisResult r =

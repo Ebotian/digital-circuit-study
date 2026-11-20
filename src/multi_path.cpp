@@ -49,6 +49,7 @@ struct Search {
   const std::vector<std::vector<int>>& targets;
   int nout = 0;
   int rows = 0;
+  int max_cost = 0;
   int best = std::numeric_limits<int>::max();
   std::vector<int> best_selected;
   std::vector<int> selected;
@@ -61,9 +62,10 @@ struct Search {
 
   Search(const std::vector<AllPath>& a, const std::vector<PathInfo>& p,
          const std::vector<EdgeInfo>& ei,
-         const std::vector<std::vector<int>>& t)
+         const std::vector<std::vector<int>>& t, int budget)
       : all(a), paths(p), edge_info(ei), targets(t),
         nout(static_cast<int>(t.size())), rows(static_cast<int>(t[0].size())),
+        max_cost(budget),
         chosen(p.size(), false), edge_count(ei.size(), 0),
         driver(static_cast<std::size_t>(nout * rows)),
         strong_cover(static_cast<std::size_t>(nout * rows), false) {}
@@ -120,8 +122,9 @@ struct Search {
   }
 
   void search() {
-    if (edge_cost + 2 * static_cast<int>(__builtin_popcountll(inv_mask)) >= best)
-      return;
+    const int sofar =
+        edge_cost + 2 * static_cast<int>(__builtin_popcountll(inv_mask));
+    if (sofar > max_cost || sofar >= best) return;
     int bo = -1, bm = -1;
     int best_choices = std::numeric_limits<int>::max();
     for (int o = 0; o < nout; ++o)
@@ -228,7 +231,7 @@ MultiPathSynthesisResult synthesize_path_variables_multi(
     paths.push_back(std::move(p));
   }
 
-  Search s(all, paths, edges, targets);
+  Search s(all, paths, edges, targets, opt.max_cost);
   s.search();
   if (s.best == std::numeric_limits<int>::max() || s.best_selected.empty()) {
     out.reason = "no multi-output path cover found";

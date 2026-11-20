@@ -44,6 +44,7 @@ struct Search {
   const std::vector<EdgeInfo>& edge_info;
   const std::vector<int>& target;
   int rows = 0;
+  int max_cost = 0;
   int best = std::numeric_limits<int>::max();
   std::vector<int> best_selected;
   std::vector<int> selected;
@@ -56,9 +57,10 @@ struct Search {
   std::size_t nodes = 0;
 
   Search(const std::vector<Branch>& b, const std::vector<PathInfo>& p,
-         const std::vector<EdgeInfo>& ei, const std::vector<int>& t)
+         const std::vector<EdgeInfo>& ei, const std::vector<int>& t,
+         int budget)
       : branches(b), paths(p), edge_info(ei), target(t),
-        rows(static_cast<int>(t.size())),
+        rows(static_cast<int>(t.size())), max_cost(budget),
         chosen(p.size(), false), edge_count(edge_info.size(), 0),
         driver(static_cast<std::size_t>(rows)), strong_cover(static_cast<std::size_t>(rows), false) {}
 
@@ -111,8 +113,9 @@ struct Search {
   }
 
   void search() {
-    if (edge_cost + 2 * static_cast<int>(__builtin_popcountll(inv_mask)) >= best)
-      return;
+    const int sofar =
+        edge_cost + 2 * static_cast<int>(__builtin_popcountll(inv_mask));
+    if (sofar > max_cost || sofar >= best) return;
     int row = -1;
     int best_choices = std::numeric_limits<int>::max();
     for (int m = 0; m < rows; ++m) {
@@ -210,7 +213,7 @@ PathSynthesisResult synthesize_path_variables(
     paths.push_back(std::move(p));
   }
 
-  Search s(all, paths, edges, target);
+  Search s(all, paths, edges, target, opt.max_cost);
   s.search();
   if (s.best == std::numeric_limits<int>::max() || s.best_selected.empty()) {
     out.reason = "no path-variable cover found";
