@@ -1101,7 +1101,6 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
   });
   const maxLevel = Math.max(...level, 0);
   const width = Math.max(760, 220 + (maxLevel + 1) * 210);
-  const height = Math.max(320, 160 + cells.length * 70);
   const boxW = 130;
   const boxH = 52;
   const xOf = (i: number) => 170 + level[i] * 210;
@@ -1113,6 +1112,8 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
   };
   const pos = new Map<number, { x: number; y: number }>();
   cells.forEach((_, i) => pos.set(i, { x: xOf(i), y: yOf(i) }));
+  const maxY = Math.max(...cells.map((_, i) => pos.get(i)!.y + boxH));
+  const height = Math.max(320, maxY + 80);
 
   const parts: string[] = [];
   parts.push('<svg viewBox="0 0 ' + width + " " + height + '" xmlns="http://www.w3.org/2000/svg">');

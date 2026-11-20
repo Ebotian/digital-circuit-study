@@ -1,0 +1,39 @@
+{
+  "name": "hex7seg",
+  "inputs": [
+    "A",
+    "B",
+    "C",
+    "D"
+  ],
+  "outputs": [
+    {
+      "name": "seg_a",
+      "expr": "(~D&~C&~B&~A)|(~D&C&~B&~A)|(D&C&~B&~A)|(D&~C&B&~A)|(~D&C&B&~A)|(D&C&B&~A)|(~D&~C&~B&A)|(D&~C&~B&A)|(~D&C&~B&A)|(~D&~C&B&A)|(~D&C&B&A)|(D&C&B&A)"
+    },
+    {
+      "name": "seg_b",
+      "expr": "(~D&~C&~B&~A)|(D&~C&~B&~A)|(~D&C&~B&~A)|(D&C&~B&~A)|(~D&~C&B&~A)|(D&C&B&~A)|(~D&~C&~B&A)|(D&~C&~B&A)|(~D&C&~B&A)|(D&~C&B&A)"
+    },
+    {
+      "name": "seg_c",
+      "expr": "(~D&~C&~B&~A)|(D&~C&~B&~A)|(D&C&~B&~A)|(~D&~C&B&~A)|(D&~C&B&~A)|(~D&C&B&~A)|(D&C&B&~A)|(~D&~C&~B&A)|(D&~C&~B&A)|(~D&C&~B&A)|(D&C&~B&A)|(D&~C&B&A)"
+    },
+    {
+      "name": "seg_d",
+      "expr": "(~D&~C&~B&~A)|(~D&C&~B&~A)|(D&C&~B&~A)|(D&~C&B&~A)|(~D&C&B&~A)|(~D&~C&~B&A)|(D&~C&~B&A)|(D&C&~B&A)|(~D&~C&B&A)|(D&~C&B&A)|(~D&C&B&A)"
+    },
+    {
+      "name": "seg_e",
+      "expr": "(~D&~C&~B&~A)|(~D&C&~B&~A)|(~D&C&B&~A)|(~D&~C&~B&A)|(~D&C&~B&A)|(D&C&~B&A)|(~D&~C&B&A)|(D&~C&B&A)|(~D&C&B&A)|(D&C&B&A)"
+    },
+    {
+      "name": "seg_f",
+      "expr": "(~D&~C&~B&~A)|(~D&~C&B&~A)|(D&~C&B&~A)|(~D&C&B&~A)|(~D&~C&~B&A)|(D&~C&~B&A)|(~D&C&~B&A)|(D&C&~B&A)|(~D&~C&B&A)|(~D&C&B&A)|(D&C&B&A)"
+    },
+    {
+      "name": "seg_g",
+      "expr": "(~D&C&~B&~A)|(D&C&~B&~A)|(~D&~C&B&~A)|(D&~C&B&~A)|(~D&C&B&~A)|(~D&~C&~B&A)|(D&~C&~B&A)|(~D&C&~B&A)|(D&C&~B&A)|(D&~C&B&A)|(~D&C&B&A)|(D&C&B&A)"
+    }
+  ]
+}

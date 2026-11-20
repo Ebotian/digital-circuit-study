@@ -93,6 +93,16 @@ make filc-smoke      # 可选:用 Fil-C 跑 Z3-free 内核(约 15 s)
 - 协议是普通 JSON,见 `include/dcstudy/z3_protocol.hpp`;worker 也可以单独替换成 mock 做测试。
 - `render` 复用同一套 IPC:主进程把已经验证过的设计拓扑交给 `workers/render_worker.ts`,Node 只负责画 SVG/HTML,不参与正确性判定。`workers/render_worker.py` 是保留的对照实现。
 
+### CPU 并行
+
+默认使用所有硬件线程;用 `DCSTUDY_JOBS=N` 限制进程/线程数。当前并行点是:
+
+- `multi exact` 的 `2^n` 个输入反相器集合;
+- 静态多输出的逐输出 cone 验证(每个输出一个独立 Z3 请求);
+- `analyze_switch` 精确 Z3 的 row × output 分块。
+
+worker 仍然是“一次请求一个进程”,所以并行是进程级的;GPU 没有参与计算。
+
 > **Fil-C 说明**:`make filc` 已能编出完整的 `build/dcstudy-filc`(约 40 s),它通过 `/proc/self/exe` 找到 host 编的 `build/dcstudy-z3` 并进程调用。`make filc-smoke` 是更小的纯内核冒烟;完整 CLI 也已在 Fil-C 下跑通 `bool` / `cdl --exact` / `design min --verify yosys|both` / `render --png`。`render` 命令额外调用 Node TS worker;如果二进制被搬走,用 `DCSTUDY_RENDER_HELPER=/path/to/render_worker.ts` 指定(也可以指向 Python 版本做对照)。
 
 完整 CLI 的内存检查用 ASan/UBSan 补上:
@@ -315,6 +325,29 @@ optimal: 54T
 
 `--out` 会写出 `flattened.cdl` 和 `exact.json`。
 
+#### 例：16 进制七段数码管（`specs/hex7seg.json`）
+
+4 位输入 `A,B,C,D`(A 为 MSB),7 个高有效段输出 `seg_a..seg_g`。显示字形为 `0-9,A,b,C,d,E,F`。
+
+```bash
+# 静态多级标准单元:36 个 2 输入静态单元,174T,逐输出 switch-level PASS
+./build/dcstudy multi synth --spec specs/hex7seg.json \
+  --out /tmp/hex7seg-static --max-fanin 2 --png --json
+
+# 单级复杂 CMOS(定制门模型):共享 4 个输入反相器,180T,模型内 proof
+./build/dcstudy multi exact --spec specs/hex7seg.json \
+  --out /tmp/hex7seg-custom --json
+```
+
+当前结果:
+
+| 实现 | 模型 | 晶体管 | 验证 |
+|---|---|---|---|
+| 静态标准单元 | Yosys/ABC + Nangate45 静态单元 | **174T**(87N + 87P) | 逐输出 switch-level PASS |
+| 定制单级复杂 CMOS | 每输出一个 PDN/PUN,共享输入反相器 | **180T**(90N + 90P) | 模型内 proof + PASS |
+
+“定制”在这里指**定制复杂门**,不是 pass-transistor 全定制。无三态的 `multi path` 对这个 spec 找不到 flat path cover,会回退到上面的 180T 静态模型;真正的 TG/pass 全定制仍需要补 PUN/PDN 双轨路径搜索。
+
 #### 三态输出：`--tri-state`
 
 三态不是单独的译码器命令，而是路径求解器的一个 flag：
@@ -433,6 +466,7 @@ verilator --binary --timing -Wno-fatal -Wno-WIDTH -Wno-UNUSEDSIGNAL \
 │   ├── filc_smoke.cpp    Fil-C 内存安全冒烟(Z3-free 内核)
 │   └── integration.sh    黑盒 CLI / 形式工具集成测试
 ├── docs/                 四本 HTML 讲义(见上)
+├── specs/                可复现的 multi-output JSON spec(含 hex7seg)
 ├── verilog/              Verilator 手工回归(含负对照)
 ├── rtl/                  讲义实验用 RTL
 └── tools/pdk/            yosys-sta 的 PDK 描述文件
