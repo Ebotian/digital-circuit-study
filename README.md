@@ -11,11 +11,11 @@
 
 | # | 文件 | 讲什么 | 前置 |
 |---|---|---|---|
-| 0 | `intuition-zero.html` | **从一个 NOR 出发** — 直觉篇。10 步「观察 → 提问」,自己走出一套代数 | 只要知道 MOS 能当开关 |
-| 1 | `formal-analysis.html` | **从电路到代数** — 正向:电路 → 函数。矩阵、布尔闭包、良构性判据 | 矩阵乘法 |
-| 2 | `synthesis-inverse.html` | **从代数到电路** — 逆向:函数 → 电路。单调性判据、Dedekind 数、纤维与成本。**第 8 章是全部实测数据** | 读完讲义一 |
+| 0 | `docs/intuition-zero.html` | **从一个 NOR 出发** — 直觉篇。10 步「观察 → 提问」,自己走出一套代数 | 只要知道 MOS 能当开关 |
+| 1 | `docs/formal-analysis.html` | **从电路到代数** — 正向:电路 → 函数。矩阵、布尔闭包、良构性判据 | 矩阵乘法 |
+| 2 | `docs/synthesis-inverse.html` | **从代数到电路** — 逆向:函数 → 电路。单调性判据、Dedekind 数、纤维与成本。**第 8 章是全部实测数据** | 读完讲义一 |
 
-`index.html` 是总目录页。启用 GitHub Pages 后可直接在线阅读。
+`docs/index.html` 是总目录页。启用 GitHub Pages 后(Source 选 `main` 分支的 `/docs` 目录)可直接在线阅读。
 
 ---
 
@@ -113,10 +113,11 @@ verilator --binary --timing -Wno-fatal -Wno-WIDTH -Wno-UNUSEDSIGNAL \
 
 ```
 .
-├── index.html                  总目录页
-├── intuition-zero.html         讲义 0  直觉篇
-├── formal-analysis.html        讲义一 从电路到代数
-├── synthesis-inverse.html      讲义二 从代数到电路
+├── docs/                       讲义(纯静态 HTML,可直接托管)
+│   ├── index.html              总目录页
+│   ├── intuition-zero.html     讲义 0  直觉篇
+│   ├── formal-analysis.html    讲义一 从电路到代数
+│   └── synthesis-inverse.html  讲义二 从代数到电路
 ├── scripts/
 │   ├── cdl_solver.py           读 CDL 的通用开关级求解器
 │   ├── pipeline.py             枚举 → Verilog → Verilator
@@ -135,7 +136,7 @@ verilator --binary --timing -Wno-fatal -Wno-WIDTH -Wno-UNUSEDSIGNAL \
 
 | 部分 | 许可 |
 |---|---|
-| `*.html`(讲义文档) | [CC BY-NC 4.0](LICENSE-docs) |
+| `docs/*.html`(讲义文档) | [CC BY-NC 4.0](LICENSE-docs) |
 | `scripts/` `verilog/` `rtl/` `tools/`(代码) | [GPL-3.0-only](LICENSE) |
 
 > ⚠️ **请留意**:CC BY-NC **禁止商业性使用**,它不是 OSI 认可的开源许可。所以本仓库**整体上不是一个开源仓库** —— 只有代码部分是 GPL-3.0 开源。
