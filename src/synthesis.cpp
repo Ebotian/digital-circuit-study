@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "dcstudy/driver_profile.hpp"
 #include "dcstudy/z3_client.hpp"
 #include "dcstudy/z3_protocol.hpp"
 
@@ -268,6 +269,10 @@ SynthesisResult synthesize_min(const std::vector<std::string>& vars,
       throw std::runtime_error("Z3 helper returned a duplicate branch id");
     Design d = design_from_indices(branches, selected, vars);
     if (!valid_design(d, target, sol.optimum)) continue;
+    // Construction-stage path check: build C_m and require exactly one
+    // strong source connected to Y for every input.  This is the same
+    // dynamic-driver semantics as the standalone verifier.
+    if (!analyze_design_drivers(d, vars, target).valid) continue;
 
     std::string key;
     if (canonical) {

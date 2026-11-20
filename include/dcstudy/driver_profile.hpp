@@ -28,6 +28,7 @@ struct DriverProfile {
   int max_drivers = 0;
   int power_steps = 0;
   bool all_single = true;
+  bool valid = true;  // exactly one strong driver carrying the target value
 };
 
 DriverProfile analyze_design_drivers(const Design& d,

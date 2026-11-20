@@ -58,9 +58,16 @@ struct Path {
 DriverProfile analyze_design_drivers(const Design& d,
                                     const std::vector<std::string>& vars,
                                     const std::vector<int>& target) {
-  (void)target;
   DriverProfile out;
-  if (d.branches.empty() || vars.empty()) return out;
+  if (d.branches.empty() || vars.empty()) {
+    out.valid = false;
+    return out;
+  }
+  const std::uint32_t target_rows = std::uint32_t{1} << vars.size();
+  if (target.size() != target_rows) {
+    out.valid = false;
+    return out;
+  }
 
   std::vector<std::string> names;
   std::map<std::string, int> ids;
@@ -150,7 +157,12 @@ DriverProfile analyze_design_drivers(const Design& d,
     }
     out.driver_count[m] = static_cast<int>(row.sources.size());
     out.max_drivers = std::max(out.max_drivers, out.driver_count[m]);
-    if (row.sources.size() != 1) out.all_single = false;
+    if (row.sources.size() != 1) {
+      out.all_single = false;
+      out.valid = false;
+    } else if (row.values[0] != target[m] || !row.strong[0]) {
+      out.valid = false;
+    }
     out.rows[m] = std::move(row);
   }
   return out;

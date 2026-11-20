@@ -130,6 +130,7 @@ std::string join(const std::vector<std::string>& v, const std::string& sep) {
 Json driver_profile_json(const DriverProfile& p) {
   Json j;
   j["all_single"] = p.all_single;
+  j["valid"] = p.valid;
   j["max_drivers"] = p.max_drivers;
   j["power_steps"] = p.power_steps;
   Json rows = Json::Array{};
@@ -1074,9 +1075,12 @@ int cmd_design(const std::string& sub, int argc, char** argv) {
     if ((vmode == VerifyMode::Sim || vmode == VerifyMode::Both) && !v.sim)
       all_verified = false;
     Json dj = design_json(d, spec.vars);
-    if (!d.branches.empty())
-      dj["drivers"] = driver_profile_json(
-          analyze_design_drivers(d, spec.vars, target_of(spec)));
+    if (!d.branches.empty()) {
+      const DriverProfile dp =
+          analyze_design_drivers(d, spec.vars, target_of(spec));
+      dj["drivers"] = driver_profile_json(dp);
+      if (!dp.valid) all_verified = false;
+    }
     if (vmode != VerifyMode::None) dj["verification"] = v.json;
     if (a.has("emit")) dj["files"] = emit_dir.string();
     designs.push_back(std::move(dj));
