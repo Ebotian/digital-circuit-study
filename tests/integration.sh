@@ -60,6 +60,9 @@ pass "minimum design + Yosys"
 "$BIN" design path --expr 'A^B' --json > "$TMP/path.json" || fail "path-variable synthesis"
 [ "$(jq -r .total "$TMP/path.json")" = "6" ] || fail "path XOR 6T"
 [ "$(jq -r .verified "$TMP/path.json")" = "true" ] || fail "path switch verification"
+"$BIN" design template --expr 'A^B' --json > "$TMP/template.json"   || fail "bounded template optimization"
+[ "$(jq -r .verified "$TMP/template.json")" = "true" ] || fail "template verification"
+[ "$(jq -r .proof "$TMP/template.json")" = "true" ] || fail "template optimality"
 
 # TG/NP quotient + input-automorphism orbit blocking.
 "$BIN" design min --expr 'A^B' --max-cost 6 --max-chain 3 --all --canonical \

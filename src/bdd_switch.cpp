@@ -109,6 +109,7 @@ BddSwitchDesign synthesize_bdd_switch_order(
     el.kind = SwKind::TGL;
     el.lit = vars[static_cast<std::size_t>(node.var)];
     el.strong = true;
+    el.cost = 2;
     g.edges.push_back(el);
     SwitchGraphEdge eh;
     eh.from = here;
@@ -116,6 +117,7 @@ BddSwitchDesign synthesize_bdd_switch_order(
     eh.kind = SwKind::TGH;
     eh.lit = vars[static_cast<std::size_t>(node.var)];
     eh.strong = true;
+    eh.cost = 2;
     g.edges.push_back(eh);
     return here;
   };

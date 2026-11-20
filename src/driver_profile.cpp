@@ -260,6 +260,7 @@ SwitchGraph switch_graph_from_design(const Design& d) {
       e.kind = b.chain[j].kind;
       e.lit = b.chain[j].lit;
       e.strong = (b.chain[j].kind == SwKind::TGL || b.chain[j].kind == SwKind::TGH);
+      e.cost = switch_cost(b.chain[j].kind);
       g.edges.push_back(std::move(e));
       prev = next;
     }

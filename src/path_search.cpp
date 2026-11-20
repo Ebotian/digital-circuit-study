@@ -265,6 +265,7 @@ PathSynthesisResult synthesize_path_variables(
         e.kind = edges[static_cast<std::size_t>(eid)].kind;
         e.lit = edges[static_cast<std::size_t>(eid)].lit;
         e.strong = true;
+        e.cost = edges[static_cast<std::size_t>(eid)].cost;
         g.edges.push_back(std::move(e));
         added_edge[k] = true;
       }
@@ -278,6 +279,7 @@ PathSynthesisResult synthesize_path_variables(
       e.kind = SwKind::TGH;
       e.lit = "1";
       e.strong = true;
+      e.cost = 0;
       g.edges.push_back(std::move(e));
       added_edge[wire] = true;
     }

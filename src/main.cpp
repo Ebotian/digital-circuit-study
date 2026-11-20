@@ -25,6 +25,7 @@
 #include "dcstudy/render_client.hpp"
 #include "dcstudy/static_exact.hpp"
 #include "dcstudy/switchlevel.hpp"
+#include "dcstudy/template_synth.hpp"
 #include "dcstudy/synthesis.hpp"
 #include "dcstudy/verilog.hpp"
 #include "dcstudy/verify.hpp"
@@ -343,6 +344,7 @@ Commands:
   cdl solve      --cell NAME [--cdl FILE] [--inputs A,B] [--exact]
                  [--graphblas] [--expect BITS]
   design bdd     --expr EXPR | --tt BITS [--vars A,B]
+  design template --expr EXPR | --tt BITS [--vars A,B]
   design path    --expr EXPR | --tt BITS [--max-cost N] [--max-chain N]
   design min     --expr EXPR | --tt BITS [--max-cost N] [--max-chain N]
                  [--all] [--limit N] [--canonical] [--emit DIR]
@@ -355,6 +357,7 @@ Commands:
                  [--json]
   multi exact    --spec FILE [--out DIR] [--json]
   multi path     --spec FILE [--max-cost N] [--max-chain N] [--json]
+  multi template --spec FILE [--json]
   render         --expr EXPR | --tt BITS [--max-cost N] [--limit N]
                  [--canonical] [--out DIR] [--png] [--no-logic]
                  [--static-cmos]
@@ -1028,6 +1031,83 @@ int cmd_design_static(const Args& a, const FuncSpec& spec,
   return check_ok ? 0 : 1;
 }
 
+int cmd_design_template(const Args& a, const FuncSpec& spec) {
+  const BddSwitchDesign b = synthesize_bdd_switch_best(spec.func, spec.vars);
+  if (!b.ok || !b.verified) {
+    if (a.is("json")) {
+      Json j;
+      j["ok"] = false;
+      j["command"] = "design.template";
+      j["reason"] = b.reason;
+      std::cout << j.dump() << "\n";
+    } else {
+      std::cerr << "template seed failed: " << b.reason << "\n";
+    }
+    return 1;
+  }
+  std::vector<int> target;
+  for (std::uint32_t m = 0; m < spec.func.num_minterms(); ++m)
+    target.push_back(spec.func.value(m) ? 1 : 0);
+  const NetworkTemplate t = template_from_graph(b.graph, b.inverters);
+  const TemplateResult r = optimize_template(t, spec.vars, {target});
+  const bool json = a.is("json");
+  if (!r.ok || !r.verified) {
+    if (json) {
+      Json j;
+      j["ok"] = false;
+      j["command"] = "design.template";
+      j["reason"] = r.reason;
+      std::cout << j.dump() << "\n";
+    } else {
+      std::cerr << "template optimization failed: " << r.reason << "\n";
+    }
+    return 1;
+  }
+  Json j;
+  j["ok"] = true;
+  j["command"] = "design.template";
+  j["model"] = "fixed candidate graph, optional edge variables";
+  j["total"] = r.total;
+  j["edge_cost"] = r.edge_cost;
+  j["inverter_cost"] = r.inverter_cost;
+  j["proof"] = r.proof;
+  j["verified"] = r.verified;
+  j["selected_edges"] = [&] {
+    Json v = Json::Array{};
+    for (int e : r.selected_edges) v.push_back(e);
+    return v;
+  }();
+  j["graph"] = [&] {
+    Json graph;
+    Json nets = Json::Array{};
+    for (const auto& n : r.graph.nets) nets.push_back(n);
+    graph["nets"] = std::move(nets);
+    Json edges = Json::Array{};
+    for (const auto& e : r.graph.edges) {
+      Json ej;
+      ej["from"] = e.from;
+      ej["to"] = e.to;
+      ej["kind"] = switch_name(e.kind);
+      ej["lit"] = e.lit;
+      ej["cost"] = e.cost;
+      ej["strong"] = e.strong;
+      edges.push_back(std::move(ej));
+    }
+    graph["edges"] = std::move(edges);
+    Json outs = Json::Array{};
+    for (int o : r.graph.outputs) outs.push_back(o);
+    graph["outputs"] = std::move(outs);
+    return graph;
+  }();
+  if (json) std::cout << j.dump() << "\n";
+  else
+    std::cout << "template-optimized switch graph: " << r.total << "T\n"
+              << "  edges=" << r.edge_cost << "T  inverters="
+              << r.inverter_cost << "T  proof="
+              << (r.proof ? "exhaustive" : "greedy") << "\n";
+  return 0;
+}
+
 int cmd_design_path(const Args& a, const FuncSpec& spec) {
   SpaceOptions opt;
   opt.max_cost = std::stoi(a.get("max-cost", "8"));
@@ -1159,6 +1239,10 @@ int cmd_design(const std::string& sub, int argc, char** argv) {
   if (sub == "path") {
     const Args a = parse_args(argc, argv, 3);
     return cmd_design_path(a, get_spec(a));
+  }
+  if (sub == "template") {
+    const Args a = parse_args(argc, argv, 3);
+    return cmd_design_template(a, get_spec(a));
   }
   if (sub != "min") throw CliError("unknown design subcommand: " + sub);
   const Args a = parse_args(argc, argv, 3);
@@ -1342,6 +1426,64 @@ MultiSpec load_multi_spec(const std::string& path) {
   return s;
 }
 
+int cmd_multi_template(const Args& a, const MultiSpec& spec) {
+  SpaceOptions opt;
+  opt.max_cost = 32;
+  opt.max_chain = 4;
+  opt.allow_tg = !a.is("no-tg");
+  const MultiPathSynthesisResult seed =
+      synthesize_path_variables_multi(spec.funcs, spec.names, spec.vars, opt);
+  if (!seed.ok || !seed.verified) {
+    if (a.is("json")) {
+      Json j;
+      j["ok"] = false;
+      j["command"] = "multi.template";
+      j["reason"] = seed.reason;
+      std::cout << j.dump() << "\n";
+    }
+    return 1;
+  }
+  std::vector<std::vector<int>> targets;
+  for (const auto& f : spec.funcs) {
+    std::vector<int> t;
+    for (std::uint32_t m = 0; m < f.num_minterms(); ++m)
+      t.push_back(f.value(m) ? 1 : 0);
+    targets.push_back(std::move(t));
+  }
+  const NetworkTemplate tmpl = template_from_graph(seed.graph, seed.inverter_cost);
+  const TemplateResult r = optimize_template(tmpl, spec.vars, targets);
+  const bool json = a.is("json");
+  if (!r.ok || !r.verified) {
+    if (json) {
+      Json j;
+      j["ok"] = false;
+      j["command"] = "multi.template";
+      j["reason"] = r.reason;
+      std::cout << j.dump() << "\n";
+    }
+    return 1;
+  }
+  Json j;
+  j["ok"] = true;
+  j["command"] = "multi.template";
+  j["total"] = r.total;
+  j["edge_cost"] = r.edge_cost;
+  j["inverter_cost"] = r.inverter_cost;
+  j["proof"] = r.proof;
+  j["verified"] = r.verified;
+  j["selected_edges"] = [&] {
+    Json v = Json::Array{};
+    for (int e : r.selected_edges) v.push_back(e);
+    return v;
+  }();
+  if (json) std::cout << j.dump() << "\n";
+  else
+    std::cout << "multi-output template: " << r.total << "T ("
+              << r.edge_cost << "T edges + " << r.inverter_cost
+              << "T inverters)\n";
+  return 0;
+}
+
 int cmd_multi_path(const Args& a, const MultiSpec& spec) {
   SpaceOptions opt;
   opt.max_cost = std::stoi(a.get("max-cost", "32"));
@@ -1506,6 +1648,10 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
   if (sub == "path") {
     const MultiSpec spec = load_multi_spec(a.need("spec"));
     return cmd_multi_path(a, spec);
+  }
+  if (sub == "template") {
+    const MultiSpec spec = load_multi_spec(a.need("spec"));
+    return cmd_multi_template(a, spec);
   }
   if (sub != "synth") throw CliError("unknown multi subcommand: " + sub);
   const MultiSpec spec = load_multi_spec(a.need("spec"));

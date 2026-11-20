@@ -21,6 +21,7 @@ struct SwitchGraphEdge {
   SwKind kind = SwKind::TGH;
   std::string lit;
   bool strong = false;
+  int cost = 0;
 };
 
 struct SwitchGraph {
