@@ -1,10 +1,14 @@
 #include "dcstudy/switchlevel.hpp"
 
+#include "dcstudy/parallel.hpp"
+
 #include <algorithm>
 #include <cstdint>
 #include <stdexcept>
+#include <set>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "dcstudy/boolmatrix.hpp"
@@ -161,6 +165,50 @@ FixedPoint run_fixpoint(const Subckt& cell, const NetIndex& ni,
 
 }  // namespace
 
+Subckt switch_output_cone(const Subckt& cell,
+                          const std::vector<std::string>& inputs,
+                          const std::string& output,
+                          const std::string& vdd,
+                          const std::string& vss) {
+  Subckt out;
+  out.name = cell.name + "_" + output;
+  for (const auto& v : inputs) {
+    out.ports.push_back(v);
+    out.pin_dir[v] = PinDir::Input;
+  }
+  out.ports.push_back(output);
+  out.pin_dir[output] = PinDir::Output;
+  out.ports.push_back(vdd);
+  out.ports.push_back(vss);
+  out.pin_dir[vdd] = PinDir::Power;
+  out.pin_dir[vss] = PinDir::Ground;
+
+  const auto is_input = [&](const std::string& n) {
+    return std::find(inputs.begin(), inputs.end(), n) != inputs.end();
+  };
+  std::set<std::size_t> keep;
+  std::set<std::string> seen;
+  std::vector<std::string> work{output};
+  while (!work.empty()) {
+    const std::string n = std::move(work.back());
+    work.pop_back();
+    if (n == vdd || n == vss || is_input(n) || !seen.insert(n).second)
+      continue;
+    for (std::size_t i = 0; i < cell.devices.size(); ++i) {
+      const Device& d = cell.devices[i];
+      if (d.drain != n && d.source != n) continue;
+      if (!keep.insert(i).second) continue;
+      if (d.gate != vdd && d.gate != vss && !is_input(d.gate))
+        work.push_back(d.gate);
+      const std::string& other = (d.drain == n) ? d.source : d.drain;
+      if (other != vdd && other != vss && !is_input(other))
+        work.push_back(other);
+    }
+  }
+  for (std::size_t i : keep) out.devices.push_back(cell.devices[i]);
+  return out;
+}
+
 char logic_symbol(Logic v) {
   switch (v) {
     case Logic::Zero: return '0';
@@ -175,7 +223,8 @@ SwitchAnalysis analyze_switch(const Subckt& cell,
                               const std::vector<std::string>& inputs,
                               const std::vector<std::string>& outputs,
                               bool exact, const std::string& vdd,
-                              const std::string& vss, bool graphblas) {
+                              const std::string& vss, bool graphblas,
+                              int jobs) {
   if (inputs.size() > 8)
     throw std::invalid_argument("switch-level analysis supports at most 8 inputs");
   if (outputs.empty()) throw std::invalid_argument("cell has no output port");
@@ -215,30 +264,97 @@ SwitchAnalysis analyze_switch(const Subckt& cell,
   }
 
   if (need_exact) {
-    SwitchProblem p;
-    p.devices = cell.devices;
-    p.vdd = vdd;
-    p.vss = vss;
-    p.inputs = inputs;
-    p.outputs = outputs;
-    p.rows = minterms;
-    const SwitchSolution sol =
-        decode_switch_solution(z3_call(encode_switch_problem(p)));
-    if (sol.rows.size() != rows)
-      throw std::runtime_error("Z3 helper returned the wrong number of rows");
-    for (std::uint32_t m = 0; m < rows; ++m) {
-      SwitchRow row;
-      row.inputs.resize(inputs.size());
-      for (std::size_t i = 0; i < inputs.size(); ++i)
-        row.inputs[i] = int((m >> (inputs.size() - 1 - i)) & 1U);
-      if (sol.rows[m].values.size() != outputs.size())
-        throw std::runtime_error("Z3 helper returned the wrong number of outputs");
-      row.values = sol.rows[m].values;
-      row.floating_gates = fps[m].floating_gates;
-      row.unsat = sol.rows[m].unsat;
-      row.conflict = sol.rows[m].conflict || sol.rows[m].unsat;
-      res.rows.push_back(std::move(row));
+    SwitchProblem base;
+    base.devices = cell.devices;
+    base.vdd = vdd;
+    base.vss = vss;
+    base.inputs = inputs;
+    base.outputs = outputs;
+    base.rows = minterms;
+
+    // Split the independent (row, output) checks across Z3 workers.  A single
+    // worker checks an entire row/output matrix; for a seven-segment display
+    // that is hundreds of solver queries and one core.  Tiling both dimensions
+    // keeps each worker's formula small and uses all available cores.
+    const std::size_t max_tasks = std::min<std::size_t>(
+        static_cast<std::size_t>(std::max(1, jobs > 0 ? jobs : parallel_jobs())),
+        rows * outputs.size());
+    std::size_t out_groups = 1;
+    std::size_t row_groups = 1;
+    std::size_t best_tasks = 1;
+    if (max_tasks > 1) {
+      for (std::size_t og = std::min(outputs.size(), max_tasks); og >= 1; --og) {
+        const std::size_t rg = std::min<std::size_t>(rows, max_tasks / og);
+        if (rg == 0) continue;
+        const std::size_t tasks = og * rg;
+        if (tasks > best_tasks ||
+            (tasks == best_tasks && og > out_groups)) {
+          best_tasks = tasks;
+          out_groups = og;
+          row_groups = rg;
+        }
+      }
     }
+
+    const auto split_range = [](std::size_t n, std::size_t parts) {
+      std::vector<std::pair<std::size_t, std::size_t>> out;
+      out.reserve(parts);
+      const std::size_t base = n / parts;
+      const std::size_t rem = n % parts;
+      std::size_t at = 0;
+      for (std::size_t i = 0; i < parts; ++i) {
+        const std::size_t len = base + (i < rem ? 1 : 0);
+        out.emplace_back(at, at + len);
+        at += len;
+      }
+      return out;
+    };
+    const auto out_parts = split_range(outputs.size(), out_groups);
+    const auto row_parts = split_range(rows, row_groups);
+    const std::size_t tasks = out_groups * row_groups;
+    std::vector<SwitchSolution> sols(tasks);
+    parallel_for(tasks, static_cast<int>(tasks), [&](std::size_t ti) {
+      const std::size_t oi = ti % out_groups;
+      const std::size_t ri = ti / out_groups;
+      SwitchProblem p = base;
+      p.outputs.clear();
+      p.rows.clear();
+      for (std::size_t j = out_parts[oi].first; j < out_parts[oi].second; ++j)
+        p.outputs.push_back(outputs[j]);
+      for (std::size_t j = row_parts[ri].first; j < row_parts[ri].second; ++j)
+        p.rows.push_back(minterms[j]);
+      sols[ti] = decode_switch_solution(z3_call(encode_switch_problem(p)));
+    });
+
+    std::vector<SwitchRow> merged(rows);
+    for (std::uint32_t m = 0; m < rows; ++m) {
+      merged[m].inputs.resize(inputs.size());
+      for (std::size_t i = 0; i < inputs.size(); ++i)
+        merged[m].inputs[i] = int((m >> (inputs.size() - 1 - i)) & 1U);
+      merged[m].values.assign(outputs.size(), Logic::Float);
+      merged[m].floating_gates = fps[m].floating_gates;
+    }
+    for (std::size_t ti = 0; ti < tasks; ++ti) {
+      const std::size_t oi = ti % out_groups;
+      const std::size_t ri = ti / out_groups;
+      const std::size_t rn = row_parts[ri].second - row_parts[ri].first;
+      const std::size_t on = out_parts[oi].second - out_parts[oi].first;
+      const SwitchSolution& sol = sols[ti];
+      if (sol.rows.size() != rn)
+        throw std::runtime_error("Z3 helper returned the wrong number of rows");
+      for (std::size_t r = 0; r < rn; ++r) {
+        const SwitchSolutionRow& src = sol.rows[r];
+        if (src.values.size() != on)
+          throw std::runtime_error(
+              "Z3 helper returned the wrong number of outputs");
+        SwitchRow& dst = merged[row_parts[ri].first + r];
+        dst.unsat = dst.unsat || src.unsat;
+        dst.conflict = dst.conflict || src.conflict || src.unsat;
+        for (std::size_t j = 0; j < on; ++j)
+          dst.values[out_parts[oi].first + j] = src.values[j];
+      }
+    }
+    res.rows = std::move(merged);
     res.exact = true;
     res.mode = exact ? "z3" : "z3 (fixed-point fallback)";
     res.assumptions_ok = true;

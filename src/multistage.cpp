@@ -17,6 +17,7 @@
 
 #include "dcstudy/cdl.hpp"
 #include "dcstudy/json.hpp"
+#include "dcstudy/parallel.hpp"
 #include "dcstudy/switchlevel.hpp"
 
 namespace dcstudy {
@@ -301,16 +302,25 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
     out.verilog = read_file(net_v);
     out.json = read_file(net_json);
 
-    const SwitchAnalysis a =
-        analyze_switch(flat, vars, out_names, true, "VDD", "VSS");
-    out.verified = true;
-    for (std::size_t k = 0; k < out_names.size(); ++k) {
+    // Shared gates make the full seven-output switch graph a hard Z3
+    // problem.  The mapped cells are static CMOS, so each output's cone is
+    // independent; verify the seven cones in parallel instead.
+    out.truths.resize(out_names.size());
+    std::vector<char> output_ok(out_names.size(), 0);
+    parallel_for(out_names.size(), parallel_jobs(), [&](std::size_t k) {
+      const Subckt one =
+          switch_output_cone(flat, vars, out_names[k], "VDD", "VSS");
+      const SwitchAnalysis a =
+          analyze_switch(one, vars, {out_names[k]}, true, "VDD", "VSS", false,
+                         1);
       std::string truth;
       for (const auto& row : a.rows)
-        truth.push_back(logic_symbol(row.values[k]));
-      out.truths.push_back(truth);
-      if (truth != funcs[k].truth_string()) out.verified = false;
-    }
+        truth.push_back(logic_symbol(row.values[0]));
+      out.truths[k] = std::move(truth);
+      output_ok[k] = (out.truths[k] == funcs[k].truth_string()) ? 1 : 0;
+    });
+    out.verified = std::all_of(output_ok.begin(), output_ok.end(),
+                               [](char v) { return v != 0; });
     out.ok = true;
     if (!out.verified) out.reason = "switch-level truth mismatch";
     return out;

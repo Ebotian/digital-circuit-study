@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <utility>
 
+#include "dcstudy/parallel.hpp"
 #include "dcstudy/switchlevel.hpp"
 
 namespace dcstudy {
@@ -21,6 +22,12 @@ Bits cover_of(std::uint64_t care, std::uint64_t value, std::size_t n) {
     if ((static_cast<std::uint64_t>(m) & care) == value) cover.set(m);
   return cover;
 }
+
+struct MaskEval {
+  bool feasible = false;
+  int gate_cost = 0;
+  std::vector<Sop> pdn;
+};
 
 struct CubeSearch {
   const std::vector<Cube>& cubes;
@@ -222,36 +229,49 @@ StaticExactResult synthesize_static_exact_multi(
   }
 
   const std::uint64_t masks = std::uint64_t{1} << n;
-  for (std::uint64_t mask = 0; !cube_form && mask < masks; ++mask) {
-    int gate_cost = 0;
-    bool feasible = true;
-    std::vector<Sop> pdn;
-    for (std::size_t k = 0; k < funcs.size(); ++k) {
-      const Bits onset = ~funcs[k].bits();
-      Sop sop;
-      if (!exact_min_dnf_literals(onset, n, mask, sop)) {
-        feasible = false;
-        break;
+  if (!cube_form) {
+    // Each inverter subset is an independent exact-DNF problem.  Evaluate
+    // them in parallel, then reduce in mask order so ties remain deterministic
+    // (the first mask wins, exactly as in the serial loop).
+    std::vector<MaskEval> evals(static_cast<std::size_t>(masks));
+    parallel_for(static_cast<std::size_t>(masks), parallel_jobs(),
+                 [&](std::size_t mi) {
+                   const std::uint64_t mask = mi;
+                   MaskEval ev;
+                   bool feasible = true;
+                   for (std::size_t k = 0; k < funcs.size(); ++k) {
+                     const Bits onset = ~funcs[k].bits();
+                     Sop sop;
+                     if (!exact_min_dnf_literals(onset, n, mask, sop)) {
+                       feasible = false;
+                       break;
+                     }
+                     if (sop.terms.empty() ||
+                         (sop.terms.size() == 1 &&
+                          sop.terms[0].care == 0)) {
+                       // Constant outputs need an ideal rail tie; the current
+                       // Subckt model only has transistor devices.
+                       feasible = false;
+                       break;
+                     }
+                     ev.gate_cost += 2 * sop.literals;
+                     ev.pdn.push_back(std::move(sop));
+                   }
+                   ev.feasible = feasible;
+                   evals[mi] = std::move(ev);
+                 });
+    for (std::uint64_t mask = 0; mask < masks; ++mask) {
+      MaskEval& ev = evals[static_cast<std::size_t>(mask)];
+      if (!ev.feasible) continue;
+      const int inv_cost = 2 * static_cast<int>(__builtin_popcountll(mask));
+      const int total = ev.gate_cost + inv_cost;
+      if (total < best_total) {
+        best_total = total;
+        best_gate_cost = ev.gate_cost;
+        best_inv_cost = inv_cost;
+        best_mask = mask;
+        best_pdn = std::move(ev.pdn);
       }
-      if (sop.terms.empty() ||
-          (sop.terms.size() == 1 && sop.terms[0].care == 0)) {
-        // Constant outputs need an ideal rail tie; the current Subckt model
-        // only has transistor devices, so leave constants unsupported.
-        feasible = false;
-        break;
-      }
-      gate_cost += 2 * sop.literals;
-      pdn.push_back(std::move(sop));
-    }
-    if (!feasible) continue;
-    const int inv_cost = 2 * static_cast<int>(__builtin_popcountll(mask));
-    const int total = gate_cost + inv_cost;
-    if (total < best_total) {
-      best_total = total;
-      best_gate_cost = gate_cost;
-      best_inv_cost = inv_cost;
-      best_mask = mask;
-      best_pdn = std::move(pdn);
     }
   }
 
@@ -359,16 +379,25 @@ StaticExactResult synthesize_static_exact_multi(
   out.proof = true;
   out.ok = true;
 
-  const SwitchAnalysis a =
-      analyze_switch(out.netlist, vars, names, true, "VDD", "VSS");
-  out.verified = true;
-  for (std::size_t k = 0; k < names.size(); ++k) {
+  // The outputs of this model are independent single-stage gates.  Verify
+  // each output on its own pruned netlist so the exact Z3 check also scales
+  // with one gate instead of the whole seven-segment display.  Shared input
+  // inverters are still included in every cone.
+  out.truths.resize(names.size());
+  std::vector<char> output_ok(names.size(), 0);
+  parallel_for(names.size(), parallel_jobs(), [&](std::size_t k) {
+    const Subckt one =
+        switch_output_cone(out.netlist, vars, names[k], "VDD", "VSS");
+    const SwitchAnalysis a =
+        analyze_switch(one, vars, {names[k]}, true, "VDD", "VSS", false, 1);
     std::string truth;
     for (const auto& row : a.rows)
-      truth.push_back(logic_symbol(row.values[k]));
-    out.truths.push_back(truth);
-    if (truth != funcs[k].truth_string()) out.verified = false;
-  }
+      truth.push_back(logic_symbol(row.values[0]));
+    out.truths[k] = std::move(truth);
+    output_ok[k] = (out.truths[k] == funcs[k].truth_string()) ? 1 : 0;
+  });
+  out.verified = std::all_of(output_ok.begin(), output_ok.end(),
+                             [](bool v) { return v; });
   if (!out.verified) out.reason = "switch-level truth mismatch";
   return out;
 }

@@ -34,13 +34,25 @@ struct SwitchAnalysis {
   std::string mode;  // "fixpoint" or "z3"
 };
 
+// Build the cone of influence feeding one output: all devices on paths from
+// the output back to primary inputs (and shared supplies), with only that
+// output exposed as a port.  Static multi-output gates are independent, so
+// each cone can be checked separately instead of asking Z3 to reason about
+// every output at once.
+Subckt switch_output_cone(const Subckt& cell,
+                          const std::vector<std::string>& inputs,
+                          const std::string& output,
+                          const std::string& vdd = "VDD",
+                          const std::string& vss = "VSS");
+
 SwitchAnalysis analyze_switch(const Subckt& cell,
                               const std::vector<std::string>& inputs,
                               const std::vector<std::string>& outputs,
                               bool exact = false,
                               const std::string& vdd = "VDD",
                               const std::string& vss = "VSS",
-                              bool graphblas = false);
+                              bool graphblas = false,
+                              int jobs = 0);
 
 char logic_symbol(Logic v);
 

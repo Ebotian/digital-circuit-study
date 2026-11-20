@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -13,6 +14,7 @@
 #include "dcstudy/cmos.hpp"
 #include "dcstudy/designspace.hpp"
 #include "dcstudy/driver_profile.hpp"
+#include "dcstudy/parallel.hpp"
 #include "dcstudy/switchlevel.hpp"
 #include "dcstudy/synthesis.hpp"
 #include "dcstudy/verilog.hpp"
@@ -28,6 +30,20 @@ std::vector<int> target_of(const FuncSpec& s) {
   return t;
 }
 }  // namespace
+
+TEST_CASE("parallel_for covers every index") {
+  std::vector<int> seen(37, 0);
+  parallel_for(seen.size(), 4, [&](std::size_t i) { seen[i] = 1; });
+  for (int v : seen) REQUIRE(v == 1);
+}
+
+TEST_CASE("parallel_for propagates a task exception") {
+  REQUIRE_THROWS_AS(
+      parallel_for(16, 4, [](std::size_t i) {
+        if (i == 7) throw std::runtime_error("task failed");
+      }),
+      std::runtime_error);
+}
 
 TEST_CASE("truth tables use big-endian minterms") {
   const FuncSpec s = spec_from_expr("A^B");
