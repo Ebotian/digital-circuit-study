@@ -20,6 +20,7 @@
 #include "dcstudy/json.hpp"
 #include "dcstudy/math_client.hpp"
 #include "dcstudy/multistage.hpp"
+#include "dcstudy/path_search.hpp"
 #include "dcstudy/render_client.hpp"
 #include "dcstudy/static_exact.hpp"
 #include "dcstudy/switchlevel.hpp"
@@ -341,6 +342,7 @@ Commands:
   cdl solve      --cell NAME [--cdl FILE] [--inputs A,B] [--exact]
                  [--graphblas] [--expect BITS]
   design bdd     --expr EXPR | --tt BITS [--vars A,B]
+  design path    --expr EXPR | --tt BITS [--max-cost N] [--max-chain N]
   design min     --expr EXPR | --tt BITS [--max-cost N] [--max-chain N]
                  [--all] [--limit N] [--canonical] [--emit DIR]
                  [--verify none|yosys|sim|both|static] [--static-cmos] [--keep]
@@ -1024,6 +1026,69 @@ int cmd_design_static(const Args& a, const FuncSpec& spec,
   return check_ok ? 0 : 1;
 }
 
+int cmd_design_path(const Args& a, const FuncSpec& spec) {
+  SpaceOptions opt;
+  opt.max_cost = std::stoi(a.get("max-cost", "8"));
+  opt.max_chain = std::stoi(a.get("max-chain", "4"));
+  opt.allow_tg = !a.is("no-tg");
+  const PathSynthesisResult d =
+      synthesize_path_variables(spec.func, spec.vars, opt);
+  const bool json = a.is("json");
+  if (!d.ok || !d.verified) {
+    if (json) {
+      Json j;
+      j["ok"] = false;
+      j["command"] = "design.path";
+      j["reason"] = d.reason;
+      std::cout << j.dump() << "\n";
+    } else {
+      std::cerr << "design path failed: " << d.reason << "\n";
+    }
+    return 1;
+  }
+  Json j;
+  j["ok"] = true;
+  j["command"] = "design.path";
+  j["model"] = "path-variable cover with shared switch prefixes";
+  j["total"] = d.total;
+  j["edge_cost"] = d.edge_cost;
+  j["inverter_cost"] = d.inverter_cost;
+  j["proof"] = d.proof;
+  j["verified"] = d.verified;
+  j["selected"] = [&] {
+    Json v = Json::Array{};
+    for (int s : d.selected) v.push_back(s);
+    return v;
+  }();
+  Json graph;
+  Json nets = Json::Array{};
+  for (const auto& n : d.graph.nets) nets.push_back(n);
+  graph["nets"] = std::move(nets);
+  Json edges = Json::Array{};
+  for (const auto& e : d.graph.edges) {
+    Json ej;
+    ej["from"] = e.from;
+    ej["to"] = e.to;
+    ej["kind"] = switch_name(e.kind);
+    ej["lit"] = e.lit;
+    ej["strong"] = e.strong;
+    edges.push_back(std::move(ej));
+  }
+  graph["edges"] = std::move(edges);
+  Json sources = Json::Array{};
+  for (int s : d.graph.source_ids) sources.push_back(s);
+  graph["sources"] = std::move(sources);
+  graph["output"] = d.graph.output;
+  j["graph"] = std::move(graph);
+  if (json) std::cout << j.dump() << "\n";
+  else
+    std::cout << "path-variable switch design: " << d.total << "T\n"
+              << "  edges=" << d.edge_cost << "T  inverters="
+              << d.inverter_cost << "T\n"
+              << "  proof: exhaustive within candidate path set\n";
+  return 0;
+}
+
 int cmd_design_bdd(const Args& a, const FuncSpec& spec) {
   const BddSwitchDesign d = synthesize_bdd_switch_best(spec.func, spec.vars);
   const bool json = a.is("json");
@@ -1088,6 +1153,10 @@ int cmd_design(const std::string& sub, int argc, char** argv) {
   if (sub == "bdd") {
     const Args a = parse_args(argc, argv, 3);
     return cmd_design_bdd(a, get_spec(a));
+  }
+  if (sub == "path") {
+    const Args a = parse_args(argc, argv, 3);
+    return cmd_design_path(a, get_spec(a));
   }
   if (sub != "min") throw CliError("unknown design subcommand: " + sub);
   const Args a = parse_args(argc, argv, 3);

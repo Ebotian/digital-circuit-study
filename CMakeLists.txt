@@ -28,6 +28,7 @@ add_library(dcstudy_core STATIC
   src/designspace.cpp
   src/math_client.cpp
   src/multistage.cpp
+  src/path_search.cpp
   src/switchlevel.cpp
   src/synthesis.cpp
   src/verilog.cpp

@@ -57,6 +57,9 @@ pass "minimum design + Yosys"
 "$BIN" design bdd --expr 'A^B' --json > "$TMP/bdd.json" || fail "BDD switch construction"
 [ "$(jq -r .verified "$TMP/bdd.json")" = "true" ] || fail "BDD switch verification"
 [ "$(jq -r '.graph.edges | length' "$TMP/bdd.json")" = "6" ] || fail "BDD edge count"
+"$BIN" design path --expr 'A^B' --json > "$TMP/path.json" || fail "path-variable synthesis"
+[ "$(jq -r .total "$TMP/path.json")" = "6" ] || fail "path XOR 6T"
+[ "$(jq -r .verified "$TMP/path.json")" = "true" ] || fail "path switch verification"
 
 # TG/NP quotient + input-automorphism orbit blocking.
 "$BIN" design min --expr 'A^B' --max-cost 6 --max-chain 3 --all --canonical \
