@@ -35,4 +35,10 @@ DriverProfile analyze_design_drivers(const Design& d,
                                     const std::vector<std::string>& vars,
                                     const std::vector<int>& target);
 
+// Tensor/batched variant: all candidate graphs are put on a block diagonal per
+// minterm, so one Boolean closure handles the whole candidate batch.
+std::vector<DriverProfile> analyze_designs_drivers_batch(
+    const std::vector<Design>& designs, const std::vector<std::string>& vars,
+    const std::vector<std::vector<int>>& targets);
+
 }  // namespace dcstudy

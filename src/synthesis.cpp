@@ -255,7 +255,10 @@ SynthesisResult synthesize_min(const std::vector<std::string>& vars,
   if (!sol.message.empty()) res.message = sol.message;
   if (!sol.feasible) return res;
 
-  std::set<std::string> seen;
+  // Materialize the solver candidates first, then path-check the whole batch.
+  // The block-diagonal C_m closure is a tensor over candidates; it is used
+  // whenever more than one candidate survived the cheap behavioral check.
+  std::vector<Design> candidates;
   for (const auto& ids : sol.designs) {
     std::vector<std::size_t> selected;
     selected.reserve(ids.size());
@@ -268,12 +271,20 @@ SynthesisResult synthesize_min(const std::vector<std::string>& vars,
     if (std::adjacent_find(selected.begin(), selected.end()) != selected.end())
       throw std::runtime_error("Z3 helper returned a duplicate branch id");
     Design d = design_from_indices(branches, selected, vars);
-    if (!valid_design(d, target, sol.optimum)) continue;
-    // Construction-stage path check: build C_m and require exactly one
-    // strong source connected to Y for every input.  This is the same
-    // dynamic-driver semantics as the standalone verifier.
-    if (!analyze_design_drivers(d, vars, target).valid) continue;
+    if (valid_design(d, target, sol.optimum)) candidates.push_back(std::move(d));
+  }
+  std::vector<DriverProfile> profiles;
+  if (candidates.size() == 1) {
+    profiles.push_back(analyze_design_drivers(candidates[0], vars, target));
+  } else if (!candidates.empty()) {
+    std::vector<std::vector<int>> targets(candidates.size(), target);
+    profiles = analyze_designs_drivers_batch(candidates, vars, targets);
+  }
 
+  std::set<std::string> seen;
+  for (std::size_t ci = 0; ci < candidates.size(); ++ci) {
+    if (ci >= profiles.size() || !profiles[ci].valid) continue;
+    Design& d = candidates[ci];
     std::string key;
     if (canonical) {
       std::string best_key;

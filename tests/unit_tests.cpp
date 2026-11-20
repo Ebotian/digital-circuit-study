@@ -12,6 +12,7 @@
 #include "dcstudy/cdl.hpp"
 #include "dcstudy/cmos.hpp"
 #include "dcstudy/designspace.hpp"
+#include "dcstudy/driver_profile.hpp"
 #include "dcstudy/switchlevel.hpp"
 #include "dcstudy/synthesis.hpp"
 #include "dcstudy/verilog.hpp"
@@ -232,6 +233,28 @@ TEST_CASE("JSON parser and Z3 protocol round-trip") {
   const SwitchSolution ss2 = decode_switch_solution(encode_switch_solution(ss));
   REQUIRE(ss2.rows.size() == 1);
   REQUIRE(ss2.rows[0].values[0] == Logic::Zero);
+}
+
+TEST_CASE("batched driver profile matches single-design analysis") {
+  const FuncSpec s = spec_from_expr("A^B");
+  SpaceOptions opt;
+  opt.max_cost = 6;
+  opt.max_chain = 3;
+  const auto r = synthesize_min(s.vars, target_of(s), opt, 4, false);
+  REQUIRE(r.feasible);
+  REQUIRE_FALSE(r.designs.empty());
+  std::vector<std::vector<int>> targets(r.designs.size(), target_of(s));
+  const auto batch =
+      analyze_designs_drivers_batch(r.designs, s.vars, targets);
+  REQUIRE(batch.size() == r.designs.size());
+  for (std::size_t i = 0; i < r.designs.size(); ++i) {
+    const auto single =
+        analyze_design_drivers(r.designs[i], s.vars, target_of(s));
+    REQUIRE(batch[i].valid == single.valid);
+    REQUIRE(batch[i].all_single == single.all_single);
+    REQUIRE(batch[i].max_drivers == single.max_drivers);
+    REQUIRE(batch[i].driver_count == single.driver_count);
+  }
 }
 
 TEST_CASE("CDL parser handles a small subckt") {
