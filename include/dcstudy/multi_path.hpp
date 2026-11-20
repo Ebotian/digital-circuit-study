@@ -27,6 +27,7 @@ struct MultiPathSynthesisResult {
 
 MultiPathSynthesisResult synthesize_path_variables_multi(
     const std::vector<BoolFunc>& funcs, const std::vector<std::string>& names,
-    const std::vector<std::string>& vars, const SpaceOptions& opt);
+    const std::vector<std::string>& vars, const SpaceOptions& opt,
+    bool tri_state = false);
 
 }  // namespace dcstudy

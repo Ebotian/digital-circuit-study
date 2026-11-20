@@ -113,8 +113,10 @@ struct Search {
 
   bool compatible(const PathInfo& p) const {
     const auto& b = all[static_cast<std::size_t>(p.path)].branch;
+    const auto& target = targets.at(static_cast<std::size_t>(p.output));
     for (int m = 0; m < rows; ++m) {
       if (!b.behavior[static_cast<std::size_t>(m)].conducts) continue;
+      if (target[static_cast<std::size_t>(m)] < 0) return false;
       const auto& d = driver[static_cast<std::size_t>(idx(p.output, m))];
       if (!d.empty() && d != b.source) return false;
     }
@@ -122,6 +124,10 @@ struct Search {
   }
 
   void search() {
+    for (int o = 0; o < nout; ++o)
+      for (int m = 0; m < rows; ++m)
+        if (targets[static_cast<std::size_t>(o)][static_cast<std::size_t>(m)] < 0)
+          strong_cover[static_cast<std::size_t>(idx(o, m))] = true;
     const int sofar =
         edge_cost + 2 * static_cast<int>(__builtin_popcountll(inv_mask));
     if (sofar > max_cost || sofar >= best) return;
@@ -177,7 +183,8 @@ struct Search {
 
 MultiPathSynthesisResult synthesize_path_variables_multi(
     const std::vector<BoolFunc>& funcs, const std::vector<std::string>& names,
-    const std::vector<std::string>& vars, const SpaceOptions& opt) {
+    const std::vector<std::string>& vars, const SpaceOptions& opt,
+    bool tri_state) {
   MultiPathSynthesisResult out;
   out.outputs = names;
   if (funcs.empty() || funcs.size() != names.size() || vars.empty() ||
@@ -190,7 +197,8 @@ MultiPathSynthesisResult synthesize_path_variables_multi(
   for (std::size_t o = 0; o < funcs.size(); ++o) {
     std::vector<int> target;
     for (std::uint32_t m = 0; m < funcs[o].num_minterms(); ++m)
-      target.push_back(funcs[o].value(m) ? 1 : 0);
+      target.push_back(tri_state ? (funcs[o].value(m) ? 1 : -1)
+                                 : (funcs[o].value(m) ? 1 : 0));
     targets.push_back(target);
     const auto branches = usable_branches(vars, target, opt);
     for (const auto& b : branches) all.push_back(AllPath{b, static_cast<int>(o)});
@@ -313,7 +321,7 @@ MultiPathSynthesisResult synthesize_path_variables_multi(
     if (std::find(g.source_ids.begin(), g.source_ids.end(), id) == g.source_ids.end())
       g.source_ids.push_back(id);
   }
-  const auto profiles = analyze_switch_graph_outputs(g, vars, targets);
+  const auto profiles = analyze_switch_graph_outputs(g, vars, targets, tri_state);
   out.verified = profiles.size() == names.size();
   for (const auto& p : profiles) out.verified = out.verified && p.valid;
   out.ok = true;

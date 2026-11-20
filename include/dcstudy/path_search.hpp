@@ -30,6 +30,6 @@ struct PathSynthesisResult {
 
 PathSynthesisResult synthesize_path_variables(
     const BoolFunc& f, const std::vector<std::string>& vars,
-    const SpaceOptions& opt);
+    const SpaceOptions& opt, bool tri_state = false);
 
 }  // namespace dcstudy

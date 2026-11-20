@@ -63,10 +63,6 @@ pass "minimum design + Yosys"
 "$BIN" design template --expr 'A^B' --json > "$TMP/template.json"   || fail "bounded template optimization"
 [ "$(jq -r .verified "$TMP/template.json")" = "true" ] || fail "template verification"
 [ "$(jq -r .proof "$TMP/template.json")" = "true" ] || fail "template optimality"
-"$BIN" design tri-decoder --bits 3 --json > "$TMP/tri.json"   || fail "tri-state decoder"
-[ "$(jq -r .total "$TMP/tri.json")" = "34" ] || fail "tri decoder 34T"
-[ "$(jq -r .verified "$TMP/tri.json")" = "true" ] || fail "tri decoder verification"
-
 # TG/NP quotient + input-automorphism orbit blocking.
 "$BIN" design min --expr 'A^B' --max-cost 6 --max-chain 3 --all --canonical \
   --limit 8 --verify none --json > "$TMP/canon.json" || fail "canonical XOR"
@@ -131,6 +127,30 @@ JSON
   [ "$(jq -r .verified "$TMP/decoder38.exact")" = "true" ] || fail "decoder exact verification"
   [ "$(jq -r .nfet "$TMP/decoder38.exact")" = "27" ] || fail "decoder exact NMOS"
   [ "$(jq -r '.inverted | length' "$TMP/decoder38.exact")" = "3" ] || fail "decoder exact inverters"
+  cat > "$TMP/demux4.json" <<'JSON'
+{
+  "name": "demux1to4",
+  "inputs": ["A", "B"],
+  "outputs": [
+    {"name": "Y0", "expr": "~A&~B"},
+    {"name": "Y1", "expr": "~A&B"},
+    {"name": "Y2", "expr": "A&~B"},
+    {"name": "Y3", "expr": "A&B"}
+  ]
+}
+JSON
+  "$BIN" multi path --spec "$TMP/decoder38.json" --tri-state --max-cost 40 --json     > "$TMP/decoder38.tri" || fail "tri-state 3-8 decoder"
+  [ "$(jq -r .total "$TMP/decoder38.tri")" = "16" ] || fail "tri 3-8 decoder 16T"
+  [ "$(jq -r .verified "$TMP/decoder38.tri")" = "true" ] || fail "tri 3-8 verification"
+  "$BIN" multi path --spec "$TMP/demux4.json" --tri-state --max-cost 40 --json     > "$TMP/demux4.tri" || fail "tri-state 1-to-4 demux"
+  [ "$(jq -r .total "$TMP/demux4.tri")" = "6" ] || fail "tri 1-to-4 demux 6T"
+  [ "$(jq -r .verified "$TMP/demux4.tri")" = "true" ] || fail "tri 1-to-4 verification"
+  if "$BIN" multi path --spec "$TMP/demux4.json" --max-cost 40 --json     >/dev/null 2>&1; then
+    fail "1-to-4 without tri-state unexpectedly solved"
+  fi
+  if "$BIN" multi path --spec "$TMP/decoder38.json" --max-cost 54 --json     >/dev/null 2>&1; then
+    fail "3-8 without tri-state unexpectedly solved"
+  fi
   [ -f "$TMP/decoder38/index.html" ] || fail "decoder render index"
   [ -f "$TMP/decoder38/scheme-0.svg" ] || fail "decoder schematic"
   pass "multi-output circuit (decoder as spec)"

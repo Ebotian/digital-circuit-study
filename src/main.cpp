@@ -26,7 +26,6 @@
 #include "dcstudy/static_exact.hpp"
 #include "dcstudy/switchlevel.hpp"
 #include "dcstudy/template_synth.hpp"
-#include "dcstudy/tri_decoder.hpp"
 #include "dcstudy/synthesis.hpp"
 #include "dcstudy/verilog.hpp"
 #include "dcstudy/verify.hpp"
@@ -61,7 +60,7 @@ struct Args {
 
 const std::set<std::string> kBoolFlags = {
     "json", "all", "canonical", "exact", "keep", "help", "verbose", "no-tg",
-    "heavy", "png", "no-logic", "static-cmos", "graphblas"};
+    "heavy", "png", "no-logic", "static-cmos", "graphblas", "tri-state"};
 
 Args parse_args(int argc, char** argv, int start) {
   Args a;
@@ -346,8 +345,7 @@ Commands:
                  [--graphblas] [--expect BITS]
   design bdd     --expr EXPR | --tt BITS [--vars A,B]
   design template --expr EXPR | --tt BITS [--vars A,B]
-  design tri-decoder --bits N [--json]
-  design path    --expr EXPR | --tt BITS [--max-cost N] [--max-chain N]
+  design path    --expr EXPR | --tt BITS [--max-cost N] [--max-chain N] [--tri-state]
   design min     --expr EXPR | --tt BITS [--max-cost N] [--max-chain N]
                  [--all] [--limit N] [--canonical] [--emit DIR]
                  [--verify none|yosys|sim|both|static] [--static-cmos] [--keep]
@@ -358,7 +356,7 @@ Commands:
   multi synth    --spec FILE [--out DIR] [--png] [--max-fanin N]
                  [--json]
   multi exact    --spec FILE [--out DIR] [--json]
-  multi path     --spec FILE [--max-cost N] [--max-chain N] [--json]
+  multi path     --spec FILE [--max-cost N] [--max-chain N] [--tri-state] [--json]
   multi template --spec FILE [--json]
   render         --expr EXPR | --tt BITS [--max-cost N] [--limit N]
                  [--canonical] [--out DIR] [--png] [--no-logic]
@@ -377,6 +375,7 @@ Options:
   --static-cmos  restrict to static complementary CMOS (kappa-linear; rejects
                  pass/TG; single-stage, with automatic multi-stage fallback)
   --graphblas    use the GraphBLAS worker for switch-level reachability closure
+  --tri-state    allow high-Z outputs; a 0 in a one-hot output becomes high-Z
   --spec         JSON circuit spec: {"inputs":[...],"outputs":[{"name":...,"expr":...}]}
   --max-fanin N  static CMOS cell fan-in limit (e.g. 2); 0 = library default
   --heavy        allow the n=6 Dedekind count (about 40 s and 10 GB)
@@ -1033,47 +1032,6 @@ int cmd_design_static(const Args& a, const FuncSpec& spec,
   return check_ok ? 0 : 1;
 }
 
-int cmd_design_tri_decoder(const Args& a) {
-  const int bits = std::stoi(a.get("bits", "3"));
-  std::vector<std::string> vars;
-  for (int i = 0; i < bits; ++i)
-    vars.push_back(std::string(1, static_cast<char>('A' + i)));
-  const TriDecoderResult r = synthesize_tri_decoder(bits, vars);
-  const bool json = a.is("json");
-  if (!r.ok || !r.verified) {
-    if (json) {
-      Json j;
-      j["ok"] = false;
-      j["command"] = "design.tri-decoder";
-      j["reason"] = r.reason;
-      std::cout << j.dump() << "\n";
-    } else {
-      std::cerr << "tri decoder failed: " << r.reason << "\n";
-    }
-    return 1;
-  }
-  Json j;
-  j["ok"] = true;
-  j["command"] = "design.tri-decoder";
-  j["model"] = "TG demux tree with high-Z unselected outputs";
-  j["bits"] = bits;
-  j["total"] = r.total;
-  j["tg_count"] = r.tg_count;
-  j["inverter_cost"] = r.inverter_cost;
-  j["verified"] = r.verified;
-  Json outs = Json::Array{};
-  for (const auto& o : r.outputs) outs.push_back(o);
-  j["outputs"] = std::move(outs);
-  if (json) std::cout << j.dump() << "\n";
-  else
-    std::cout << "tri-state TG decoder: " << bits << "-to-"
-              << (1 << bits) << "\n"
-              << "  " << r.total << "T = " << (2 * r.tg_count)
-              << "T TG + " << r.inverter_cost << "T inverters\n"
-              << "  high-Z unselected outputs, active-low selected output\n";
-  return 0;
-}
-
 int cmd_design_template(const Args& a, const FuncSpec& spec) {
   const BddSwitchDesign b = synthesize_bdd_switch_best(spec.func, spec.vars);
   if (!b.ok || !b.verified) {
@@ -1157,7 +1115,7 @@ int cmd_design_path(const Args& a, const FuncSpec& spec) {
   opt.max_chain = std::stoi(a.get("max-chain", "4"));
   opt.allow_tg = !a.is("no-tg");
   const PathSynthesisResult d =
-      synthesize_path_variables(spec.func, spec.vars, opt);
+      synthesize_path_variables(spec.func, spec.vars, opt, a.is("tri-state"));
   const bool json = a.is("json");
   if (!d.ok || !d.verified) {
     if (json) {
@@ -1286,10 +1244,6 @@ int cmd_design(const std::string& sub, int argc, char** argv) {
   if (sub == "template") {
     const Args a = parse_args(argc, argv, 3);
     return cmd_design_template(a, get_spec(a));
-  }
-  if (sub == "tri-decoder") {
-    const Args a = parse_args(argc, argv, 3);
-    return cmd_design_tri_decoder(a);
   }
   if (sub != "min") throw CliError("unknown design subcommand: " + sub);
   const Args a = parse_args(argc, argv, 3);
@@ -1533,11 +1487,12 @@ int cmd_multi_template(const Args& a, const MultiSpec& spec) {
 
 int cmd_multi_path(const Args& a, const MultiSpec& spec) {
   SpaceOptions opt;
-  opt.max_cost = std::stoi(a.get("max-cost", "32"));
+  opt.max_cost = std::stoi(a.get("max-cost", "64"));
   opt.max_chain = std::stoi(a.get("max-chain", "4"));
   opt.allow_tg = !a.is("no-tg");
   const MultiPathSynthesisResult r =
-      synthesize_path_variables_multi(spec.funcs, spec.names, spec.vars, opt);
+      synthesize_path_variables_multi(spec.funcs, spec.names, spec.vars, opt,
+                                      a.is("tri-state"));
   const bool json = a.is("json");
   if (!r.ok || !r.verified) {
     if (json) {

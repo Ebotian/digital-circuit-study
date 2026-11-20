@@ -314,6 +314,21 @@ optimal: 54T
 
 `--out` 会写出 `flattened.cdl` 和 `exact.json`。
 
+#### 三态输出：`--tri-state`
+
+三态不是单独的译码器命令，而是路径求解器的一个 flag：
+
+```bash
+./build/dcstudy multi path --spec decoder38.json --tri-state --max-cost 40
+```
+
+语义：输出表达式为 1 的行驱动高电平，为 0 的行变为高阻 Z。求解器仍然以唯一驱动、强驱动和路径图验证为约束，只是允许 `|D|=0`。
+
+- 3-8 译码器：通用路径搜索找到 **16T** 的输入源选择网络；
+- 1-to-4 分路器：**6T**；
+- 同一个 spec 不加 `--tri-state` 时要求输出 0/1，不能得到这些三态解；
+- 经典 14 TG + 3 INV 的 TG demux 树是 34T 的一个结构化实现，但不是唯一解。
+
 标准画法参考：Mano《Digital Design》3-to-8 decoder 图（3 个反相器提供补码，8 个与门产生 minterm），以及 KFUPM EE200 讲义中的同款画法；低有效输出版本通常直接用 8 个 NAND 门。这里因为走静态互补 CMOS，所以实际单元是 NOR3（与 AND3 在 De Morgan 意义下等价）。
 
 ### 5. 一条命令复现讲义数字

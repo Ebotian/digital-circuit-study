@@ -106,6 +106,7 @@ struct Search {
     const auto& b = branches[static_cast<std::size_t>(p.branch)];
     for (int m = 0; m < rows; ++m) {
       if (!b.behavior[static_cast<std::size_t>(m)].conducts) continue;
+      if (target[static_cast<std::size_t>(m)] < 0) return false;
       const auto& d = driver[static_cast<std::size_t>(m)];
       if (!d.empty() && d != b.source) return false;
     }
@@ -113,6 +114,9 @@ struct Search {
   }
 
   void search() {
+    for (int m = 0; m < rows; ++m)
+      if (target[static_cast<std::size_t>(m)] < 0)
+        strong_cover[static_cast<std::size_t>(m)] = true;
     const int sofar =
         edge_cost + 2 * static_cast<int>(__builtin_popcountll(inv_mask));
     if (sofar > max_cost || sofar >= best) return;
@@ -167,7 +171,7 @@ struct Search {
 
 PathSynthesisResult synthesize_path_variables(
     const BoolFunc& f, const std::vector<std::string>& vars,
-    const SpaceOptions& opt) {
+    const SpaceOptions& opt, bool tri_state) {
   PathSynthesisResult out;
   if (vars.empty() || vars.size() > 4) {
     out.reason = "path synthesis supports 1..4 inputs";
@@ -175,7 +179,8 @@ PathSynthesisResult synthesize_path_variables(
   }
   std::vector<int> target;
   for (std::uint32_t m = 0; m < f.num_minterms(); ++m)
-    target.push_back(f.value(m) ? 1 : 0);
+    target.push_back(tri_state ? (f.value(m) ? 1 : -1)
+                               : (f.value(m) ? 1 : 0));
   const auto all = usable_branches(vars, target, opt);
   if (all.empty()) {
     out.reason = "no usable paths";
@@ -290,8 +295,9 @@ PathSynthesisResult synthesize_path_variables(
   }
 
   out.truths.push_back(f.truth_string());
-  const DriverProfile dp = analyze_switch_graph(g, vars, target);
-  out.verified = dp.valid;
+  const auto profiles =
+      analyze_switch_graph_outputs(g, vars, {target}, tri_state);
+  out.verified = !profiles.empty() && profiles[0].valid;
   out.ok = true;
   out.proof = true;
   if (!out.verified) out.reason = "path graph failed dynamic driver validation";

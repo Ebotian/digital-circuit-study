@@ -25,7 +25,7 @@
 
 - 把 kappa/开关图、C0*/C1* 驱动集、|D| 约束、GraphBLAS 批量闭包放在同一条教学工具链；
 - 有静态 54T 的模型内证明；
-- 有三态 34T、动态 43T 等具体结构；
+- 有三态 16T、动态 43T 等具体结构；
 - 但通用任意拓扑多输出精确综合，成熟度不如 DATE 2025 / MOTO-X / MiniTNtk。
 
 ## 2. 最接近的工作
@@ -177,7 +177,7 @@ COSMOS：
 
 三态 TG demux 树和 domino 译码器属于经典电路结构：
 
-- 3-8 三态 TG 树：14 TG + 3 INV = 34T；
+- 3-8 三态 TG 树：14 TG + 3 INV = 34T（通用 tri-state path 搜索还可找到 16T 的输入源选择网络）；
 - domino/动态版本：需要预充/keeper/时钟语义；
 - 它们不是静态互补 CMOS，不能直接套 --static-cmos 的最优性模型。
 
@@ -190,7 +190,7 @@ COSMOS：
 | BDD 到 pass-transistor | PTM, Stanford PTL | design bdd |
 | 多输出共享边 | DATE 2025, MOTO-X | multi path, multi template |
 | 开关级验证 | IRSIM, COSMOS, SAT switch-level | Z3 + C* + GraphBLAS |
-| 三态译码器 | 经典结构 | design tri-decoder 34T |
+| 三态译码器 | 经典结构 | multi path --tri-state 16T |
 | 动态/预充 | 经典 domino | 尚未实现完整时钟语义 |
 | 管级渲染 | Magic/Xschem 等 | 自研 SVG/门级/轨矩阵；多输出管级图未完成 |
 | 静态 54T 证明 | 可对照 | multi exact 模型内 proof |
