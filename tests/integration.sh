@@ -128,6 +128,22 @@ JSON
   [ -f "$TMP/decoder38/index.html" ] || fail "decoder render index"
   [ -f "$TMP/decoder38/scheme-0.svg" ] || fail "decoder schematic"
   pass "multi-output circuit (decoder as spec)"
+
+# Multi-output path variables with shared edges.
+cat > "$TMP/halfadder.json" <<'JSON'
+{
+  "name": "half_adder",
+  "inputs": ["A", "B"],
+  "outputs": [
+    {"name": "S",  "expr": "A^B"},
+    {"name": "CO", "expr": "A&B"}
+  ]
+}
+JSON
+"$BIN" multi path --spec "$TMP/halfadder.json" --json > "$TMP/mpath.json"   || fail "multi-output path synthesis"
+[ "$(jq -r .verified "$TMP/mpath.json")" = "true" ] || fail "multi-output path verification"
+[ "$(jq -r '.outputs | length' "$TMP/mpath.json")" = "2" ] || fail "multi-output path output count"
+[ "$(jq -r .proof "$TMP/mpath.json")" = "true" ] || fail "multi-output path proof"
 else
   echo "skip multi-output checks (no CDL/yosys/node)"
 fi

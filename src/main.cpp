@@ -19,6 +19,7 @@
 #include "dcstudy/designspace.hpp"
 #include "dcstudy/json.hpp"
 #include "dcstudy/math_client.hpp"
+#include "dcstudy/multi_path.hpp"
 #include "dcstudy/multistage.hpp"
 #include "dcstudy/path_search.hpp"
 #include "dcstudy/render_client.hpp"
@@ -353,6 +354,7 @@ Commands:
   multi synth    --spec FILE [--out DIR] [--png] [--max-fanin N]
                  [--json]
   multi exact    --spec FILE [--out DIR] [--json]
+  multi path     --spec FILE [--max-cost N] [--max-chain N] [--json]
   render         --expr EXPR | --tt BITS [--max-cost N] [--limit N]
                  [--canonical] [--out DIR] [--png] [--no-logic]
                  [--static-cmos]
@@ -1340,6 +1342,73 @@ MultiSpec load_multi_spec(const std::string& path) {
   return s;
 }
 
+int cmd_multi_path(const Args& a, const MultiSpec& spec) {
+  SpaceOptions opt;
+  opt.max_cost = std::stoi(a.get("max-cost", "8"));
+  opt.max_chain = std::stoi(a.get("max-chain", "4"));
+  opt.allow_tg = !a.is("no-tg");
+  const MultiPathSynthesisResult r =
+      synthesize_path_variables_multi(spec.funcs, spec.names, spec.vars, opt);
+  const bool json = a.is("json");
+  if (!r.ok || !r.verified) {
+    if (json) {
+      Json j;
+      j["ok"] = false;
+      j["command"] = "multi.path";
+      j["reason"] = r.reason;
+      std::cout << j.dump() << "\n";
+    } else {
+      std::cerr << "multi path failed: " << r.reason << "\n";
+    }
+    return 1;
+  }
+  Json j;
+  j["ok"] = true;
+  j["command"] = "multi.path";
+  j["model"] = "multi-output path variables with shared switch edges";
+  j["total"] = r.total;
+  j["edge_cost"] = r.edge_cost;
+  j["inverter_cost"] = r.inverter_cost;
+  j["proof"] = r.proof;
+  j["verified"] = r.verified;
+  Json outs = Json::Array{};
+  for (const auto& o : r.outputs) outs.push_back(o);
+  j["outputs"] = std::move(outs);
+  j["selected"] = [&] {
+    Json v = Json::Array{};
+    for (int s : r.selected) v.push_back(s);
+    return v;
+  }();
+  Json graph;
+  Json nets = Json::Array{};
+  for (const auto& n : r.graph.nets) nets.push_back(n);
+  graph["nets"] = std::move(nets);
+  Json edges = Json::Array{};
+  for (const auto& e : r.graph.edges) {
+    Json ej;
+    ej["from"] = e.from;
+    ej["to"] = e.to;
+    ej["kind"] = switch_name(e.kind);
+    ej["lit"] = e.lit;
+    ej["strong"] = e.strong;
+    edges.push_back(std::move(ej));
+  }
+  graph["edges"] = std::move(edges);
+  Json sources = Json::Array{};
+  for (int s : r.graph.source_ids) sources.push_back(s);
+  graph["sources"] = std::move(sources);
+  Json gouts = Json::Array{};
+  for (int o : r.graph.outputs) gouts.push_back(o);
+  graph["outputs"] = std::move(gouts);
+  j["graph"] = std::move(graph);
+  if (json) std::cout << j.dump() << "\n";
+  else
+    std::cout << "multi-output path design: " << r.total << "T\n"
+              << "  edges=" << r.edge_cost << "T  shared inverters="
+              << r.inverter_cost << "T\n";
+  return 0;
+}
+
 int cmd_multi_exact(const Args& a, const MultiSpec& spec) {
   const StaticExactResult r =
       synthesize_static_exact_multi(spec.funcs, spec.names, spec.vars);
@@ -1433,6 +1502,10 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
   if (sub == "exact") {
     const MultiSpec spec = load_multi_spec(a.need("spec"));
     return cmd_multi_exact(a, spec);
+  }
+  if (sub == "path") {
+    const MultiSpec spec = load_multi_spec(a.need("spec"));
+    return cmd_multi_path(a, spec);
   }
   if (sub != "synth") throw CliError("unknown multi subcommand: " + sub);
   const MultiSpec spec = load_multi_spec(a.need("spec"));

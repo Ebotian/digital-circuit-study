@@ -28,6 +28,7 @@ struct SwitchGraph {
   std::vector<SwitchGraphEdge> edges;
   std::vector<int> source_ids;
   int output = 0;
+  std::vector<int> outputs;  // optional; empty means {output}
   int add_net(const std::string& name);
 };
 
@@ -56,6 +57,10 @@ struct DriverProfile {
 DriverProfile analyze_switch_graph(const SwitchGraph& g,
                                   const std::vector<std::string>& vars,
                                   const std::vector<int>& target);
+
+std::vector<DriverProfile> analyze_switch_graph_outputs(
+    const SwitchGraph& g, const std::vector<std::string>& vars,
+    const std::vector<std::vector<int>>& targets);
 
 DriverProfile analyze_design_drivers(const Design& d,
                                     const std::vector<std::string>& vars,

@@ -27,6 +27,7 @@ add_library(dcstudy_core STATIC
   src/static_exact.cpp
   src/designspace.cpp
   src/math_client.cpp
+  src/multi_path.cpp
   src/multistage.cpp
   src/path_search.cpp
   src/switchlevel.cpp

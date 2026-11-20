@@ -111,6 +111,8 @@ struct Search {
   }
 
   void search() {
+    if (edge_cost + 2 * static_cast<int>(__builtin_popcountll(inv_mask)) >= best)
+      return;
     int row = -1;
     int best_choices = std::numeric_limits<int>::max();
     for (int m = 0; m < rows; ++m) {
