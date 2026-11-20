@@ -339,7 +339,7 @@ function renderGateLevelSvg(d: Design, vars: string[], title: string): string {
   const pos = cells.map((_, i) => {
     const row = rows.get(level[i]) ?? 0;
     rows.set(level[i], row + 1);
-    return { x: 1.2 + level[i] * 3.2, y: -0.8 - row * 2.0 };
+    return { x: 1.2 + level[i] * 4.2, y: -0.8 - row * 2.0 };
   });
   const inAnchor = (i: number, j: number) => {
     const s = shapes[i];
@@ -363,8 +363,10 @@ function renderGateLevelSvg(d: Design, vars: string[], title: string): string {
       const src = producer.get(net);
       if (src !== undefined && src !== i) {
         // Give every source cell its own vertical track, so unrelated nets
-        // never share a vertical segment.
-        const track = 0.45 + 0.11 * (src % 8);
+        // never share a vertical segment.  Keep a uniform minimum lane gap;
+        // 0.11 cm was visually too tight for adjacent gate outputs.
+        const WIRE_GAP = 0.38;
+        const track = 1.0 + WIRE_GAP * (src % 8);
         const dy = (pos[i].y - pos[src].y).toFixed(3);
         lines.push("\\draw (g" + src + ".out) -- ++(" + track.toFixed(2) +
           ",0) -- ++(0," + dy + ") -- (g" + i + inAnchor(i, j) + ");");
