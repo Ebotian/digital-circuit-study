@@ -23,6 +23,7 @@ add_library(dcstudy_core STATIC
   src/cdl.cpp
   src/cmos.cpp
   src/designspace.cpp
+  src/math_client.cpp
   src/multistage.cpp
   src/switchlevel.cpp
   src/synthesis.cpp
@@ -41,16 +42,30 @@ target_link_libraries(dcstudy PRIVATE dcstudy_core)
 if(DCSTUDY_BUILD_Z3_HELPER)
   find_package(Z3 REQUIRED)
   find_library(BLISS_LIBRARY bliss REQUIRED)
+  find_library(GRAPHBLAS_LIBRARY graphblas REQUIRED)
+  find_library(FLINT_LIBRARY flint REQUIRED)
+  find_library(GMP_LIBRARY gmp REQUIRED)
   add_executable(dcstudy_z3
     src/z3_helper_main.cpp
     src/synthesis_z3.cpp
     src/switchlevel_z3.cpp
+    src/math_engine.cpp
     src/symmetry.cpp
     src/z3_protocol.cpp
   )
   set_target_properties(dcstudy_z3 PROPERTIES OUTPUT_NAME dcstudy-z3)
-  target_include_directories(dcstudy_z3 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  target_link_libraries(dcstudy_z3 PRIVATE z3::libz3 ${BLISS_LIBRARY})
+  target_include_directories(dcstudy_z3 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    /usr/include/suitesparse)
+  target_link_libraries(dcstudy_z3 PRIVATE
+    z3::libz3
+    ${BLISS_LIBRARY}
+    ${GRAPHBLAS_LIBRARY}
+    ${FLINT_LIBRARY}
+    ${GMP_LIBRARY})
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(dcstudy_z3 PRIVATE -Wno-c99-extensions)
+  endif()
 endif()
 
 enable_testing()

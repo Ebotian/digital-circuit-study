@@ -16,6 +16,7 @@
 #include "dcstudy/cmos.hpp"
 #include "dcstudy/designspace.hpp"
 #include "dcstudy/json.hpp"
+#include "dcstudy/math_client.hpp"
 #include "dcstudy/multistage.hpp"
 #include "dcstudy/render_client.hpp"
 #include "dcstudy/switchlevel.hpp"
@@ -302,6 +303,8 @@ Commands:
   bool info      --expr EXPR | --tt BITS [--vars A,B]
   bool count     --n N
   cmos synth     --expr EXPR | --tt BITS [--vars A,B]
+  math closure   --n N --edges 0-1,1-2 [--json]
+  math gf2       --rows '1,1;0,1' [--ncols N] [--json]
   cdl list       [--cdl FILE]
   cdl solve      --cell NAME [--cdl FILE] [--inputs A,B] [--exact] [--expect BITS]
   design min     --expr EXPR | --tt BITS [--max-cost N] [--max-chain N]
@@ -438,6 +441,109 @@ int cmd_cmos(const std::string& sub, int argc, char** argv) {
     }
   }
   return 0;
+}
+
+std::vector<std::pair<int, int>> parse_edges(const std::string& s) {
+  std::vector<std::pair<int, int>> out;
+  std::size_t start = 0;
+  while (start <= s.size()) {
+    const auto comma = s.find(',', start);
+    std::string item = s.substr(start, comma == std::string::npos ? std::string::npos
+                                                                 : comma - start);
+    auto dash = item.find('-');
+    if (dash == std::string::npos) throw CliError("bad edge: " + item);
+    out.emplace_back(std::stoi(item.substr(0, dash)),
+                     std::stoi(item.substr(dash + 1)));
+    if (comma == std::string::npos) break;
+    start = comma + 1;
+  }
+  return out;
+}
+
+std::vector<std::vector<int>> parse_rows(const std::string& s) {
+  std::vector<std::vector<int>> rows;
+  std::size_t start = 0;
+  while (start <= s.size()) {
+    const auto semi = s.find(';', start);
+    std::string row = s.substr(start, semi == std::string::npos ? std::string::npos
+                                                                : semi - start);
+    std::vector<int> vals;
+    std::size_t p = 0;
+    while (p <= row.size()) {
+      const auto comma = row.find(',', p);
+      std::string cell = row.substr(p, comma == std::string::npos ? std::string::npos
+                                                                  : comma - p);
+      vals.push_back(std::stoi(cell));
+      if (comma == std::string::npos) break;
+      p = comma + 1;
+    }
+    rows.push_back(std::move(vals));
+    if (semi == std::string::npos) break;
+    start = semi + 1;
+  }
+  return rows;
+}
+
+int cmd_math(const std::string& sub, int argc, char** argv) {
+  const Args a = parse_args(argc, argv, 3);
+  const bool json = a.is("json");
+  if (sub == "closure") {
+    const auto edges = parse_edges(a.need("edges"));
+    int n = 0;
+    for (auto [u, v] : edges) n = std::max(n, std::max(u, v) + 1);
+    if (a.has("n")) n = std::stoi(a.get("n"));
+    const auto rows = graph_closure(n, edges);
+    if (json) {
+      Json j;
+      j["ok"] = true;
+      j["command"] = "math.closure";
+      j["n"] = n;
+      Json r = Json::Array{};
+      for (const auto& row : rows) {
+        Json one = Json::Array{};
+        for (int v : row) one.push_back(v);
+        r.push_back(std::move(one));
+      }
+      j["rows"] = std::move(r);
+      std::cout << j.dump() << "\n";
+    } else {
+      for (int i = 0; i < n; ++i) {
+        std::cout << i << ":";
+        for (int v : rows[static_cast<std::size_t>(i)]) std::cout << " " << v;
+        std::cout << "\n";
+      }
+    }
+    return 0;
+  }
+  if (sub == "gf2") {
+    const auto rows = parse_rows(a.need("rows"));
+    int ncols = rows.empty() ? 0 : static_cast<int>(rows[0].size());
+    if (a.has("ncols")) ncols = std::stoi(a.get("ncols"));
+    const MathGf2 g = gf2_analysis(rows, ncols);
+    if (json) {
+      Json j;
+      j["ok"] = true;
+      j["command"] = "math.gf2";
+      j["rank"] = g.rank;
+      j["nullity"] = g.nullity;
+      Json ns = Json::Array{};
+      for (const auto& v : g.nullspace) {
+        Json one = Json::Array{};
+        for (int x : v) one.push_back(x);
+        ns.push_back(std::move(one));
+      }
+      j["nullspace"] = std::move(ns);
+      std::cout << j.dump() << "\n";
+    } else {
+      std::cout << "rank=" << g.rank << " nullity=" << g.nullity << "\n";
+      for (const auto& v : g.nullspace) {
+        for (int x : v) std::cout << x << " ";
+        std::cout << "\n";
+      }
+    }
+    return 0;
+  }
+  throw CliError("unknown math subcommand: " + sub);
 }
 
 int cmd_cdl(const std::string& sub, int argc, char** argv) {
@@ -1267,6 +1373,7 @@ int main(int argc, char** argv) {
     const std::string sub = argv[2];
     if (cmd == "bool") return cmd_bool(sub, argc, argv);
     if (cmd == "cmos") return cmd_cmos(sub, argc, argv);
+    if (cmd == "math") return cmd_math(sub, argc, argv);
     if (cmd == "cdl") return cmd_cdl(sub, argc, argv);
     if (cmd == "design") return cmd_design(sub, argc, argv);
     if (cmd == "verify") return cmd_verify(sub, argc, argv);

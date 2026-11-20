@@ -6,6 +6,7 @@
 #include <string>
 
 #include "dcstudy/json.hpp"
+#include "dcstudy/math_engine.hpp"
 #include "dcstudy/symmetry.hpp"
 #include "dcstudy/z3_protocol.hpp"
 #include "dcstudy/z3_solvers.hpp"
@@ -37,6 +38,43 @@ int main() {
       }
       resp["ok"] = true;
       resp["permutations"] = std::move(arr);
+    } else if (op == "closure") {
+      const int n = static_cast<int>(req.at("n").as_int());
+      std::vector<std::pair<int, int>> edges;
+      for (const auto& e : req.at("edges").array()) {
+        const auto& p = e.array();
+        if (p.size() != 2) throw std::runtime_error("closure: bad edge");
+        edges.emplace_back(static_cast<int>(p[0].as_int()),
+                           static_cast<int>(p[1].as_int()));
+      }
+      const auto rows = graphblas_closure(n, edges);
+      Json out_rows = Json::Array{};
+      for (const auto& row : rows) {
+        Json r = Json::Array{};
+        for (int v : row) r.push_back(v);
+        out_rows.push_back(std::move(r));
+      }
+      resp["ok"] = true;
+      resp["rows"] = std::move(out_rows);
+    } else if (op == "gf2") {
+      const int ncols = static_cast<int>(req.at("ncols").as_int());
+      std::vector<std::vector<int>> rows;
+      for (const auto& row : req.at("rows").array()) {
+        std::vector<int> r;
+        for (const auto& v : row.array()) r.push_back(static_cast<int>(v.as_int()));
+        rows.push_back(std::move(r));
+      }
+      const Gf2Result g = gf2_analysis(rows, ncols);
+      Json ns = Json::Array{};
+      for (const auto& v : g.nullspace) {
+        Json one = Json::Array{};
+        for (int x : v) one.push_back(x);
+        ns.push_back(std::move(one));
+      }
+      resp["ok"] = true;
+      resp["rank"] = g.rank;
+      resp["nullity"] = g.nullity;
+      resp["nullspace"] = std::move(ns);
     } else if (op == "ping") {
       resp["ok"] = true;
       resp["version"] = 1;

@@ -47,6 +47,8 @@
 | [Z3](https://github.com/Z3Prover/z3) | 4.16(C++ 头文件 + libz3) | 仅 `dcstudy-z3` worker 链接:Optimize 与开关级精确求解 |
 | [Catch2](https://github.com/catchorg/Catch2) | 3.16.1 | 单元测试 |
 | [bliss](https://users.aalto.fi/tjunttil/bliss/) | 0.77 | 输入自同构群(彩色二部图) |
+| [SuiteSparse:GraphBLAS](https://graphblas.org/) | 7.14 / GraphBLAS 10.5 | 布尔半环可达闭包(worker) |
+| [FLINT](https://flintlib.org/) | 3.6 | GF(2) 秩与零空间(worker) |
 | [Fil-C](https://fil-c.org/)(`perefil-bin`) | 0.687 | 可选:完整 safe CLI 构建 + 内核内存安全冒烟 |
 | Node.js | 26.13 | 默认渲染 worker(`workers/render_worker.ts`,直接运行 TS) |
 | Python | 3.14 | 可选:旧渲染 worker / 性能对照(`workers/render_worker.py`) |
@@ -255,6 +257,19 @@ xdg-open /tmp/xnor-render/index.html
 
 会写出 `scheme-*.svg` / `scheme-*.png`、`inverter-*.svg`、`logic.svg`(标准门符号,来自 circuitikz)、`logic.tex` 和 `index.html`(真值表 + 逻辑抽象 + 方案 + 2T 反相器细节)。渲染 worker 是独立的 Node 进程,只负责画图,不参与正确性判定;布局使用源极轨道 + 实际 2T 反相器 + 共享 Y 总线。逻辑符号明确标注“行为等价,不是结构分解”;`--no-logic` 可以跳过它和 LaTeX 编译。
 
+### 数学 worker
+
+重型数学库都留在 `dcstudy-z3` worker 里,主程序不链接它们:
+
+```bash
+./build/dcstudy math closure --n 4 --edges 0-1,1-2,2-3
+./build/dcstudy math gf2 --rows '1,1;0,1'
+```
+
+- `closure`: GraphBLAS 布尔半环 `(OR, AND)` 的可达闭包;
+- `gf2`: FLINT 在 GF(2) 上的秩/零空间;
+- `symmetry`: bliss 输入自同构群(内部使用)。
+
 > 渲染性能(同请求,hyperfine 20 次,仅 worker):Python 22.8 ms / 15.9 MiB;TS/Node 无逻辑面板 42.1 ms / 89.2 MiB;TS + circuitikz 热缓存 47.9 ms / 89.5 MiB,首次编译约 324 ms。Node 的启动和堆是固定成本,渲染又是可选功能,所以优先保留更好读的 TS 布局。
 
 ### 7. 形式等价检查(含负对照)
@@ -297,6 +312,8 @@ verilator --binary --timing -Wno-fatal -Wno-WIDTH -Wno-UNUSEDSIGNAL \
 │   ├── z3_client.hpp     Z3 worker 查找 + 进程调用
 │   ├── z3_solvers.hpp    Z3 worker 内实现(Optimize / SAT)
 │   ├── symmetry.hpp       bliss 输入自同构群
+│   ├── math_client.hpp    主进程的数学 worker 客户端
+│   ├── math_engine.hpp    GraphBLAS 闭包 / FLINT GF(2)
 │   ├── worker_client.hpp 通用 worker 查找 / JSON IPC
 │   ├── render_client.hpp 渲染 worker 客户端
 │   ├── verilog.hpp       DUT / 参考 / miter / testbench 生成
@@ -306,6 +323,8 @@ verilator --binary --timing -Wno-fatal -Wno-WIDTH -Wno-UNUSEDSIGNAL \
 │   ├── z3_helper_main.cpp worker 入口(Z3 + bliss)
 │   ├── synthesis_z3.cpp   Z3 Optimize / orbit blocking
 │   ├── symmetry.cpp       bliss 彩色图自同构
+│   ├── math_engine.cpp    GraphBLAS / FLINT 内核
+│   ├── math_client.cpp    数学 worker 客户端
 │   ├── switchlevel_z3.cpp 开关级精确 SAT 模型
 │   ├── worker_client.cpp  通用 JSON worker IPC
 │   ├── render_client.cpp  渲染 worker 客户端
