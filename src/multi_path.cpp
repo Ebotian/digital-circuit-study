@@ -202,6 +202,7 @@ MultiPathSynthesisResult synthesize_path_variables_multi(
     targets.push_back(target);
     const auto branches = usable_branches(vars, target, opt);
     for (const auto& b : branches) {
+      if (!tri_state && b.source != "0" && b.source != "1") continue;
       all.push_back(AllPath{b, static_cast<int>(o)});
     }
   }
@@ -325,9 +326,79 @@ MultiPathSynthesisResult synthesize_path_variables_multi(
     if (std::find(g.source_ids.begin(), g.source_ids.end(), id) == g.source_ids.end())
       g.source_ids.push_back(id);
   }
+
+  // Static mode: verify PUN and PDN as separate rail graphs.  A high target
+  // row must be reachable from rail 1 only through selected PUN paths, and a
+  // low row from rail 0 only through selected PDN paths.  This is the PUN/PDN
+  // complementarity the single mixed graph cannot express cleanly.
+  auto rail_ok = [&](const std::string& rail, int rv) {
+    SwitchGraph r;
+    const int src = r.add_net(rail);
+    r.source_ids = {src};
+    std::vector<int> routs;
+    for (const auto& n : names) routs.push_back(r.add_net("Y" + n));
+    r.outputs = routs;
+    r.output = routs.empty() ? src : routs[0];
+    std::map<std::string, int> rnodes;
+    rnodes.emplace(rail, src);
+    std::map<std::string, bool> redges;
+    std::set<std::string> rsources;
+    auto rnode = [&](const std::string& n) {
+      auto it = rnodes.find(n);
+      if (it != rnodes.end()) return it->second;
+      const int id = r.add_net(n);
+      rnodes.emplace(n, id);
+      return id;
+    };
+    for (int pi : s.best_selected) {
+      const auto& p = paths[static_cast<std::size_t>(pi)];
+      const auto& b = all[static_cast<std::size_t>(p.path)].branch;
+      if (b.source != rail) continue;
+      rsources.insert(b.source);
+      int prev = rnode(b.source);
+      for (std::size_t j = 0; j < p.edges.size(); ++j) {
+        const int eid = p.edges[j];
+        const std::string& k = edge_keys[static_cast<std::size_t>(eid)];
+        const int next = rnode(k);
+        if (!redges[k]) {
+          SwitchGraphEdge e;
+          e.from = prev; e.to = next;
+          e.kind = edges[static_cast<std::size_t>(eid)].kind;
+          e.lit = edges[static_cast<std::size_t>(eid)].lit;
+          e.strong = true; e.cost = edges[static_cast<std::size_t>(eid)].cost;
+          r.edges.push_back(std::move(e));
+          redges[k] = true;
+        }
+        prev = next;
+      }
+      const std::string wire = "wire:" + std::to_string(prev) + ":" +
+                               std::to_string(p.output);
+      if (!redges[wire]) {
+        SwitchGraphEdge e;
+        e.from = prev; e.to = routs[static_cast<std::size_t>(p.output)];
+        e.kind = SwKind::TGH; e.lit = "1"; e.strong = true; e.cost = 0;
+        r.edges.push_back(std::move(e));
+        redges[wire] = true;
+      }
+    }
+    std::vector<std::vector<int>> rt(names.size());
+    for (std::size_t o = 0; o < names.size(); ++o)
+      for (int m = 0; m < static_cast<int>(targets[o].size()); ++m)
+        rt[o].push_back(targets[o][static_cast<std::size_t>(m)] == rv ? rv : -1);
+    const auto prof = analyze_switch_graph_outputs(r, vars, rt, true);
+    if (prof.size() != names.size()) return false;
+    for (const auto& p : prof)
+      if (!p.valid) return false;
+    return true;
+  };
+
   const auto profiles = analyze_switch_graph_outputs(g, vars, targets, tri_state);
-  out.verified = profiles.size() == names.size();
-  for (const auto& p : profiles) out.verified = out.verified && p.valid;
+  if (tri_state) {
+    out.verified = profiles.size() == names.size();
+    for (const auto& p : profiles) out.verified = out.verified && p.valid;
+  } else {
+    out.verified = rail_ok("1", 1) && rail_ok("0", 0);
+  }
   out.ok = true;
   out.proof = true;
   if (!out.verified) {

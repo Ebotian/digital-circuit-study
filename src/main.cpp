@@ -1502,6 +1502,12 @@ int cmd_multi_path(const Args& a, const MultiSpec& spec) {
       j["ok"] = true;
       j["command"] = "multi.path";
       j["mode"] = "static-exact-fallback";
+      j["path_reason"] = r.reason;
+      j["outputs"] = [&] {
+        Json v = Json::Array{};
+        for (const auto& n : spec.names) v.push_back(n);
+        return v;
+      }();
       j["total"] = s.total;
       j["gate_cost"] = s.gate_cost;
       j["inverter_cost"] = s.inverter_cost;
