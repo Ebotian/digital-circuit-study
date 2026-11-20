@@ -42,23 +42,24 @@ struct Bdd {
     nodes.push_back(one);
   }
 
-  int build(std::size_t n, std::size_t var, const Bits& f,
-            std::map<std::string, int>& memo) {
+  int build(std::size_t n, std::size_t level, const Bits& f,
+            std::map<std::string, int>& memo, const std::vector<int>& order) {
     if (f.none()) return 0;
     if (f.count() == f.size()) return 1;
-    if (var >= n) return f.any() ? 1 : 0;
+    if (level >= n) return f.any() ? 1 : 0;
+    const int var = order[level];
     const std::string key = std::to_string(var) + ":" + f.to_binary_string();
     auto it = memo.find(key);
     if (it != memo.end()) return it->second;
-    const int low = build(n, var + 1, cofactor(f, n, var, false), memo);
-    const int high = build(n, var + 1, cofactor(f, n, var, true), memo);
+    const int low = build(n, level + 1, cofactor(f, n, var, false), memo, order);
+    const int high = build(n, level + 1, cofactor(f, n, var, true), memo, order);
     if (low == high) {
       memo.emplace(key, low);
       return low;
     }
     used_vars.insert(static_cast<int>(var));
     BddNode node;
-    node.var = static_cast<int>(var);
+    node.var = var;
     node.low = low;
     node.high = high;
     const int id = static_cast<int>(nodes.size());
@@ -70,8 +71,9 @@ struct Bdd {
 
 }  // namespace
 
-BddSwitchDesign synthesize_bdd_switch(const BoolFunc& f,
-                                      const std::vector<std::string>& vars) {
+BddSwitchDesign synthesize_bdd_switch_order(
+    const BoolFunc& f, const std::vector<std::string>& vars,
+    const std::vector<int>& order) {
   BddSwitchDesign out;
   const std::size_t n = vars.size();
   if (n == 0 || n > 4) {
@@ -80,7 +82,7 @@ BddSwitchDesign synthesize_bdd_switch(const BoolFunc& f,
   }
   Bdd bdd;
   std::map<std::string, int> memo;
-  bdd.root = bdd.build(n, 0, f.bits(), memo);
+  bdd.root = bdd.build(n, 0, f.bits(), memo, order);
   if (bdd.root < 2) {
     out.reason = "constant BDD has no switch path";
     return out;
@@ -119,6 +121,7 @@ BddSwitchDesign synthesize_bdd_switch(const BoolFunc& f,
   };
   g.output = net(net, bdd.root);
 
+  out.order = order;
   out.nodes = static_cast<int>(bdd.nodes.size()) - 2;
   out.inverters = 2 * static_cast<int>(bdd.used_vars.size());
   out.total = 4 * out.nodes + out.inverters;
@@ -132,6 +135,30 @@ BddSwitchDesign synthesize_bdd_switch(const BoolFunc& f,
   out.truths.push_back(f.truth_string());
   if (!p.valid) out.reason = "BDD switch graph failed dynamic driver validation";
   return out;
+}
+
+BddSwitchDesign synthesize_bdd_switch(const BoolFunc& f,
+                                      const std::vector<std::string>& vars) {
+  std::vector<int> order(vars.size());
+  for (std::size_t i = 0; i < order.size(); ++i) order[i] = static_cast<int>(i);
+  return synthesize_bdd_switch_order(f, vars, order);
+}
+
+BddSwitchDesign synthesize_bdd_switch_best(const BoolFunc& f,
+                                           const std::vector<std::string>& vars) {
+  BddSwitchDesign best;
+  best.ok = false;
+  std::vector<int> order(vars.size());
+  for (std::size_t i = 0; i < order.size(); ++i) order[i] = static_cast<int>(i);
+  do {
+    BddSwitchDesign d = synthesize_bdd_switch_order(f, vars, order);
+    if (d.ok && d.verified &&
+        (!best.ok || d.total < best.total)) {
+      best = std::move(d);
+    }
+  } while (std::next_permutation(order.begin(), order.end()));
+  if (!best.ok) best.reason = "no verified BDD switch order";
+  return best;
 }
 
 }  // namespace dcstudy

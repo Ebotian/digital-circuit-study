@@ -1025,7 +1025,7 @@ int cmd_design_static(const Args& a, const FuncSpec& spec,
 }
 
 int cmd_design_bdd(const Args& a, const FuncSpec& spec) {
-  const BddSwitchDesign d = synthesize_bdd_switch(spec.func, spec.vars);
+  const BddSwitchDesign d = synthesize_bdd_switch_best(spec.func, spec.vars);
   const bool json = a.is("json");
   if (!d.ok || !d.verified) {
     if (json) {
@@ -1046,6 +1046,11 @@ int cmd_design_bdd(const Args& a, const FuncSpec& spec) {
   j["total"] = d.total;
   j["nodes"] = d.nodes;
   j["inverters"] = d.inverters;
+  j["order"] = [&] {
+    Json v = Json::Array{};
+    for (int i : d.order) v.push_back(spec.vars.at(static_cast<std::size_t>(i)));
+    return v;
+  }();
   j["verified"] = d.verified;
   j["truth"] = d.truths.empty() ? "" : d.truths[0];
   Json graph;
