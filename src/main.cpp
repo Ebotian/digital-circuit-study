@@ -1500,6 +1500,23 @@ int cmd_multi_path(const Args& a, const MultiSpec& spec) {
       j["ok"] = false;
       j["command"] = "multi.path";
       j["reason"] = r.reason;
+      Json edges = Json::Array{};
+      for (const auto& e : r.graph.edges) {
+        Json ej;
+        ej["from"] = e.from;
+        ej["to"] = e.to;
+        ej["kind"] = switch_name(e.kind);
+        ej["lit"] = e.lit;
+        edges.push_back(std::move(ej));
+      }
+      Json nets = Json::Array{};
+      for (const auto& n : r.graph.nets) nets.push_back(n);
+      Json sources = Json::Array{};
+      for (int s : r.graph.source_ids) sources.push_back(s);
+      Json outs = Json::Array{};
+      for (int o : r.graph.outputs) outs.push_back(o);
+      j["graph"] = Json::Object{{"edges", edges}, {"nets", nets},
+                                {"sources", sources}, {"outputs", outs}};
       std::cout << j.dump() << "\n";
     } else {
       std::cerr << "multi path failed: " << r.reason << "\n";

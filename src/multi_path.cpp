@@ -201,7 +201,9 @@ MultiPathSynthesisResult synthesize_path_variables_multi(
                                  : (funcs[o].value(m) ? 1 : 0));
     targets.push_back(target);
     const auto branches = usable_branches(vars, target, opt);
-    for (const auto& b : branches) all.push_back(AllPath{b, static_cast<int>(o)});
+    for (const auto& b : branches) {
+      all.push_back(AllPath{b, static_cast<int>(o)});
+    }
   }
   if (all.empty()) {
     out.reason = "no usable paths";
@@ -270,6 +272,8 @@ MultiPathSynthesisResult synthesize_path_variables_multi(
   g.outputs = output_nodes;
   g.output = output_nodes[0];
   std::map<std::string, int> nodes;
+  nodes.emplace("0", zero);
+  nodes.emplace("1", one);
   std::map<std::string, bool> added_edge;
   std::set<std::string> selected_sources;
   auto node = [&](const std::string& name) {
@@ -333,6 +337,14 @@ MultiPathSynthesisResult synthesize_path_variables_multi(
       for (int c : profiles[oi].driver_count) detail += std::to_string(c);
     }
     out.reason = "multi-output path graph failed verification" + detail;
+    if (!profiles.empty()) {
+      out.reason += " first=";
+      for (const auto& r0 : profiles[0].rows) {
+        out.reason += "[";
+        for (const auto& s : r0.sources) out.reason += s + ",";
+        out.reason += "]";
+      }
+    }
   }
   return out;
 }
