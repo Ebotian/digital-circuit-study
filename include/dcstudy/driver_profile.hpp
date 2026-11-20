@@ -29,16 +29,19 @@ struct DriverProfile {
   int power_steps = 0;
   bool all_single = true;
   bool valid = true;  // exactly one strong driver carrying the target value
+  bool simple = false; // closed-form parallel-series fast path
 };
 
 DriverProfile analyze_design_drivers(const Design& d,
                                     const std::vector<std::string>& vars,
-                                    const std::vector<int>& target);
+                                    const std::vector<int>& target,
+                                    bool force_matrix = false);
 
 // Tensor/batched variant: all candidate graphs are put on a block diagonal per
 // minterm, so one Boolean closure handles the whole candidate batch.
 std::vector<DriverProfile> analyze_designs_drivers_batch(
     const std::vector<Design>& designs, const std::vector<std::string>& vars,
-    const std::vector<std::vector<int>>& targets);
+    const std::vector<std::vector<int>>& targets,
+    bool force_matrix = false);
 
 }  // namespace dcstudy

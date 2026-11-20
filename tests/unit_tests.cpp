@@ -246,10 +246,19 @@ TEST_CASE("batched driver profile matches single-design analysis") {
   std::vector<std::vector<int>> targets(r.designs.size(), target_of(s));
   const auto batch =
       analyze_designs_drivers_batch(r.designs, s.vars, targets);
+  const auto batch_matrix =
+      analyze_designs_drivers_batch(r.designs, s.vars, targets, true);
   REQUIRE(batch.size() == r.designs.size());
   for (std::size_t i = 0; i < r.designs.size(); ++i) {
     const auto single =
         analyze_design_drivers(r.designs[i], s.vars, target_of(s));
+    const auto matrix =
+        analyze_design_drivers(r.designs[i], s.vars, target_of(s), true);
+    REQUIRE(single.simple);
+    REQUIRE_FALSE(matrix.simple);
+    REQUIRE(matrix.valid == single.valid);
+    REQUIRE(matrix.max_drivers == single.max_drivers);
+    REQUIRE(matrix.driver_count == single.driver_count);
     REQUIRE(batch[i].valid == single.valid);
     REQUIRE(batch[i].all_single == single.all_single);
     REQUIRE(batch[i].max_drivers == single.max_drivers);

@@ -172,9 +172,54 @@ DriverRow extract_row(const Graph& g, const BoolMatrix& reach,
 
 }  // namespace
 
+DriverProfile analyze_design_drivers_simple(
+    const Design& d, const std::vector<std::string>& vars,
+    const std::vector<int>& target) {
+  DriverProfile out;
+  out.simple = true;
+  if (d.branches.empty() || vars.empty()) {
+    out.valid = false;
+    return out;
+  }
+  const std::uint32_t rows = std::uint32_t{1} << vars.size();
+  if (target.size() != rows) {
+    out.valid = false;
+    return out;
+  }
+  out.rows.resize(rows);
+  out.driver_count.resize(rows, 0);
+  for (std::uint32_t m = 0; m < rows; ++m) {
+    std::map<std::string, bool> strong;
+    std::set<std::string> sources;
+    for (const auto& b : d.branches) {
+      if (!b.behavior.at(m).conducts) continue;
+      sources.insert(b.source);
+      strong[b.source] = strong[b.source] || b.behavior.at(m).strong;
+    }
+    DriverRow row;
+    for (const auto& s : sources) {
+      row.sources.push_back(s);
+      row.values.push_back(source_value(s, m, vars));
+      row.strong.push_back(strong[s]);
+    }
+    out.max_drivers = std::max(out.max_drivers, static_cast<int>(row.sources.size()));
+    if (row.sources.size() != 1) {
+      out.all_single = false;
+      out.valid = false;
+    } else if (row.values[0] != target[m] || !row.strong[0]) {
+      out.valid = false;
+    }
+    out.driver_count[m] = static_cast<int>(row.sources.size());
+    out.rows[m] = std::move(row);
+  }
+  return out;
+}
+
 DriverProfile analyze_design_drivers(const Design& d,
                                     const std::vector<std::string>& vars,
-                                    const std::vector<int>& target) {
+                                    const std::vector<int>& target,
+                                    bool force_matrix) {
+  if (!force_matrix) return analyze_design_drivers_simple(d, vars, target);
   DriverProfile out;
   if (d.branches.empty() || vars.empty()) {
     out.valid = false;
@@ -205,10 +250,17 @@ DriverProfile analyze_design_drivers(const Design& d,
 // Blocks are independent, so cross-candidate paths cannot leak.
 std::vector<DriverProfile> analyze_designs_drivers_batch(
     const std::vector<Design>& designs, const std::vector<std::string>& vars,
-    const std::vector<std::vector<int>>& targets) {
+    const std::vector<std::vector<int>>& targets, bool force_matrix) {
   std::vector<DriverProfile> out(designs.size());
   if (designs.empty() || vars.empty()) return out;
   const std::uint32_t rows = std::uint32_t{1} << vars.size();
+  if (!force_matrix) {
+    for (std::size_t i = 0; i < designs.size(); ++i) {
+      const auto& target = targets.size() == 1 ? targets[0] : targets.at(i);
+      out[i] = analyze_design_drivers_simple(designs[i], vars, target);
+    }
+    return out;
+  }
   std::vector<Graph> graphs;
   graphs.reserve(designs.size());
   std::vector<std::size_t> offsets;
