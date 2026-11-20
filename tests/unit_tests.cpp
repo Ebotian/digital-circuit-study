@@ -1,0 +1,235 @@
+#include <catch2/catch_test_macros.hpp>
+
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <string>
+#include <vector>
+
+#include "dcstudy/bits.hpp"
+#include "dcstudy/boolfunc.hpp"
+#include "dcstudy/boolmatrix.hpp"
+#include "dcstudy/cdl.hpp"
+#include "dcstudy/cmos.hpp"
+#include "dcstudy/designspace.hpp"
+#include "dcstudy/switchlevel.hpp"
+#include "dcstudy/synthesis.hpp"
+#include "dcstudy/verilog.hpp"
+#include "dcstudy/z3_protocol.hpp"
+
+using namespace dcstudy;
+
+namespace {
+std::vector<int> target_of(const FuncSpec& s) {
+  std::vector<int> t;
+  for (std::uint32_t m = 0; m < s.func.num_minterms(); ++m)
+    t.push_back(s.func.value(m) ? 1 : 0);
+  return t;
+}
+}  // namespace
+
+TEST_CASE("truth tables use big-endian minterms") {
+  const FuncSpec s = spec_from_expr("A^B");
+  REQUIRE(s.vars == std::vector<std::string>{"A", "B"});
+  REQUIRE(s.func.truth_string() == "0110");
+  REQUIRE(!s.func.is_monotone());
+  REQUIRE_FALSE(s.func.is_self_dual());
+  REQUIRE((~s.func).is_monotone() == false);
+
+  const FuncSpec nand = spec_from_expr("~(A&B)");
+  REQUIRE(nand.func.truth_string() == "1110");
+  REQUIRE((~nand.func).is_monotone());
+}
+
+TEST_CASE("Dedekind numbers") {
+  REQUIRE(count_monotone(1) == 3);
+  REQUIRE(count_monotone(2) == 6);
+  REQUIRE(count_monotone(3) == 20);
+  REQUIRE(count_monotone(4) == 168);
+  REQUIRE(count_monotone(5) == 7581);
+}
+
+TEST_CASE("Boolean matrix closure") {
+  BoolMatrix m = BoolMatrix::undirected(4, {{0, 1}, {1, 2}});
+  m.closure(true);
+  REQUIRE(m.test(0, 2));
+  REQUIRE(m.test(2, 0));
+  REQUIRE_FALSE(m.test(0, 3));
+}
+
+TEST_CASE("exact SOP of NAND2 and unrealisable XOR") {
+  const FuncSpec nand = spec_from_expr("~(A&B)");
+  const CmosDesign d = synthesize_cmos(nand.func, nand.vars);
+  REQUIRE(d.realizable);
+  REQUIRE(d.total == 4);
+  REQUIRE(d.pull_down.literals == 2);
+
+  const FuncSpec nor = spec_from_expr("~(A|B)");
+  const CmosDesign dn = synthesize_cmos(nor.func, nor.vars);
+  REQUIRE(dn.realizable);
+  REQUIRE(dn.total == 4);
+  REQUIRE(dn.pull_down.expression(nor.vars).find("~") == std::string::npos);
+
+  const FuncSpec x = spec_from_expr("A^B");
+  const CmosDesign dx = synthesize_cmos(x.func, x.vars);
+  REQUIRE_FALSE(dx.realizable);
+}
+
+TEST_CASE("exact SOP covers the onset for every realisable n<=3 function") {
+  for (std::size_t n = 1; n <= 3; ++n) {
+    const std::size_t rows = std::size_t{1} << n;
+    for (std::uint32_t code = 0; code < (std::uint32_t{1} << rows); ++code) {
+      Bits bits(rows);
+      for (std::uint32_t m = 0; m < rows; ++m)
+        if ((code >> m) & 1U) bits.set(m);
+      const BoolFunc f(n, bits);
+      const BoolFunc pd = ~f;
+      if (!pd.is_monotone()) continue;
+      const Sop sop = exact_min_sop(pd.bits(), n);
+      Bits cover(rows);
+      for (const auto& c : sop.terms) cover |= c.cover;
+      REQUIRE(cover == pd.bits());
+    }
+  }
+}
+
+TEST_CASE("design space rejects single-phase transmission gates") {
+  SpaceOptions opt;
+  opt.max_cost = 4;
+  opt.max_chain = 2;
+  const auto target = target_of(spec_from_expr("A&B"));
+  const auto branches = usable_branches({"A", "B"}, target, opt);
+  for (const auto& b : branches) {
+    for (const auto& el : b.chain) {
+      if (el.kind == SwKind::TGL || el.kind == SwKind::TGH) {
+        REQUIRE((b.req_mask != 0));
+      }
+    }
+  }
+}
+
+TEST_CASE("minimum pass-network designs match the lecture") {
+  SpaceOptions opt;
+  opt.max_cost = 6;
+  opt.max_chain = 3;
+  struct Case {
+    const char* expr;
+    int cost;
+  };
+  for (const auto c : {Case{"~(A&B)", 4}, Case{"A&B", 5}, Case{"A^B", 6}}) {
+    const FuncSpec s = spec_from_expr(c.expr);
+    const auto r = synthesize_min(s.vars, target_of(s), opt, 8, false);
+    REQUIRE(r.feasible);
+    REQUIRE(r.optimum == c.cost);
+  }
+}
+
+TEST_CASE("emitted dut is Verilog") {
+  const FuncSpec s = spec_from_expr("A^B");
+  SpaceOptions opt;
+  opt.max_cost = 6;
+  const auto r = synthesize_min(s.vars, target_of(s), opt, 1, false);
+  REQUIRE(r.feasible);
+  const std::string dut = emit_dut(r.designs[0], s.vars);
+  REQUIRE(dut.find("module dut") != std::string::npos);
+  REQUIRE(dut.find("assign ok") != std::string::npos);
+  REQUIRE(emit_ref(s.func, s.vars).find("module ref") != std::string::npos);
+}
+
+TEST_CASE("switch-level fixed point on a synthetic NOR2") {
+  Subckt c;
+  c.name = "NOR2_TEST";
+  c.ports = {"A", "B", "Z", "VDD", "VSS"};
+  c.pin_dir = {{"A", PinDir::Input}, {"B", PinDir::Input},
+               {"Z", PinDir::Output}, {"VDD", PinDir::Power},
+               {"VSS", PinDir::Ground}};
+  auto n = [](const std::string& name, const std::string& d,
+              const std::string& g, const std::string& s) {
+    return Device{name, d, g, s, "NMOS", false};
+  };
+  auto p = [](const std::string& name, const std::string& d,
+              const std::string& g, const std::string& s) {
+    return Device{name, d, g, s, "PMOS", true};
+  };
+  c.devices = {
+      n("N1", "Z", "A", "VSS"),
+      n("N2", "Z", "B", "VSS"),
+      p("P1", "Z", "A", "net"),
+      p("P2", "net", "B", "VDD"),
+  };
+  const auto r = analyze_switch(c, {"A", "B"}, {"Z"}, false);
+  REQUIRE(r.rows.size() == 4);
+  REQUIRE(logic_symbol(r.rows[0].values[0]) == '1');
+  REQUIRE(logic_symbol(r.rows[1].values[0]) == '0');
+  REQUIRE(logic_symbol(r.rows[2].values[0]) == '0');
+  REQUIRE(logic_symbol(r.rows[3].values[0]) == '0');
+  const auto re = analyze_switch(c, {"A", "B"}, {"Z"}, true);
+  REQUIRE(re.mode == "z3");
+  for (std::size_t i = 0; i < r.rows.size(); ++i)
+    REQUIRE(re.rows[i].values[0] == r.rows[i].values[0]);
+}
+
+TEST_CASE("JSON parser and Z3 protocol round-trip") {
+  const Json j = Json::parse(R"({"a":[1,true,null],"s":"x\n","o":{"k":-2}})");
+  REQUIRE(j.at("a").array().size() == 3);
+  REQUIRE(j.at("a").array()[1].as_bool());
+  REQUIRE(j.at("s").as_string() == "x\n");
+  REQUIRE(j.at("o").at("k").as_int() == -2);
+  REQUIRE_THROWS(Json::parse("{bad}"));
+
+  SynthProblem p;
+  p.n_rows = 2;
+  p.n_inverters = 1;
+  p.max_cost = 6;
+  p.limit = 3;
+  p.costs = {1, 2};
+  p.req = {0, 1};
+  p.covers = {{0}, {1}};
+  const SynthProblem q = decode_synth_problem(encode_synth_problem(p));
+  REQUIRE(q.n_rows == p.n_rows);
+  REQUIRE(q.costs == p.costs);
+  REQUIRE(q.covers == p.covers);
+
+  SynthSolution s;
+  s.feasible = true;
+  s.optimum = 3;
+  s.designs = {{0, 1}};
+  const SynthSolution s2 = decode_synth_solution(encode_synth_solution(s));
+  REQUIRE(s2.designs == s.designs);
+
+  SwitchProblem sp;
+  sp.vdd = "VDD";
+  sp.vss = "VSS";
+  sp.inputs = {"A"};
+  sp.outputs = {"Y"};
+  sp.rows = {0, 1};
+  sp.devices.push_back(Device{"M0", "Y", "A", "VSS", "NMOS", false});
+  const SwitchProblem sp2 = decode_switch_problem(encode_switch_problem(sp));
+  REQUIRE(sp2.devices.size() == 1);
+  REQUIRE(sp2.devices[0].gate == "A");
+  REQUIRE(sp2.rows == sp.rows);
+
+  SwitchSolution ss;
+  ss.rows.push_back(SwitchSolutionRow{{Logic::Zero}, false, false});
+  const SwitchSolution ss2 = decode_switch_solution(encode_switch_solution(ss));
+  REQUIRE(ss2.rows.size() == 1);
+  REQUIRE(ss2.rows[0].values[0] == Logic::Zero);
+}
+
+TEST_CASE("CDL parser handles a small subckt") {
+  const auto dir = std::filesystem::temp_directory_path() / "dcstudy-test-cdl";
+  std::filesystem::create_directories(dir);
+  const auto path = dir / "x.cdl";
+  std::ofstream(path) << R"(.SUBCKT INV A Y VDD VSS
+*.PININFO A:I Y:O VDD:P VSS:G
+M0 Y A VSS VSS NMOS_VTL W=1 L=1
+M1 Y A VDD VDD PMOS_VTL W=1 L=1
+.ENDS
+)";
+  const auto lib = CdlLibrary::load(path.string());
+  const auto& c = lib.cell("INV");
+  REQUIRE(c.transistor_count() == 2);
+  REQUIRE(c.inputs() == std::vector<std::string>{"A"});
+  REQUIRE(c.outputs() == std::vector<std::string>{"Y"});
+  std::filesystem::remove_all(dir);
+}
