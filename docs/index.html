@@ -21,6 +21,8 @@ th{background:#f5f6f8}
 tbody tr:nth-child(even){background:#fafbfc}
 code{background:#f0f1f3;padding:1.5px 6px;border-radius:5px;font-family:Menlo,Consolas,monospace;font-size:.9em}
 .cards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;margin:26px 0}
+.cards.four{grid-template-columns:1fr 1fr}
+.card.m{border-color:#e2c894}
 .card{border:2px solid var(--line);border-radius:14px;padding:22px 20px;text-decoration:none;color:var(--ink);transition:.15s}
 .card:hover{border-color:var(--ink);transform:translateY(-2px)}
 .card .k{font-size:.78em;letter-spacing:1.4px;text-transform:uppercase;color:var(--mute)}
@@ -37,13 +39,13 @@ code{background:#f0f1f3;padding:1.5px 6px;border-radius:5px;font-family:Menlo,Co
 <header><div class="wrap">
   <h1>数字电路 · 形式化分析</h1>
   <p>从一张 NOR 图,一路走到用真实 PDK 量出成本函数</p>
-  <p style="font-size:.92em;margin-top:12px">三本讲义 · 两套工具链 · 四个真实工艺库</p>
+  <p style="font-size:.92em;margin-top:12px">四本讲义 · 两套工具链 · 四个真实工艺库</p>
 </div></header>
 
 <div class="wrap">
 
-<h2>三本讲义</h2>
-<div class="cards">
+<h2>四本讲义</h2>
+<div class="cards four">
   <a class="card g" href="intuition-zero.html">
     <div class="k">Handout 0</div>
     <div class="t">从一个 NOR 出发</div>
@@ -58,6 +60,11 @@ code{background:#f0f1f3;padding:1.5px 6px;border-radius:5px;font-family:Menlo,Co
     <div class="k">Handout 2</div>
     <div class="t">从代数到电路</div>
     <div class="d">逆向:函数 → 电路。单调性判据、Dedekind 数、纤维与成本。<br><span class="small">第 8 章是全部实测数据</span></div>
+  </a>
+  <a class="card m" href="multi-output.html">
+    <div class="k">Handout 3 · 第 1 章</div>
+    <div class="t">从函数元组到网络</div>
+    <div class="d">多输出:共享、三态、路径。译码器只是 spec 实例,不是特例。<br><span class="small">前置:讲义二</span></div>
   </a>
 </div>
 
@@ -106,7 +113,7 @@ code{background:#f0f1f3;padding:1.5px 6px;border-radius:5px;font-family:Menlo,Co
 <span class="lbl">建议顺序</span>
 <p><strong>第一次</strong>:讲义 0 → 讲义一第 1–4 章 → 停一下,自己推一遍 NOR。</p>
 <p><strong>第二次</strong>:讲义一第 5–9 章 → 讲义二第 1–7 章。这两段是同一件事的正反两面。</p>
-<p><strong>第三次</strong>:讲义二第 8 章。全部是实测数字,而且会看到推理被现实修正的地方。</p>
+<p><strong>第三次</strong>:讲义二第 8 章 → 讲义三第 1 章。前者是实测数字,后者把单输出推广到共享网络。</p>
 </div>
 
 <p class="small center" style="margin-top:44px">

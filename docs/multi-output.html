@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>从函数元组到网络 — 多输出综合、共享与三态</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$','$']], displayMath: [['$$','$$']], tags: 'none' },
+  svg: { fontCache: 'global', scale: 1.02 },
+  options: { skipHtmlTags: ['script','noscript','style','textarea','pre','code'] }
+};
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+<style>
+  :root{
+    --ink:#1c1c1e; --mute:#6b6b70; --line:#e2e2e6;
+    --blue:#1c6dd0; --blue-bg:#eef5fd;
+    --green:#1a7f45; --green-bg:#edf9f1;
+    --amber:#8a5a00; --amber-bg:#fdf6e6;
+    --red:#b3261e; --red-bg:#fdeeed;
+    --violet:#6b3fa0; --violet-bg:#f4eefb;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:0 0 120px; background:#fff; color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans CJK SC","Source Han Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:16.5px; line-height:1.78;
+  }
+  .wrap{max-width:980px; margin:0 auto; padding:0 28px}
+  header.cover{
+    background:linear-gradient(135deg,#3a2a18 0%,#6b4a22 50%,#9a7138 100%);
+    color:#fff; padding:64px 28px 56px; margin-bottom:44px;
+  }
+  header.cover .wrap{padding:0}
+  header.cover h1{margin:0 0 14px; font-size:2.25em; letter-spacing:.5px; line-height:1.3}
+  header.cover p{margin:6px 0; color:#f0e3cc; font-size:1.02em}
+  header.cover .tag{
+    display:inline-block; margin-top:18px; padding:5px 13px; border:1px solid #d6b987;
+    border-radius:99px; font-size:.84em; color:#fff4df; letter-spacing:1px;
+  }
+  header.cover a.nav{
+    display:inline-block; margin:18px 0 0 12px; padding:5px 13px; border-radius:99px;
+    background:rgba(255,255,255,.16); color:#fff; font-size:.84em; text-decoration:none;
+    border:1px solid rgba(255,255,255,.35);
+  }
+  header.cover a.nav:hover{background:rgba(255,255,255,.3)}
+  h2{
+    font-size:1.52em; margin:64px 0 22px; padding-bottom:11px;
+    border-bottom:3px solid var(--ink); letter-spacing:.3px;
+  }
+  h2 .num{
+    display:inline-block; background:var(--amber); color:#fff; border-radius:7px;
+    padding:1px 11px; margin-right:13px; font-size:.8em; vertical-align:3px;
+  }
+  h3{font-size:1.16em; margin:34px 0 12px; color:#4a3217}
+  h4{font-size:1.02em; margin:24px 0 8px; color:var(--mute); font-weight:600}
+  p{margin:12px 0}
+  ul,ol{margin:12px 0; padding-left:26px}
+  li{margin:7px 0}
+  code{background:#f0f1f3; padding:1.5px 6px; border-radius:5px;
+    font-family:"SF Mono",Menlo,Consolas,monospace; font-size:.9em;}
+  pre{background:#1c1c1e; color:#eaeaea; padding:16px 18px; border-radius:10px;
+    overflow-x:auto; font-size:.86em; line-height:1.6;
+    font-family:"SF Mono",Menlo,Consolas,monospace;}
+  pre .c{color:#7fb3d5}
+  table{border-collapse:collapse; width:100%; margin:20px 0; font-size:.94em;}
+  th,td{border:1px solid var(--line); padding:9px 13px; text-align:left; vertical-align:middle}
+  th{background:#f5f6f8; font-weight:600}
+  tbody tr:nth-child(even){background:#fafbfc}
+  .box{border-left:5px solid var(--blue); background:var(--blue-bg);
+    padding:16px 20px; border-radius:0 10px 10px 0; margin:24px 0;}
+  .box.warn{border-color:var(--amber); background:var(--amber-bg)}
+  .box.key{border-color:var(--green); background:var(--green-bg)}
+  .box.err{border-color:var(--red); background:var(--red-bg)}
+  .box.note{border-color:var(--violet); background:var(--violet-bg)}
+  .box > .lbl{display:block; font-weight:700; font-size:.83em; letter-spacing:1.4px;
+    text-transform:uppercase; margin-bottom:8px; color:var(--blue);}
+  .box.warn > .lbl{color:var(--amber)}
+  .box.key  > .lbl{color:var(--green)}
+  .box.err  > .lbl{color:var(--red)}
+  .box.note > .lbl{color:var(--violet)}
+  .box p:first-of-type{margin-top:0}
+  .box p:last-child{margin-bottom:0}
+  .fig{margin:30px 0; text-align:center}
+  .fig svg{max-width:100%; height:auto}
+  .fig .cap{font-size:.87em; color:var(--mute); margin-top:10px}
+  details{background:#f7f8fa; border:1px solid var(--line); border-radius:10px;
+    padding:12px 18px; margin:14px 0;}
+  summary{cursor:pointer; font-weight:600; color:var(--violet)}
+  details[open] summary{margin-bottom:10px}
+  .toc{background:#f7f8fa; border:1px solid var(--line); border-radius:12px; padding:22px 28px}
+  .toc ol{columns:2; column-gap:44px; margin:0; padding-left:22px}
+  .toc li{margin:6px 0; break-inside:avoid}
+  .toc a{color:var(--ink); text-decoration:none; border-bottom:1px dotted #bbb}
+  .toc a:hover{color:var(--violet); border-color:var(--violet)}
+  .small{font-size:.9em; color:var(--mute)}
+  .center{text-align:center}
+  hr{border:none; border-top:1px solid var(--line); margin:44px 0}
+  .mjx-container{overflow-x:auto; overflow-y:hidden; max-width:100%}
+  mjx-container[display="true"]{margin:20px 0 !important}
+  .lead{font-size:1.05em; color:#3a3a3e}
+  .mono{font-family:"SF Mono",Menlo,Consolas,monospace; font-size:.92em}
+</style>
+</head>
+<body>
+
+<header class="cover">
+  <div class="wrap">
+    <h1>从函数元组到网络</h1>
+    <p>—— 多输出综合、共享结构与三态</p>
+    <p style="margin-top:18px;font-size:.95em">讲义 / 助教手记 · 第三册</p>
+    <span class="tag">前置:讲义二《从代数到电路》第 1–9 章</span>
+    <a class="nav" href="index.html">首页</a>
+    <a class="nav" href="synthesis-inverse.html">← 讲义二</a>
+    <a class="nav" href="formal-analysis.html">← 讲义一</a>
+  </div>
+</header>
+
+<div class="wrap">
+
+<div class="toc">
+<strong>目录</strong>
+<ol>
+  <li><a href="#s0">导读：单输出之后</a></li>
+  <li><a href="#s1">多输出不是多个单输出</a></li>
+  <li><a href="#s2">手算 2-to-4：20T 从哪里来</a></li>
+  <li><a href="#s3">3-to-8：54T 与共享轨</a></li>
+  <li><a href="#s4">共享的四个层次</a></li>
+  <li><a href="#s5">一般问题：共享子图</a></li>
+  <li><a href="#s6">三态：规范变了</a></li>
+  <li><a href="#s7">工具实测与 proof 的边界</a></li>
+  <li><a href="#s8">练习</a></li>
+  <li><a href="#s9">附录：符号、命令、下一章</a></li>
+</ol>
+</div>
+
+<h2 id="s0"><span class="num">0</span>导读：单输出之后</h2>
+
+<p class="lead">讲义二结束在一个不太舒服的地方：单输出综合有判据、有闭式算法、也有明确的墙；但真实电路很少只有一个输出。</p>
+
+<p>一个译码器有 $2^n$ 个输出，一个 ALU 有结果、进位、零标志、溢出标志，一条总线上的每个接收端都可能是不同的函数。于是研究对象从</p>
+
+$$\Phi:\ \text{电路}\ \longrightarrow\ \text{一个函数}$$
+
+<p>变成了</p>
+
+$$\Phi:\ \text{电路}\ \longrightarrow\ (f_1,f_2,\dots,f_m).$$
+
+<p>这不是把单输出算法跑 $m$ 遍。多输出电路的第一性事实是：<strong>输出可以共享内部结构</strong>。</p>
+
+<div class="box note">
+  <span class="lbl">本册的两条主线</span>
+  <p><strong>共享：</strong>同一个反相器、乘积项、内部节点、连线，可以同时服务多个输出。</p>
+  <p><strong>部分规范：</strong>三态输出允许“不驱动”，于是规范不再是完整的布尔函数，而是一个部分函数。</p>
+</div>
+
+<table>
+<thead><tr><th></th><th>单输出（讲义二）</th><th>多输出（本册）</th></tr></thead>
+<tbody>
+<tr><td>优化对象</td><td>一个函数</td><td>一个函数元组 + 一个共享网络</td></tr>
+<tr><td>成本</td><td>一个网络的成本</td><td>共享子图的成本，可能被 fanout 反噬</td></tr>
+<tr><td>最优性</td><td>单级有闭式；多级已很难</td><td>一般是 NP-hard 的组合问题</td></tr>
+<tr><td>“证明”</td><td>在明确模型内</td><td>更要说清楚模型，否则 proof 没有意义</td></tr>
+</tbody>
+</table>
+
+<p>这一册先讲<strong>组合多输出</strong>。时序、状态和反馈留到下一册；但这里建立的“网络而非函数”的视角，会直接用在时序网络上。</p>
+
+<h2 id="s1"><span class="num">1</span>多输出不是多个单输出</h2>
+
+<p>先看一个最小的反例。给定两个输出：</p>
+
+$$Y_0=\bar A\bar B,\qquad Y_1=\bar A B.$$
+
+<p>如果分别综合，两个电路都要自己造一个 $\bar A$。如果放在一起，$\bar A$ 只造一次，扇出到两个门。管数立刻不同。</p>
+
+<p>更准确地说，一个多输出网络是：</p>
+
+$$\mathcal{N}=(V,E),\qquad \text{输出集合 } O\subseteq V.$$
+
+<p>每个输出 $o\in O$ 上观察到一个函数 $f_o$。成本是</p>
+
+$$C(\mathcal{N})=\sum_{e\in E} c_e,$$
+
+<p>而不是 $\sum_o C(f_o)$。这就是差别：<strong>成本定义在网络上，函数只是网络端点的读数。</strong></p>
+
+<div class="box key">
+  <span class="lbl">本册的中心句</span>
+  <p>多输出综合的最小单位不是函数，而是<strong>网络</strong>。<br>“把这几个函数分别最小化”通常会错过共享，也通常不是最优。</p>
+</div>
+
+<p>这也解释了为什么讲义二里的 $\Phi^{-1}(f)$ 不够用：$\Phi^{-1}(f_1,\dots,f_m)$ 是一个<strong>网络集合</strong>，而集合里的网络成本不同。函数元组本身不携带“它们可以怎样共享”的信息。</p>
+
+<h2 id="s2"><span class="num">2</span>手算 2-to-4：20T 从哪里来</h2>
+
+<p>2-to-4 译码器的真值表：</p>
+
+<table>
+<thead><tr><th>$A$</th><th>$B$</th><th>$Y_0$</th><th>$Y_1$</th><th>$Y_2$</th><th>$Y_3$</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>0</td><td>1</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td>0</td><td>1</td><td>0</td><td>1</td><td>0</td><td>0</td></tr>
+<tr><td>1</td><td>0</td><td>0</td><td>0</td><td>1</td><td>0</td></tr>
+<tr><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>1</td></tr>
+</tbody>
+</table>
+
+<p>输出是四个 minterm：</p>
+
+$$\begin{aligned}
+Y_0&=\bar A\bar B\\
+Y_1&=\bar A B\\
+Y_2&=A\bar B\\
+Y_3&=AB
+\end{aligned}$$
+
+<h3>2.1 直觉做法：四个 AND2，为什么不是最优</h3>
+
+<p>静态互补 CMOS 的基本输出天然反相：</p>
+
+$$Y=\overline{f_{\mathrm{pd}}}.$$
+
+<p>所以 AND2 不能直接用一个单级门实现，它需要：</p>
+
+$$\text{AND2}=\text{NAND2}+\text{INV}=4T+2T=6T.$$
+
+<p>四个 AND2，加上共享的 $\bar A,\bar B$：</p>
+
+<pre>4 × AND2        24T
+2 × INV          4T
+--------------------
+合计             28T</pre>
+
+<p>但这不是唯一写法。</p>
+
+<h3>2.2 换个写法：NOR2</h3>
+
+<p>把每个 minterm 写成“或的非”：</p>
+
+$$\begin{aligned}
+Y_0&=\bar A\bar B=\overline{A\vee B}=\operatorname{NOR2}(A,B)\\
+Y_1&=\bar A B=\overline{A\vee\bar B}=\operatorname{NOR2}(A,\bar B)\\
+Y_2&=A\bar B=\overline{\bar A\vee B}=\operatorname{NOR2}(\bar A,B)\\
+Y_3&=AB=\overline{\bar A\vee\bar B}=\operatorname{NOR2}(\bar A,\bar B)
+\end{aligned}$$
+
+<p>于是：</p>
+
+<table>
+<thead><tr><th>部分</th><th>数量</th><th>每个</th><th>小计</th></tr></thead>
+<tbody>
+<tr><td>共享反相器 $\bar A,\bar B$</td><td>2</td><td>2T</td><td>4T</td></tr>
+<tr><td>NOR2 输出门</td><td>4</td><td>4T</td><td>16T</td></tr>
+<tr><td><strong>总计</strong></td><td></td><td></td><td><strong>20T（10N + 10P）</strong></td></tr>
+</tbody>
+</table>
+
+<p>这就是工具在“单级静态复杂 CMOS + 共享输入反相器”模型内证明的最优值：</p>
+
+<pre>$ ./build/dcstudy multi exact --spec /tmp/demux4.json --json
+20T  (10 NMOS + 10 PMOS)
+proof: true
+model: single-stage static complex CMOS with shared input inverters</pre>
+
+<div class="box key">
+  <span class="lbl">为什么 NOR 反而更便宜</span>
+  <p>不是因为 NOR 比 AND “更基础”，而是因为<strong>静态 CMOS 的输出已经是反的</strong>。译码器的每个输出只在一个 minterm 为 1；这个 minterm 的“或”形式正好是 NOR 的输入。用 AND 等于先造一个反相输出，再把它反回来。</p>
+</div>
+
+<h2 id="s3"><span class="num">3</span>3-to-8：54T 与共享轨</h2>
+
+<p>把 2-to-4 的规律直接推广。3 个输入产生 8 个 minterm：</p>
+
+$$Y_i=\bigwedge_{j=0}^{2}\ell_{ij},\qquad \ell_{ij}\in\{A_j,\bar A_j\}.$$
+
+<p>静态 CMOS 输出反相，所以每个 $Y_i$ 写成“或的非”：</p>
+
+$$Y_i=\overline{\bigvee_{j=0}^{2}\bar\ell_{ij}}
+=\operatorname{NOR3}(\text{三个适当极性的输入}).$$
+
+<p>例如：</p>
+
+$$\begin{aligned}
+Y_0&=\bar A\bar B\bar C=\operatorname{NOR3}(A,B,C),\\
+Y_7&=ABC=\operatorname{NOR3}(\bar A,\bar B,\bar C).
+\end{aligned}$$
+
+<p>电路就是：</p>
+
+<pre>3 个共享反相器:  A' , B' , C'       3 × 2T = 6T
+8 个 NOR3:                          8 × 6T = 48T
+------------------------------------------------
+总计                                      54T
+(27 NMOS + 27 PMOS)</pre>
+
+<p>工具结果：</p>
+
+<pre>$ ./build/dcstudy multi exact --spec /tmp/decoder38.json --json
+54T  (27 NMOS + 27 PMOS)
+proof: exhaustive over all 8 inverter sets + exact minimum DNF per output
+model: single-stage static complex CMOS with shared input inverters</pre>
+
+<h3>3.1 一般公式</h3>
+
+<p>对 $n\to 2^n$ 译码器，在“$n$ 输入 NOR 可用”的单级模型里：</p>
+
+$$T(n)=2n+2^n\cdot 2n=2n\left(1+2^n\right).$$
+
+<table>
+<thead><tr><th>$n$</th><th>输出数</th><th>反相器</th><th>NOR 门</th><th>总晶体管</th></tr></thead>
+<tbody>
+<tr><td>2</td><td>4</td><td>4T</td><td>4 × 4T</td><td>20T</td></tr>
+<tr><td>3</td><td>8</td><td>6T</td><td>8 × 6T</td><td>54T</td></tr>
+<tr><td>4</td><td>16</td><td>8T</td><td>16 × 8T</td><td>136T</td></tr>
+</tbody>
+</table>
+
+<p class="small">注意：这个公式假设 $n$ 输入 NOR 是一个单元。真实标准库里 NOR 的 fan-in 有限，$n$ 大时必须拆成多级；那时 54T 这种“单级证明”就不再适用。</p>
+
+<h3>3.2 共享轨的画法</h3>
+
+<p>把 54T 网络画出来，最重要的不是 8 个 NOR3，而是左边那 6 根<strong>输入/反相轨</strong>：</p>
+
+<pre> A   A'   B   B'   C   C'
+ |    |    |    |    |    |
+ +----+----+----+----+----+----  Y0 = NOR3(A,B,C)
+ +----+----+----+----+----+----  Y1 = NOR3(A,B,C')
+ +----+----+----+----+----+----  Y2 = NOR3(A,B',C)
+ ...                         ...
+ +----+----+----+----+----+----  Y7 = NOR3(A',B',C')</pre>
+
+<p>每一行从三根轨上取三个字面量。这个结构在 Mano 的译码器图里就是“输入反相器 + 与门阵列”；在静态 CMOS 里，与门换成了 NOR3，因为输出极性被反了一次。</p>
+
+<div class="box warn">
+  <span class="lbl">别把“共享轨”只当成画图技巧</span>
+  <p>共享轨意味着一根输入线要驱动 8 个门的栅极。逻辑上这是免费的；物理上它是 fanout、电容和延时的来源。54T 只数晶体管，不数这些代价。</p>
+</div>
+
+<h2 id="s4"><span class="num">4</span>共享的四个层次</h2>
+
+<p>“共享”不是一个开关，而是分层的。越往下，优化越难，也越容易被逻辑等价性掩盖。</p>
+
+<table>
+<thead><tr><th>层次</th><th>共享什么</th><th>例子</th><th>工具里的位置</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>输入反相器 / 字面量</td><td>$\bar A,\bar B,\bar C$</td><td><code>multi exact</code> 显式建模</td></tr>
+<tr><td>2</td><td>乘积项 / 子表达式</td><td>$AB$ 同时进入两个输出</td><td>多级综合、ABC</td></tr>
+<tr><td>3</td><td>内部节点 / 路径</td><td>两条 source-to-sink 路径共享前缀</td><td><code>multi path</code> 的 edge 共享</td></tr>
+<tr><td>4</td><td>输出驱动 / 总线</td><td>多个三态门接同一根 bus</td><td><code>--tri-state</code> + 唯一驱动约束</td></tr>
+</tbody>
+</table>
+
+<h3>4.1 共享不是无条件划算</h3>
+
+<p>假设两个输出都要 $AB$，共享一个 AND 门看起来省了 4T。但共享节点的 fanout 变成 2，驱动能力、连线电容、布局拥塞都增加；在真实 PDK 上，复制一个门有时更快、更小。</p>
+
+<p>所以多输出优化的目标不应该写成“晶体管数最少”，而应该写成：</p>
+
+$$\min_{\mathcal{N}}\ \sum_e c_e
+\quad\text{s.t.}\quad
+\text{对所有输入，所有输出都正确}.$$
+
+<p>这里的 $c_e$ 可以是晶体管数、面积、延时、功耗，或者它们的加权和。换一个 $c_e$，最优网络就可能换一个。</p>
+
+<h2 id="s5"><span class="num">5</span>一般问题：共享子图</h2>
+
+<p>把开关网络抽象成有向图 $G=(V,E)$。每条边有：</p>
+
+<ul>
+<li>类型：N / P / TG；</li>
+<li>导通条件：一个字面量或常量 1；</li>
+<li>成本 $c_e$；</li>
+<li>源/漏端点。</li>
+</ul>
+
+<p>多输出路径问题可以说成：</p>
+
+<div class="box">
+  <span class="lbl">问题（多输出路径选择）</span>
+  <p>给定图 $G$、输入变量 $X$、输出集合 $O$，以及每个输出在每个输入下应驱动的值，选择边集 $H\subseteq E$，使得：</p>
+  <ol>
+    <li>每个输出 $o$ 在 $H$ 中有一条从源到 $o$ 的路径；</li>
+    <li>对每个输入 $x$，每个输出最多有一个驱动源；</li>
+    <li>被驱动的输出值等于规范；未被驱动的输出允许为 $Z$（仅三态模式）；</li>
+    <li>$H$ 的总成本最小。</li>
+  </ol>
+</div>
+
+<p>这是一个<strong>带路径约束的有向 Steiner 森林</strong>。它同时包含：</p>
+
+<ul>
+<li>Steiner 树：共享前缀边；</li>
+<li>多商品流：每个输出是一条 commodity；</li>
+<li>逻辑约束：路径的导通条件是字面量乘积；</li>
+<li>驱动约束：同一时刻不能有两个源对拉。</li>
+</ul>
+
+<p>一般情形是 NP-hard 的。所以工具不是一个“万能最优器”，而是几种不同模型的组合：</p>
+
+<table>
+<thead><tr><th>命令</th><th>模型</th><th>保证</th></tr></thead>
+<tbody>
+<tr><td><code>multi exact</code></td><td>每输出一个单级静态复杂 CMOS 门；共享输入反相器；无门间共享</td><td>在该模型内穷举证明</td></tr>
+<tr><td><code>multi path</code></td><td>路径变量；多个输出共享 switch edge；唯一驱动</td><td>在给定路径图内搜索；<code>proof</code> 表示搜索是精确的</td></tr>
+<tr><td><code>multi template</code></td><td>有限候选图 / 模板边</td><td>≤20 边精确；否则贪心，<code>proof=false</code></td></tr>
+<tr><td><code>multi synth</code></td><td>Yosys/ABC 多输出映射</td><td>启发式，不证明最优</td></tr>
+</tbody>
+</table>
+
+<div class="box warn">
+  <span class="lbl">为什么不能写一个 decoder 特例</span>
+  <p>译码器只是一个 spec 实例：输出是 one-hot 的 minterm 集合。把 <code>if (name == "decoder")</code> 写进工具，能过测试，却学不到共享结构，也无法处理编码器、分路器、总线、任意多输出函数。通用算法应当把译码器当作输入，而不是当作分支。</p>
+</div>
+
+<h2 id="s6"><span class="num">6</span>三态：规范变了</h2>
+
+<p>普通布尔输出只有 $0,1$。三态输出多了一个 $Z$：</p>
+
+$$Z=\text{不驱动（高阻）}.$$
+
+<p>对译码器来说：</p>
+
+<table>
+<thead><tr><th>输入</th><th>普通静态输出</th><th>三态输出</th></tr></thead>
+<tbody>
+<tr><td>$i$ 被选中</td><td>选中输出 = 1，其余 = 0</td><td>选中输出 = 1，其余 = $Z$</td></tr>
+<tr><td>$i$ 未被选中</td><td>必须主动拉到 0</td><td>不驱动，允许浮空</td></tr>
+</tbody>
+</table>
+
+<p>这不是“更省面积的译码器”，而是<strong>规范从函数变成了部分函数</strong>：</p>
+
+$$f:S\longrightarrow\{0,1\},\qquad S\subseteq\{0,1\}^n.$$
+
+<p>在 $S$ 内必须给出 0/1；在 $S$ 外不要求驱动。</p>
+
+<h3>6.1 驱动集判据</h3>
+
+<p>对每个输出 $o$ 和输入 $x$，令 $D_o(x)$ 为把输出拉到 0 或 1 的驱动源集合。良构性要求：</p>
+
+$$|D_o(x)|\le 1,$$
+
+<p>并且如果 $x\in S$，则 $|D_o(x)|=1$ 且值正确。</p>
+
+<ul>
+<li>$|D|=0$：高阻，三态模式允许；</li>
+<li>$|D|=1$：正常驱动；</li>
+<li>$|D|\ge 2$：冲突，两个源对拉，禁止。</li>
+</ul>
+
+<p>三态并没有放松“不能冲突”这一条；它只放松了“未被选中时必须为 0”。</p>
+
+<h3>6.2 工具数字</h3>
+
+<pre>3-to-8 decoder, --tri-state:
+16T = 12T switch + 4T inverters
+
+1-to-4 demux, --tri-state:
+6T  = 4T switch + 2T inverter
+
+同一个 1-to-4 demux，普通静态:
+20T = 2 × INV + 4 × NOR2</pre>
+
+<p>为什么差这么多？因为普通静态版本必须为每个未选中的输出造一条到地的通路；三态版本可以让它完全没有通路。少掉的是<strong>下拉网络</strong>，不是“优化了一下”。</p>
+
+<div class="box note">
+  <span class="lbl">三态不是免费的</span>
+  <p>高阻节点会浮空。真实总线需要 keeper、pull-down 或接收端定义；多个三态驱动器接在同一根线上时，必须保证同一时刻最多一个使能。路径模型里的“唯一驱动”约束，就是这件事的形式化。</p>
+</div>
+
+<h2 id="s7"><span class="num">7</span>工具实测与 proof 的边界</h2>
+
+<p>把这一章的数字集中在一起。全部来自当前工具，命令在附录。</p>
+
+<table>
+<thead><tr><th>设计</th><th>模型</th><th>晶体管</th><th><code>proof</code></th></tr></thead>
+<tbody>
+<tr><td>2-to-4 译码器</td><td>单级静态复杂 CMOS + 共享 INV</td><td><strong>20T</strong></td><td>true（模型内）</td></tr>
+<tr><td>3-to-8 译码器</td><td>单级静态复杂 CMOS + 共享 INV</td><td><strong>54T</strong></td><td>true（模型内）</td></tr>
+<tr><td>3-to-8 译码器</td><td>多输出路径 + 三态</td><td><strong>16T</strong></td><td>true（路径图内）</td></tr>
+<tr><td>1-to-4 分路器</td><td>多输出路径 + 三态</td><td><strong>6T</strong></td><td>true（路径图内）</td></tr>
+</tbody>
+</table>
+
+<h3>7.1 proof 是一个条件句</h3>
+
+<p>看到 <code>proof: true</code> 时，正确的读法是：</p>
+
+<blockquote>
+<p>在工具明确写出的模型内，没有比这个更便宜的解。</p>
+</blockquote>
+
+<p>它不是：</p>
+
+<blockquote>
+<p>在全宇宙的所有电路里，这是最便宜的。</p>
+</blockquote>
+
+<p>54T 的模型排除了：</p>
+
+<ul>
+<li>传输门 / pass transistor；</li>
+<li>输出之间的门共享；</li>
+<li>输出反相器；</li>
+<li>多级分解；</li>
+<li>三态；</li>
+<li>fanout、连线、延时、功耗。</li>
+</ul>
+
+<p>而三态路径模型一放开，同一个 3-to-8 译码器就从 54T 掉到 16T。这不是“54T 算错了”，而是<strong>模型不同</strong>。</p>
+
+<div class="box key">
+  <span class="lbl">读 EDA 论文的第一句话</span>
+  <p>不要先看它报了多少面积、多少延时；先看它的模型允许什么、禁止什么。<br>“最优”在 EDA 里几乎总是“在某套约束下最优”。</p>
+</div>
+
+<h3>7.2 成本模型只数晶体管</h3>
+
+<p>20T / 54T / 16T / 6T 都是<strong>晶体管数</strong>。它们没有回答：</p>
+
+<ul>
+<li>共享反相器的 fanout 是否让延时变差；</li>
+<li>NOR3 的串联 PMOS 是否比 NAND3 慢；</li>
+<li>三态总线的电容和 keeper 是否抵消了管数优势；</li>
+<li>布局后连线是否成为瓶颈。</li>
+</ul>
+
+<p>讲义二第 8 章已经用真实 PDK 展示过：面积、漏电、延时、功耗，对同一个逻辑可以给出完全不同的排序。多输出只是把这个问题放大：<strong>共享在逻辑层省钱，在物理层可能收费。</strong></p>
+
+<h2 id="s8"><span class="num">8</span>练习</h2>
+
+<p><strong>题 1</strong>　用 2 个共享反相器和 4 个 NOR2 画出 2-to-4 译码器，并解释：</p>
+<ul>
+<li>为什么 $Y_0=\operatorname{NOR2}(A,B)$；</li>
+<li>为什么不能直接用一个 AND2 实现 $Y_0$；</li>
+<li>20T 里哪 4T 是共享的。</li>
+</ul>
+
+<details>
+<summary>答案</summary>
+<p>$Y_0=\bar A\bar B=\overline{A\vee B}$，所以 NOR2(A,B) 只在 $A=B=0$ 时输出 1，正好是 $Y_0$。</p>
+<p>AND2 需要先 NAND2 再反相，6T；四个 AND2 是 24T，再加 4T 输入反相器，28T。</p>
+<p>共享的 4T 是 $\bar A$ 和 $\bar B$ 两个反相器；四个 NOR2 各自 4T，共 16T。</p>
+</details>
+
+<p><strong>题 2</strong>　把 2-to-4 和 3-to-8 译码器改成<strong>低有效</strong>输出：被选中的输出为 0，其余为 1。静态 CMOS 版分别要多少晶体管？</p>
+
+<details>
+<summary>答案</summary>
+<p>低有效输出是 $Y_i=\overline{m_i}$。用 De Morgan，把 NOR 换成 NAND，字面量极性取反即可。</p>
+<p>2-to-4：4 个 NAND2（16T）+ 2 个共享反相器（4T）= <strong>20T</strong>。</p>
+<p>3-to-8：8 个 NAND3（48T）+ 3 个共享反相器（6T）= <strong>54T</strong>。</p>
+<p>管数不变，变的是输出门的类型和输入轨的极性。这说明“低有效”不是免费的面积优化，它只是把反相搬到了别处。</p>
+</details>
+
+<p><strong>题 3</strong>　两个三态译码器的输出直接接到同一根总线上。什么情况下会出错？这对应路径模型里的哪个约束？</p>
+
+<details>
+<summary>答案</summary>
+<p>如果两个译码器同时被使能，并且它们的某个输出同时驱动总线（一个拉 1、一个拉 0），就会发生总线争用/对拉。</p>
+<p>对应约束是：对每个总线节点、每个输入，驱动源集合 $D(x)$ 必须满足 $|D(x)|\le 1$。三态允许 $|D|=0$，但不允许 $|D|\ge 2$。</p>
+<p>工程上还需要 one-hot 使能、互锁逻辑或总线仲裁；形式化只能检查“给定的使能条件下不冲突”，不能替系统设计使能协议。</p>
+</details>
+
+<p><strong>题 4</strong>　为什么 54T 的 <code>proof: true</code> 不等于“3-to-8 译码器的全局最优是 54T”？</p>
+
+<details>
+<summary>答案</summary>
+<p>因为 54T 只在“单级静态复杂 CMOS + 共享输入反相器 + 无门间共享 + 无 TG/三态”的模型内最优。</p>
+<p>一旦允许三态路径，同一个 spec 得到 16T；一旦允许多级或 TG，还可能得到别的解。54T 是这个模型的下界，不是所有电路空间的下界。</p>
+<p>所以看到 proof 要先问：模型是什么？被排除的结构有哪些？</p>
+</details>
+
+<p><strong>题 5（推广）</strong>　对 $n\to2^n$ 译码器，单级静态模型的管数公式是什么？$n=4$ 时是多少？这个公式在什么条件下失效？</p>
+
+<details>
+<summary>答案</summary>
+<p>反相器部分：$n\times 2T=2n$。</p>
+<p>NOR 阵列：$2^n$ 个 NORn，每个 NORn 有 $n$ 个 NMOS + $n$ 个 PMOS $=2n$ 个管子，所以是 $2^n\cdot 2n$。</p>
+<p>合计：</p>
+$$T(n)=2n+2^n\cdot 2n=2n(1+2^n).$$
+<p>$n=2$ 给 $4(1+4)=20$，$n=3$ 给 $6(1+8)=54$，$n=4$ 给 $8(1+16)=136$。✓</p>
+<p>失效条件：$n$ 输入 NOR 不是单个标准单元（fan-in 限制）、需要多级、允许 TG/三态/输出共享，或者成本不再是晶体管数。</p>
+</details>
+
+<h2 id="s9"><span class="num">9</span>附录：符号、命令、下一章</h2>
+
+<h3>A. 符号速查</h3>
+
+<table>
+<thead><tr><th>符号</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td>$F=(f_1,\dots,f_m)$</td><td>多输出函数元组</td></tr>
+<tr><td>$\mathcal{N}=(V,E)$</td><td>共享网络；成本定义在边上</td></tr>
+<tr><td>$m_i$</td><td>第 $i$ 个 minterm</td></tr>
+<tr><td>$Z$</td><td>高阻 / 不驱动</td></tr>
+<tr><td>$D_o(x)$</td><td>输出 $o$ 在输入 $x$ 下的驱动源集合</td></tr>
+<tr><td>$H\subseteq E$</td><td>被选中的共享边集</td></tr>
+<tr><td>$c_e$</td><td>边 $e$ 的成本（晶体管数、面积、延时……）</td></tr>
+</tbody>
+</table>
+
+<h3>B. 复现命令</h3>
+
+<p>2-to-4 的 spec：</p>
+
+<pre>{
+  "name": "demux1to4",
+  "inputs": ["A", "B"],
+  "outputs": [
+    {"name": "Y0", "expr": "~A&amp;~B"},
+    {"name": "Y1", "expr": "~A&amp;B"},
+    {"name": "Y2", "expr": "A&amp;~B"},
+    {"name": "Y3", "expr": "A&amp;B"}
+  ]
+}</pre>
+
+<pre><span class="c"># 单级静态复杂 CMOS：20T，模型内证明</span>
+./build/dcstudy multi exact --spec /tmp/demux4.json --json
+
+<span class="c"># 多输出路径 + 三态：6T</span>
+./build/dcstudy multi path --spec /tmp/demux4.json --tri-state --max-cost 40 --json
+
+<span class="c"># 3-to-8：静态 54T / 三态 16T</span>
+./build/dcstudy multi exact --spec /tmp/decoder38.json --json
+./build/dcstudy multi path --spec /tmp/decoder38.json --tri-state --max-cost 40 --json</pre>
+
+<p>如果 spec 不在 <code>/tmp</code>，把路径换成你自己的。所有命令都支持 <code>--out DIR --png</code> 出图。</p>
+
+<h3>C. 下一章</h3>
+
+<p>组合多输出解决的是“同一时刻，多个输出怎么共享”。下一章要加时间：</p>
+
+<ul>
+<li>状态：输出不只依赖当前输入，还依赖历史；</li>
+<li>反馈：组合闭包变成带状态的不动点；</li>
+<li>时序：latch/FF、时钟、建立/保持；</li>
+<li>FSM：状态图、状态编码、时序综合；</li>
+<li>三态总线：多主设备、仲裁、keeper。</li>
+</ul>
+
+<p>而这一册留下的问题会一直跟着我们：</p>
+
+<blockquote>
+<p>共享在逻辑层省下的晶体管，什么时候会在物理层还回去？</p>
+</blockquote>
+
+<hr>
+
+<p class="small center" style="margin-top:40px">
+<strong>单输出问“能不能造” · 多输出问“怎么共享” · 三态问“什么时候不驱动”</strong><br>
+这三个问题，正好对应综合工具的三层抽象。
+</p>
+
+</div>
+</body>
+</html>

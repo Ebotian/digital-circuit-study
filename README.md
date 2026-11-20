@@ -3,7 +3,7 @@
 > 从一张 4 个管子的 NOR 图出发,一路走到用真实 PDK 量出成本函数。
 > From a 4-transistor NOR gate to measured cost functions on real PDKs.
 
-三本 HTML 讲义 + 一个 C++20 命令行工具 + 一个 TS/Node 渲染 worker + 全部原始数据来源说明。
+四本 HTML 讲义 + 一个 C++20 命令行工具 + 一个 TS/Node 渲染 worker + 全部原始数据来源说明。
 
 旧的 `scripts/*.py` 已经退役;功能由解耦后的 C++ 核心和统一的 `dcstudy` CLI 提供。
 所有结论都用独立工具复核:Z3 做组合优化,**Yosys SAT 做形式等价证明**,Verilator 做第二实现的仿真。
@@ -17,6 +17,7 @@
 | 0 | `docs/intuition-zero.html` | **从一个 NOR 出发** — 直觉篇。10 步「观察 → 提问」,自己走出一套代数 | 只要知道 MOS 能当开关 |
 | 1 | `docs/formal-analysis.html` | **从电路到代数** — 正向:电路 → 函数。矩阵、布尔闭包、良构性判据 | 矩阵乘法 |
 | 2 | `docs/synthesis-inverse.html` | **从代数到电路** — 逆向:函数 → 电路。单调性判据、Dedekind 数、纤维与成本。**第 8 章是全部实测数据** | 读完讲义一 |
+| 3 | `docs/multi-output.html` | **从函数元组到网络** — 多输出:共享结构、三态、路径搜索。译码器只是 spec 实例 | 读完讲义二 |
 
 `docs/index.html` 是总目录页。启用 GitHub Pages 后(Source 选 `main` 分支的 `/docs` 目录)可直接在线阅读。
 
@@ -431,7 +432,7 @@ verilator --binary --timing -Wno-fatal -Wno-WIDTH -Wno-UNUSEDSIGNAL \
 │   ├── unit_tests.cpp    Catch2 单元测试
 │   ├── filc_smoke.cpp    Fil-C 内存安全冒烟(Z3-free 内核)
 │   └── integration.sh    黑盒 CLI / 形式工具集成测试
-├── docs/                 三本 HTML 讲义(见上)
+├── docs/                 四本 HTML 讲义(见上)
 ├── verilog/              Verilator 手工回归(含负对照)
 ├── rtl/                  讲义实验用 RTL
 └── tools/pdk/            yosys-sta 的 PDK 描述文件
