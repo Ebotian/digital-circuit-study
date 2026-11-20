@@ -346,7 +346,7 @@ DriverProfile analyze_switch_graph(const SwitchGraph& g,
 
 std::vector<DriverProfile> analyze_switch_graph_outputs(
     const SwitchGraph& g, const std::vector<std::string>& vars,
-    const std::vector<std::vector<int>>& targets) {
+    const std::vector<std::vector<int>>& targets, bool allow_high_z) {
   std::vector<int> outs = g.outputs;
   if (outs.empty()) outs.push_back(g.output);
   std::vector<DriverProfile> result(outs.size());
@@ -405,10 +405,13 @@ std::vector<DriverProfile> analyze_switch_graph_outputs(
                                     static_cast<std::size_t>(outs[oi])));
       }
       out.max_drivers = std::max(out.max_drivers, static_cast<int>(row.sources.size()));
-      if (row.sources.size() != 1) {
+      if (row.sources.empty()) {
+        out.all_single = false;
+        if (!(allow_high_z && target[m] < 0)) out.valid = false;
+      } else if (row.sources.size() != 1) {
         out.all_single = false;
         out.valid = false;
-      } else if (row.values[0] != target[m] || !row.strong[0]) {
+      } else if (target[m] < 0 || row.values[0] != target[m] || !row.strong[0]) {
         out.valid = false;
       }
       out.driver_count[m] = static_cast<int>(row.sources.size());

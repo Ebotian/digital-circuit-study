@@ -61,7 +61,7 @@ DriverProfile analyze_switch_graph(const SwitchGraph& g,
 
 std::vector<DriverProfile> analyze_switch_graph_outputs(
     const SwitchGraph& g, const std::vector<std::string>& vars,
-    const std::vector<std::vector<int>>& targets);
+    const std::vector<std::vector<int>>& targets, bool allow_high_z = false);
 
 DriverProfile analyze_design_drivers(const Design& d,
                                     const std::vector<std::string>& vars,

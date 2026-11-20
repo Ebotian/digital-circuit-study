@@ -26,6 +26,7 @@
 #include "dcstudy/static_exact.hpp"
 #include "dcstudy/switchlevel.hpp"
 #include "dcstudy/template_synth.hpp"
+#include "dcstudy/tri_decoder.hpp"
 #include "dcstudy/synthesis.hpp"
 #include "dcstudy/verilog.hpp"
 #include "dcstudy/verify.hpp"
@@ -345,6 +346,7 @@ Commands:
                  [--graphblas] [--expect BITS]
   design bdd     --expr EXPR | --tt BITS [--vars A,B]
   design template --expr EXPR | --tt BITS [--vars A,B]
+  design tri-decoder --bits N [--json]
   design path    --expr EXPR | --tt BITS [--max-cost N] [--max-chain N]
   design min     --expr EXPR | --tt BITS [--max-cost N] [--max-chain N]
                  [--all] [--limit N] [--canonical] [--emit DIR]
@@ -1031,6 +1033,47 @@ int cmd_design_static(const Args& a, const FuncSpec& spec,
   return check_ok ? 0 : 1;
 }
 
+int cmd_design_tri_decoder(const Args& a) {
+  const int bits = std::stoi(a.get("bits", "3"));
+  std::vector<std::string> vars;
+  for (int i = 0; i < bits; ++i)
+    vars.push_back(std::string(1, static_cast<char>('A' + i)));
+  const TriDecoderResult r = synthesize_tri_decoder(bits, vars);
+  const bool json = a.is("json");
+  if (!r.ok || !r.verified) {
+    if (json) {
+      Json j;
+      j["ok"] = false;
+      j["command"] = "design.tri-decoder";
+      j["reason"] = r.reason;
+      std::cout << j.dump() << "\n";
+    } else {
+      std::cerr << "tri decoder failed: " << r.reason << "\n";
+    }
+    return 1;
+  }
+  Json j;
+  j["ok"] = true;
+  j["command"] = "design.tri-decoder";
+  j["model"] = "TG demux tree with high-Z unselected outputs";
+  j["bits"] = bits;
+  j["total"] = r.total;
+  j["tg_count"] = r.tg_count;
+  j["inverter_cost"] = r.inverter_cost;
+  j["verified"] = r.verified;
+  Json outs = Json::Array{};
+  for (const auto& o : r.outputs) outs.push_back(o);
+  j["outputs"] = std::move(outs);
+  if (json) std::cout << j.dump() << "\n";
+  else
+    std::cout << "tri-state TG decoder: " << bits << "-to-"
+              << (1 << bits) << "\n"
+              << "  " << r.total << "T = " << (2 * r.tg_count)
+              << "T TG + " << r.inverter_cost << "T inverters\n"
+              << "  high-Z unselected outputs, active-low selected output\n";
+  return 0;
+}
+
 int cmd_design_template(const Args& a, const FuncSpec& spec) {
   const BddSwitchDesign b = synthesize_bdd_switch_best(spec.func, spec.vars);
   if (!b.ok || !b.verified) {
@@ -1243,6 +1286,10 @@ int cmd_design(const std::string& sub, int argc, char** argv) {
   if (sub == "template") {
     const Args a = parse_args(argc, argv, 3);
     return cmd_design_template(a, get_spec(a));
+  }
+  if (sub == "tri-decoder") {
+    const Args a = parse_args(argc, argv, 3);
+    return cmd_design_tri_decoder(a);
   }
   if (sub != "min") throw CliError("unknown design subcommand: " + sub);
   const Args a = parse_args(argc, argv, 3);

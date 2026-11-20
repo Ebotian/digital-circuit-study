@@ -63,6 +63,9 @@ pass "minimum design + Yosys"
 "$BIN" design template --expr 'A^B' --json > "$TMP/template.json"   || fail "bounded template optimization"
 [ "$(jq -r .verified "$TMP/template.json")" = "true" ] || fail "template verification"
 [ "$(jq -r .proof "$TMP/template.json")" = "true" ] || fail "template optimality"
+"$BIN" design tri-decoder --bits 3 --json > "$TMP/tri.json"   || fail "tri-state decoder"
+[ "$(jq -r .total "$TMP/tri.json")" = "34" ] || fail "tri decoder 34T"
+[ "$(jq -r .verified "$TMP/tri.json")" = "true" ] || fail "tri decoder verification"
 
 # TG/NP quotient + input-automorphism orbit blocking.
 "$BIN" design min --expr 'A^B' --max-cost 6 --max-chain 3 --all --canonical \

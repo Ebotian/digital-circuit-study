@@ -26,6 +26,7 @@ add_library(dcstudy_core STATIC
   src/driver_profile.cpp
   src/static_exact.cpp
   src/template_synth.cpp
+  src/tri_decoder.cpp
   src/designspace.cpp
   src/math_client.cpp
   src/multi_path.cpp
