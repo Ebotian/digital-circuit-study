@@ -367,9 +367,11 @@ function renderGateLevelSvg(d: Design, vars: string[], title: string): string {
         // 0.11 cm was visually too tight for adjacent gate outputs.
         const WIRE_GAP = 0.38;
         const track = 1.0 + WIRE_GAP * (src % 8);
-        const dy = (pos[i].y - pos[src].y).toFixed(3);
+        // Orthogonal PCB-style routing: horizontal stub, vertical trunk,
+        // horizontal entry into the actual pin.  The old cell-center dy made
+        // the final segment diagonal because gate pins are offset from center.
         lines.push("\\draw (g" + src + ".out) -- ++(" + track.toFixed(2) +
-          ",0) -- ++(0," + dy + ") -- (g" + i + inAnchor(i, j) + ");");
+          ",0) |- (g" + i + inAnchor(i, j) + ");");
       } else if (vars.indexOf(net) >= 0) {
         lines.push("\\draw (g" + i + inAnchor(i, j) +
           ") -- ++(-0.55,0) node[left]{" + net.replace(/_/g, "\\_") + "};");
