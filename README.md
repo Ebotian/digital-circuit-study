@@ -346,7 +346,7 @@ optimal: 54T
 | 静态标准单元 | Yosys/ABC + Nangate45 静态单元 | **174T**(87N + 87P) | 逐输出 switch-level PASS |
 | 定制单级复杂 CMOS | 每输出一个 PDN/PUN,共享输入反相器 | **180T**(90N + 90P) | 模型内 proof + PASS |
 
-“定制”在这里指**定制复杂门**,不是 pass-transistor 全定制。无三态的 `multi path` 对这个 spec 找不到 flat path cover,会回退到上面的 180T 静态模型;真正的 TG/pass 全定制仍需要补 PUN/PDN 双轨路径搜索。
+“定制”在这里指**定制复杂门**,不是 pass-transistor 全定制。无三态的 `multi path` 现在会先走 PUN/PDN 双轨路径搜索;对这个七段 spec 目前仍找不到完整 cover,会回退到上面的 180T 静态模型。对 1-to-4 分路器和 3-to-8 译码器,双轨搜索已经给出 14T / 26T 的无三态网络。
 
 #### 三态输出：`--tri-state`
 
@@ -360,7 +360,7 @@ optimal: 54T
 
 - 3-8 译码器：通用路径搜索找到 **16T** 的输入源选择网络；
 - 1-to-4 分路器：**6T**；
-- 同一个 spec 不加 `--tri-state` 时要求输出 0/1，不能得到这些三态解；
+- 同一个 spec 不加 `--tri-state` 时走 PUN/PDN 双轨搜索：3-8 译码器 **26T**、1-to-4 分路器 **14T**，每个输出始终驱动 0/1；
 - 经典 14 TG + 3 INV 的 TG demux 树是 34T 的一个结构化实现，但不是唯一解。
 
 标准画法参考：Mano《Digital Design》3-to-8 decoder 图（3 个反相器提供补码，8 个与门产生 minterm），以及 KFUPM EE200 讲义中的同款画法；低有效输出版本通常直接用 8 个 NAND 门。这里因为走静态互补 CMOS，所以实际单元是 NOR3（与 AND3 在 De Morgan 意义下等价）。

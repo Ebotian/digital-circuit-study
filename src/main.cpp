@@ -1549,7 +1549,10 @@ int cmd_multi_path(const Args& a, const MultiSpec& spec) {
   Json j;
   j["ok"] = true;
   j["command"] = "multi.path";
-  j["model"] = "multi-output path variables with shared switch edges";
+  j["mode"] = a.is("tri-state") ? "tri-state" : "dual-rail";
+  j["model"] = a.is("tri-state")
+                   ? "multi-output path variables with shared switch edges"
+                   : "PUN/PDN dual-rail path variables with shared switch edges";
   j["total"] = r.total;
   j["edge_cost"] = r.edge_cost;
   j["inverter_cost"] = r.inverter_cost;

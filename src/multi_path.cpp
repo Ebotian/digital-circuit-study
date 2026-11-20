@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "dcstudy/driver_profile.hpp"
+#include "dcstudy/parallel.hpp"
 
 namespace dcstudy {
 namespace {
@@ -71,6 +72,86 @@ struct Search {
         strong_cover(static_cast<std::size_t>(nout * rows), false) {}
 
   int idx(int o, int m) const { return o * rows + m; }
+
+  // A fast feasible cover to seed branch-and-bound.  Without an initial
+  // upper bound the decoder-like PDN covers spend a long time before finding
+  // any complete solution, so every prune compares against infinity.
+  void seed_greedy() {
+    std::vector<char> covered(static_cast<std::size_t>(nout * rows), 0);
+    std::vector<int> local_count(edge_info.size(), 0);
+    std::vector<int> local_selected;
+    int local_edges = 0;
+    std::uint32_t local_mask = 0;
+    const auto target_row = [&](int o, int m) {
+      return targets[static_cast<std::size_t>(o)][static_cast<std::size_t>(m)];
+    };
+    for (;;) {
+      bool any = false;
+      for (int o = 0; o < nout; ++o)
+        for (int m = 0; m < rows; ++m)
+          if (target_row(o, m) >= 0 &&
+              !covered[static_cast<std::size_t>(idx(o, m))])
+            any = true;
+      if (!any) break;
+      int best_pi = -1;
+      int best_gain = 0;
+      long long best_delta = (1LL << 60);
+      for (std::size_t pi = 0; pi < paths.size(); ++pi) {
+        const auto& p = paths[pi];
+        int gain = 0;
+        const auto& b = all[static_cast<std::size_t>(p.path)].branch;
+        for (int m = 0; m < rows; ++m) {
+          const int t = target_row(p.output, m);
+          if (t < 0 || covered[static_cast<std::size_t>(idx(p.output, m))])
+            continue;
+          const auto& bh = b.behavior[static_cast<std::size_t>(m)];
+          if (bh.conducts && bh.strong) ++gain;
+        }
+        if (gain == 0) continue;
+        int delta = 0;
+        for (int e : p.edges)
+          if (local_count[static_cast<std::size_t>(e)] == 0)
+            delta += edge_info[static_cast<std::size_t>(e)].cost;
+        const std::uint32_t nm = local_mask | b.req_mask;
+        delta += 2 * static_cast<int>(__builtin_popcountll(nm) -
+                                      __builtin_popcountll(local_mask));
+        // Prefer more newly covered rows per transistor.  Ties go to the
+        // smaller incremental cost, then to the earlier path.
+        const bool better =
+            best_pi < 0 ||
+            static_cast<long long>(gain) * (best_delta + 1) >
+                static_cast<long long>(best_gain) * (delta + 1) ||
+            (static_cast<long long>(gain) * (best_delta + 1) ==
+                 static_cast<long long>(best_gain) * (delta + 1) &&
+             delta < best_delta);
+        if (better) {
+          best_pi = static_cast<int>(pi);
+          best_gain = gain;
+          best_delta = delta;
+        }
+      }
+      if (best_pi < 0) return;
+      const auto& p = paths[static_cast<std::size_t>(best_pi)];
+      const auto& b = all[static_cast<std::size_t>(p.path)].branch;
+      for (int e : p.edges)
+        if (local_count[static_cast<std::size_t>(e)]++ == 0)
+          local_edges += edge_info[static_cast<std::size_t>(e)].cost;
+      local_mask |= b.req_mask;
+      local_selected.push_back(best_pi);
+      for (int m = 0; m < rows; ++m) {
+        if (target_row(p.output, m) < 0) continue;
+        const auto& bh = b.behavior[static_cast<std::size_t>(m)];
+        if (bh.conducts && bh.strong)
+          covered[static_cast<std::size_t>(idx(p.output, m))] = 1;
+      }
+    }
+    const int total =
+        local_edges + 2 * static_cast<int>(__builtin_popcountll(local_mask));
+    if (total <= max_cost && total < best) {
+      best = total;
+      best_selected = std::move(local_selected);
+    }
+  }
 
   void add_path(int pi, std::vector<std::pair<int, std::string>>& old_driver,
                 std::vector<std::pair<int, bool>>& old_strong, int& old_edges,
@@ -179,6 +260,308 @@ struct Search {
   }
 };
 
+std::string branch_key(const Branch& b) {
+  std::string key;
+  key.reserve(b.behavior.size() * 3 + 16);
+  for (const auto& bh : b.behavior) {
+    key += bh.conducts ? (bh.strong ? 'S' : 'c') : '.';
+    key += static_cast<char>('0' + bh.value);
+  }
+  key += '#';
+  key += std::to_string(b.req_mask);
+  return key;
+}
+
+struct RailSolution {
+  bool ok = false;
+  std::vector<AllPath> all;
+  std::vector<PathInfo> paths;
+  std::vector<EdgeInfo> edges;
+  std::vector<std::string> keys;
+  std::vector<int> selected;
+  int edge_cost = 0;
+  std::uint32_t used_mask = 0;
+};
+
+MultiPathSynthesisResult synthesize_dual_rail_multi(
+    const std::vector<BoolFunc>& funcs, const std::vector<std::string>& names,
+    const std::vector<std::string>& vars, const SpaceOptions& opt) {
+  MultiPathSynthesisResult out;
+  out.outputs = names;
+  if (funcs.empty() || funcs.size() != names.size() || vars.empty() ||
+      vars.size() > 4) {
+    out.reason = "dual-rail synthesis supports 1..4 inputs and matching outputs";
+    return out;
+  }
+
+  const std::uint32_t rows = std::uint32_t{1} << vars.size();
+  std::vector<std::vector<int>> pun_targets;
+  std::vector<std::vector<int>> pdn_targets;
+  for (const auto& f : funcs) {
+    std::vector<int> tp, tn;
+    for (std::uint32_t m = 0; m < rows; ++m) {
+      const bool one = f.value(m);
+      tp.push_back(one ? 1 : -1);
+      tn.push_back(one ? -1 : 0);
+    }
+    pun_targets.push_back(std::move(tp));
+    pdn_targets.push_back(std::move(tn));
+  }
+
+  // Precompute the universal chain universe once.  Every mask/rail/output is
+  // a filtered view; we never rebuild the chains inside the mask loop.
+  const std::vector<Branch> universe = build_branches(vars, opt);
+  const std::uint64_t masks = std::uint64_t{1} << vars.size();
+
+  struct Best {
+    bool ok = false;
+    int total = std::numeric_limits<int>::max();
+    std::uint32_t used_mask = 0;
+    RailSolution pun;
+    RailSolution pdn;
+  } best;
+
+  auto solve_rail = [&](const std::string& source,
+                        const std::vector<std::vector<int>>& rail_targets,
+                        std::uint64_t inverter_mask) -> RailSolution {
+    RailSolution r;
+    std::map<std::string, int> edge_ids;
+    for (std::size_t o = 0; o < funcs.size(); ++o) {
+      // Keep one cheapest representation for each (behavior, required
+      // inverters) pair.  This mirrors usable_branches() but is done against
+      // a fixed inverter set and one rail target.
+      std::map<std::string, const Branch*> uniq;
+      const auto& target = rail_targets[o];
+      for (const auto& b : universe) {
+        if (b.source != source) continue;
+        if ((b.req_mask & ~inverter_mask) != 0) continue;
+        if (!b.usable(target)) continue;
+        const std::string key = branch_key(b);
+        auto it = uniq.find(key);
+        if (it == uniq.end() || b.cost < it->second->cost) uniq[key] = &b;
+      }
+      for (const auto& [_, b] : uniq) {
+        AllPath ap{*b, static_cast<int>(o)};
+        r.all.push_back(ap);
+        PathInfo p;
+        p.path = static_cast<int>(r.all.size() - 1);
+        p.output = static_cast<int>(o);
+        for (std::size_t j = 0; j < b->chain.size(); ++j) {
+          const std::string key = edge_key(b->source, b->chain, j);
+          auto it = edge_ids.find(key);
+          int id;
+          if (it == edge_ids.end()) {
+            id = static_cast<int>(r.edges.size());
+            edge_ids.emplace(key, id);
+            r.edges.push_back(EdgeInfo{switch_cost(b->chain[j].kind),
+                                       b->chain[j].kind, b->chain[j].lit});
+            r.keys.push_back(key);
+          } else {
+            id = it->second;
+          }
+          p.edges.push_back(id);
+        }
+        r.paths.push_back(std::move(p));
+      }
+    }
+    if (r.paths.empty()) return r;
+    if (r.paths.size() > 2048) return r;
+
+    Search search(r.all, r.paths, r.edges, rail_targets, opt.max_cost);
+    search.seed_greedy();
+    search.search();
+    if (search.best == std::numeric_limits<int>::max() ||
+        search.best_selected.empty())
+      return r;
+
+    r.selected = search.best_selected;
+    std::set<int> chosen;
+    for (int pi : r.selected) {
+      if (pi < 0 || pi >= static_cast<int>(r.paths.size())) return RailSolution{};
+      for (int e : r.paths[static_cast<std::size_t>(pi)].edges)
+        chosen.insert(e);
+      r.used_mask |= r.all[static_cast<std::size_t>(r.paths[static_cast<std::size_t>(pi)].path)]
+                         .branch.req_mask;
+    }
+    for (int e : chosen) r.edge_cost += r.edges[static_cast<std::size_t>(e)].cost;
+    r.ok = true;
+    return r;
+  };
+
+  std::vector<Best> candidates(static_cast<std::size_t>(masks));
+  parallel_for(static_cast<std::size_t>(masks), parallel_jobs(),
+               [&](std::size_t mi) {
+                 const std::uint64_t mask = mi;
+                 RailSolution pun = solve_rail("1", pun_targets, mask);
+                 if (!pun.ok) return;
+                 RailSolution pdn = solve_rail("0", pdn_targets, mask);
+                 if (!pdn.ok) return;
+                 const std::uint32_t used = pun.used_mask | pdn.used_mask;
+                 const int total = pun.edge_cost + pdn.edge_cost +
+                                   2 * static_cast<int>(
+                                           __builtin_popcountll(used));
+                 if (total > opt.max_cost) return;
+                 Best& b = candidates[mi];
+                 b.ok = true;
+                 b.total = total;
+                 b.used_mask = used;
+                 b.pun = std::move(pun);
+                 b.pdn = std::move(pdn);
+               });
+  for (std::size_t mi = 0; mi < candidates.size(); ++mi) {
+    const Best& b = candidates[mi];
+    if (!b.ok || b.total >= best.total) continue;
+    best.ok = true;
+    best.total = b.total;
+    best.used_mask = b.used_mask;
+    best.pun = b.pun;
+    best.pdn = b.pdn;
+  }
+
+  if (!best.ok) {
+    out.reason = "no complementary PUN/PDN path cover found";
+    return out;
+  }
+
+  SwitchGraph& g = out.graph;
+  const int zero = g.add_net("0");
+  const int one = g.add_net("1");
+  g.source_ids = {zero, one};
+  std::vector<int> output_nodes;
+  for (const auto& n : names) output_nodes.push_back(g.add_net("Y" + n));
+  g.outputs = output_nodes;
+  g.output = output_nodes.front();
+  std::map<std::string, int> nodes;
+  nodes.emplace("0", zero);
+  nodes.emplace("1", one);
+  std::map<std::string, bool> added_edge;
+  auto node = [&](const std::string& name) {
+    auto it = nodes.find(name);
+    if (it != nodes.end()) return it->second;
+    const int id = g.add_net(name);
+    nodes.emplace(name, id);
+    return id;
+  };
+
+  auto emit = [&](const RailSolution& r) {
+    for (int pi : r.selected) {
+      const PathInfo& p = r.paths[static_cast<std::size_t>(pi)];
+      const Branch& b = r.all[static_cast<std::size_t>(p.path)].branch;
+      int prev = node(b.source);
+      for (std::size_t j = 0; j < p.edges.size(); ++j) {
+        const int eid = p.edges[j];
+        const std::string& k = r.keys[static_cast<std::size_t>(eid)];
+        const int next = node(k);
+        if (!added_edge[k]) {
+          SwitchGraphEdge e;
+          e.from = prev;
+          e.to = next;
+          e.kind = r.edges[static_cast<std::size_t>(eid)].kind;
+          e.lit = r.edges[static_cast<std::size_t>(eid)].lit;
+          e.strong = true;
+          e.cost = r.edges[static_cast<std::size_t>(eid)].cost;
+          g.edges.push_back(std::move(e));
+          added_edge[k] = true;
+        }
+        prev = next;
+      }
+      const std::string wire = "wire:" + std::to_string(prev) + ":" +
+                               std::to_string(p.output);
+      if (!added_edge[wire]) {
+        SwitchGraphEdge e;
+        e.from = prev;
+        e.to = output_nodes[static_cast<std::size_t>(p.output)];
+        e.kind = SwKind::TGH;
+        e.lit = "1";
+        e.strong = true;
+        e.cost = 0;
+        g.edges.push_back(std::move(e));
+        added_edge[wire] = true;
+      }
+    }
+  };
+  emit(best.pun);
+  emit(best.pdn);
+
+  out.edge_cost = best.pun.edge_cost + best.pdn.edge_cost;
+  out.inverter_cost = 2 * static_cast<int>(__builtin_popcountll(best.used_mask));
+  out.total = out.edge_cost + out.inverter_cost;
+  out.proof = true;
+  out.ok = true;
+
+  // Do not ask the combined graph whether both supplies reach Y: the graph is
+  // undirected, so source 0 can walk through Y and backwards into the PUN to
+  // source 1.  Verify each rail as a one-source graph with the opposite rail's
+  // rows marked as high-Z/don't-care.  This is the actual PUN/PDN condition.
+  auto verify_rail_output = [&](const RailSolution& r,
+                                  const std::string& source, int output) {
+    SwitchGraph rg;
+    const int src = rg.add_net(source);
+    rg.source_ids = {src};
+    const int y = rg.add_net("Y" + names[static_cast<std::size_t>(output)]);
+    rg.output = y;
+    rg.outputs = {y};
+    std::map<std::string, int> rnodes;
+    rnodes.emplace(source, src);
+    std::map<std::string, bool> redges;
+    auto rnode = [&](const std::string& n) {
+      auto it = rnodes.find(n);
+      if (it != rnodes.end()) return it->second;
+      const int id = rg.add_net(n);
+      rnodes.emplace(n, id);
+      return id;
+    };
+    for (int pi : r.selected) {
+      const PathInfo& p = r.paths[static_cast<std::size_t>(pi)];
+      if (p.output != output) continue;
+      const Branch& b = r.all[static_cast<std::size_t>(p.path)].branch;
+      int prev = rnode(b.source);
+      for (std::size_t j = 0; j < p.edges.size(); ++j) {
+        const int eid = p.edges[j];
+        const std::string& k = r.keys[static_cast<std::size_t>(eid)];
+        const int next = rnode(k);
+        if (!redges[k]) {
+          SwitchGraphEdge e;
+          e.from = prev;
+          e.to = next;
+          e.kind = r.edges[static_cast<std::size_t>(eid)].kind;
+          e.lit = r.edges[static_cast<std::size_t>(eid)].lit;
+          e.strong = true;
+          e.cost = r.edges[static_cast<std::size_t>(eid)].cost;
+          rg.edges.push_back(std::move(e));
+          redges[k] = true;
+        }
+        prev = next;
+      }
+      const std::string wire = "wire:" + std::to_string(prev) + ":" +
+                               std::to_string(p.output);
+      if (!redges[wire]) {
+        SwitchGraphEdge e;
+        e.from = prev;
+        e.to = y;
+        e.kind = SwKind::TGH;
+        e.lit = "1";
+        e.strong = true;
+        e.cost = 0;
+        rg.edges.push_back(std::move(e));
+        redges[wire] = true;
+      }
+    }
+    const auto& src_targets = source == "1" ? pun_targets : pdn_targets;
+    const std::vector<std::vector<int>> one_target{
+        src_targets[static_cast<std::size_t>(output)]};
+    const auto prof = analyze_switch_graph_outputs(rg, vars, one_target, true);
+    return prof.size() == 1 && prof[0].valid;
+  };
+
+  out.verified = true;
+  for (std::size_t o = 0; o < names.size(); ++o)
+    out.verified = out.verified && verify_rail_output(best.pun, "1", static_cast<int>(o)) &&
+                   verify_rail_output(best.pdn, "0", static_cast<int>(o));
+  if (!out.verified) out.reason = "dual-rail path graph failed verification";
+  return out;
+}
+
 }  // namespace
 
 MultiPathSynthesisResult synthesize_path_variables_multi(
@@ -192,6 +575,7 @@ MultiPathSynthesisResult synthesize_path_variables_multi(
     out.reason = "multi path synthesis supports 1..4 inputs and matching outputs";
     return out;
   }
+  if (!tri_state) return synthesize_dual_rail_multi(funcs, names, vars, opt);
   std::vector<std::vector<int>> targets;
   std::vector<AllPath> all;
   for (std::size_t o = 0; o < funcs.size(); ++o) {

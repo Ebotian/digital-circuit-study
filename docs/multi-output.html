@@ -407,6 +407,23 @@ $$\min_{\mathcal{N}}\ \sum_e c_e
 </tbody>
 </table>
 
+<h3>5.1 双轨路径：PUN 和 PDN 分别搜索</h3>
+
+<p>无三态时，一个输出不能靠“某条路径恰好导通”来碰运气；它必须满足互补条件：</p>
+
+<ul>
+<li>输出为 1 的行，只能由一条从 <strong>1</strong> 到 $Y$ 的 PUN 路径强驱动；</li>
+<li>输出为 0 的行，只能由一条从 <strong>0</strong> 到 $Y$ 的 PDN 路径强驱动；</li>
+<li>PUN 路径不得在应输出 0 的行导通，PDN 路径不得在应输出 1 的行导通。</li>
+</ul>
+
+<p>实现上把每轨的目标向量写成“本轨负责的值 / 对侧为 $-1$”，分别跑路径覆盖搜索；再枚举输入反相器集合，取两轨并集的成本。验证时不能把两个源直接塞进同一个无向开关图：从 $0$ 出发可以穿过 $Y$ 再沿 PUN 反向走到 $1$，制造假通路。正确做法是<strong>每个输出、每轨单独建图，把输出当作 sink</strong>，对侧行标成高阻无关项。</p>
+
+<div class="box key">
+  <span class="lbl">双轨结果</span>
+  <p>1-to-4 分路器：<strong>14T</strong>；3-to-8 译码器：<strong>26T</strong>。两者都是无三态、每个输出始终驱动 0/1，<code>proof: true</code>（在路径图模型内）。</p>
+</div>
+
 <div class="box warn">
   <span class="lbl">为什么不能写一个 decoder 特例</span>
   <p>译码器只是一个 spec 实例：输出是 one-hot 的 minterm 集合。把 <code>if (name == "decoder")</code> 写进工具，能过测试，却学不到共享结构，也无法处理编码器、分路器、总线、任意多输出函数。通用算法应当把译码器当作输入，而不是当作分支。</p>
@@ -458,10 +475,15 @@ $$|D_o(x)|\le 1,$$
 1-to-4 demux, --tri-state:
 6T  = 4T switch + 2T inverter
 
-同一个 1-to-4 demux，普通静态:
-20T = 2 × INV + 4 × NOR2</pre>
+同一个 1-to-4 demux，无三态:
+20T  单级静态复杂 CMOS (2 INV + 4 NOR2)
+14T  PUN/PDN 双轨路径搜索
 
-<p>为什么差这么多？因为普通静态版本必须为每个未选中的输出造一条到地的通路；三态版本可以让它完全没有通路。少掉的是<strong>下拉网络</strong>，不是“优化了一下”。</p>
+同一个 3-to-8 decoder，无三态:
+54T  单级静态复杂 CMOS
+26T  PUN/PDN 双轨路径搜索</pre>
+
+<p>三态把未选中的输出从“必须拉 0”改成“可以不驱动”，所以能更省。双轨搜索则保持 0/1 驱动，但允许路径从 VDD/VSS 直接选通，因此在同一个无三态规范下也能比“每输出一个单级静态门”更省。</p>
 
 <div class="box note">
   <span class="lbl">三态不是免费的</span>
@@ -477,6 +499,8 @@ $$|D_o(x)|\le 1,$$
 <tbody>
 <tr><td>2-to-4 译码器</td><td>单级静态复杂 CMOS + 共享 INV</td><td><strong>20T</strong></td><td>true（模型内）</td></tr>
 <tr><td>3-to-8 译码器</td><td>单级静态复杂 CMOS + 共享 INV</td><td><strong>54T</strong></td><td>true（模型内）</td></tr>
+<tr><td>2-to-4 分路器</td><td>PUN/PDN 双轨路径</td><td><strong>14T</strong></td><td>true（路径图内）</td></tr>
+<tr><td>3-to-8 译码器</td><td>PUN/PDN 双轨路径</td><td><strong>26T</strong></td><td>true（路径图内）</td></tr>
 <tr><td>3-to-8 译码器</td><td>多输出路径 + 三态</td><td><strong>16T</strong></td><td>true（路径图内）</td></tr>
 <tr><td>1-to-4 分路器</td><td>多输出路径 + 三态</td><td><strong>6T</strong></td><td>true（路径图内）</td></tr>
 </tbody>
@@ -507,7 +531,7 @@ $$|D_o(x)|\le 1,$$
 <li>fanout、连线、延时、功耗。</li>
 </ul>
 
-<p>而三态路径模型一放开，同一个 3-to-8 译码器就从 54T 掉到 16T。这不是“54T 算错了”，而是<strong>模型不同</strong>。</p>
+<p>双轨路径在无三态模型内把同一个 3-to-8 译码器从 54T 降到 26T；再放开三态，又降到 16T。这不是“54T 算错了”，而是<strong>模型不同</strong>。</p>
 
 <div class="box key">
   <span class="lbl">读 EDA 论文的第一句话</span>
@@ -516,7 +540,7 @@ $$|D_o(x)|\le 1,$$
 
 <h3>7.2 成本模型只数晶体管</h3>
 
-<p>20T / 54T / 16T / 6T 都是<strong>晶体管数</strong>。它们没有回答：</p>
+<p>20T / 54T / 14T / 26T / 16T / 6T 都是<strong>晶体管数</strong>。它们没有回答：</p>
 
 <ul>
 <li>共享反相器的 fanout 是否让延时变差；</li>
