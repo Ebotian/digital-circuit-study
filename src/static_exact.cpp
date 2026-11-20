@@ -183,8 +183,46 @@ StaticExactResult synthesize_static_exact_multi(
   std::uint64_t best_mask = 0;
   std::vector<Sop> best_pdn;
 
+  // Product-term early stop.  If every output is a single cube, the exact
+  // static gate is fixed: each cube literal becomes one PDN literal, and the
+  // gate cost is 2*k.  The union of required input complements is shared.
+  // This is the decoder/PLA case and avoids enumerating 2^n inverter sets.
+  bool cube_form = true;
+  std::uint64_t cube_mask = 0;
+  int cube_gate_cost = 0;
+  std::vector<Sop> cube_pdn;
+  for (std::size_t k = 0; k < funcs.size(); ++k) {
+    const Sop fcube = exact_min_sop(funcs[k].bits(), n);
+    if (fcube.terms.size() != 1 || fcube.terms[0].care == 0) {
+      cube_form = false;
+      break;
+    }
+    const Cube& fc = fcube.terms[0];
+    Sop pdn;
+    for (std::size_t i = 0; i < n; ++i) {
+      const std::uint64_t bit = std::uint64_t{1} << (n - 1 - i);
+      if (!(fc.care & bit)) continue;
+      Cube term;
+      term.care = bit;
+      term.value = (fc.value & bit) ? 0 : bit;  // complementary literal
+      if (term.value == 0) cube_mask |= (std::uint64_t{1} << i);
+      pdn.terms.push_back(term);
+      ++pdn.literals;
+    }
+    cube_gate_cost += 2 * pdn.literals;
+    cube_pdn.push_back(std::move(pdn));
+  }
+  if (cube_form) {
+    best_total = cube_gate_cost +
+                 2 * static_cast<int>(__builtin_popcountll(cube_mask));
+    best_gate_cost = cube_gate_cost;
+    best_inv_cost = best_total - cube_gate_cost;
+    best_mask = cube_mask;
+    best_pdn = std::move(cube_pdn);
+  }
+
   const std::uint64_t masks = std::uint64_t{1} << n;
-  for (std::uint64_t mask = 0; mask < masks; ++mask) {
+  for (std::uint64_t mask = 0; !cube_form && mask < masks; ++mask) {
     int gate_cost = 0;
     bool feasible = true;
     std::vector<Sop> pdn;

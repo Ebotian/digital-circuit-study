@@ -131,6 +131,7 @@ Json driver_profile_json(const DriverProfile& p) {
   Json j;
   j["all_single"] = p.all_single;
   j["valid"] = p.valid;
+  j["simple"] = p.simple;
   j["max_drivers"] = p.max_drivers;
   j["power_steps"] = p.power_steps;
   Json rows = Json::Array{};
