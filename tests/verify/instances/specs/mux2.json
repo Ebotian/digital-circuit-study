@@ -1,0 +1,5 @@
+{
+  "name": "mux2",
+  "inputs": ["A", "B", "S"],
+  "outputs": [{"name": "Y", "expr": "(S & B) | (~S & A)"}]
+}
