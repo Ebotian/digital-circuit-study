@@ -334,7 +334,8 @@ multi-output static CMOS: decoder3to8
 optimal: 54T
   48T gates + 6T shared inverters
   27 NMOS + 27 PMOS
-  proof: exhaustive over all 8 inverter sets + exact minimum DNF per output
+  proof: analytic -- every output is a single cube, so the
+         minimum PDN literals and inverter set are fixed
   switch-level: PASS
 ```
 
