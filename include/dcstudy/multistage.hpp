@@ -57,4 +57,31 @@ MultiStageDesign synthesize_multistage_static(const BoolFunc& f,
 MultiStageMultiDesign synthesize_multistage_static_multi(
     const MultiProblem& problem, int max_fanin = 0);
 
+// A hierarchical RTL design that instantiates user atoms (e.g. a 4-2
+// priority encoder).  Atoms are read as blackboxes for mapping, measured
+// separately, and the composition is proved against the spec per output.
+struct RtlAtomUse {
+  std::string module;
+  int instances = 0;
+  int transistors = 0;  // mapped cost of one instance
+};
+
+struct RtlSynthResult {
+  bool ok = false;
+  std::string reason;
+  int total = 0;
+  int atom_cost = 0;
+  int cell_cost = 0;
+  std::vector<std::string> outputs;
+  std::vector<RtlAtomUse> atoms;
+  bool verified = false;
+  std::string verilog;
+  std::string json;
+};
+
+RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
+                                    const std::string& atoms_path,
+                                    const MultiProblem& spec);
+
+
 }  // namespace dcstudy

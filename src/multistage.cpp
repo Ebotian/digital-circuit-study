@@ -20,6 +20,7 @@
 #include "dcstudy/parallel.hpp"
 #include "dcstudy/static_exact.hpp"
 #include "dcstudy/switchlevel.hpp"
+#include "dcstudy/verify.hpp"
 
 namespace dcstudy {
 namespace {
@@ -34,6 +35,12 @@ std::string shell_quote(const std::string& s) {
   }
   out += "'";
   return out;
+}
+
+void write_text(const fs::path& p, const std::string& s) {
+  std::ofstream out(p);
+  if (!out) throw std::runtime_error("cannot write " + p.string());
+  out << s;
 }
 
 std::string read_file(const fs::path& p) {
@@ -86,6 +93,15 @@ bool static_cell(const std::string& type) {
   for (const char* p : prefixes)
     if (type.rfind(p, 0) == 0) return true;
   return false;
+}
+
+// Cells the mapper must never use: not single-stage static CMOS / pass gates.
+std::string base_dont_use() {
+  return "-dont_use XOR2_X1 -dont_use XOR2_X2 -dont_use XOR2_X4 "
+         "-dont_use XNOR2_X1 -dont_use XNOR2_X2 -dont_use XNOR2_X4 "
+         "-dont_use MUX2_X1 -dont_use MUX2_X2 -dont_use MUX2_X4 "
+         "-dont_use TBUF_X1 -dont_use TBUF_X2 -dont_use TBUF_X4 "
+         "-dont_use HA_X1 -dont_use FA_X1";
 }
 
 std::string bit_net(const Json& bit,
@@ -205,12 +221,7 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
   // library and let AOI211/OAI211 (4 inputs, 8T) through --max-fanin 2.
   const CdlLibrary library = CdlLibrary::load(cdl);
 
-  std::string dont_use =
-      "-dont_use XOR2_X1 -dont_use XOR2_X2 -dont_use XOR2_X4 "
-      "-dont_use XNOR2_X1 -dont_use XNOR2_X2 -dont_use XNOR2_X4 "
-      "-dont_use MUX2_X1 -dont_use MUX2_X2 -dont_use MUX2_X4 "
-      "-dont_use TBUF_X1 -dont_use TBUF_X2 -dont_use TBUF_X4 "
-      "-dont_use HA_X1 -dont_use FA_X1";
+  std::string dont_use = base_dont_use();
   if (max_fanin > 0) {
     // Every library cell over the limit is blocked, not only the static-cell
     // families: ABC will otherwise pick e.g. OAI221_X1 and the fan-in
@@ -422,6 +433,158 @@ MultiStageDesign synthesize_multistage_static(
   out.truth = m.truths.empty() ? "" : m.truths.front();
   out.verified = m.verified;
   return out;
+}
+
+namespace {
+
+int mapped_transistors(const Json& cells, const CdlLibrary& library,
+                       const std::string& what, std::string& error) {
+  int total = 0;
+  for (const auto& [inst, cj] : cells.object()) {
+    const std::string type = cj.at("type").as_string();
+    if (!library.has(type)) {
+      error = what + " uses non-library cell " + type;
+      return -1;
+    }
+    if (!static_cell(type)) {
+      error = what + " maps to non-static cell " + type;
+      return -1;
+    }
+    total += static_cast<int>(library.cell(type).transistor_count());
+  }
+  return total;
+}
+
+}  // namespace
+
+RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
+                                    const std::string& atoms_path,
+                                    const MultiProblem& spec) {
+  RtlSynthResult out;
+  out.outputs = spec.names;
+  const std::string lib = default_liberty_path();
+  const std::string cdl = default_cdl_path();
+  if (!fs::exists(rtl_path)) {
+    out.reason = "cannot read RTL: " + rtl_path;
+    return out;
+  }
+  if (!fs::exists(atoms_path)) {
+    out.reason = "cannot read atoms: " + atoms_path;
+    return out;
+  }
+  if (!fs::exists(lib)) {
+    out.reason = "Nangate45 liberty not found: " + lib;
+    return out;
+  }
+  if (!fs::exists(cdl)) {
+    out.reason = "Nangate45 CDL not found: " + cdl;
+    return out;
+  }
+
+  TempDir dir;
+  write_text(dir.path() / "top.v", read_file(rtl_path));
+  write_text(dir.path() / "atoms.v", read_file(atoms_path));
+  const std::string dont_use = base_dont_use();
+  auto run_yosys = [&](const std::string& script,
+                       const std::string& log_name) -> std::string {
+    const std::string cmd = "cd " + shell_quote(dir.path().string()) +
+                            " && timeout 180 yosys -Q -p " +
+                            shell_quote(script) + " > " +
+                            shell_quote((dir.path() / log_name).string()) +
+                            " 2>&1";
+    const int rc = std::system(cmd.c_str());
+    const int code = (rc != -1 && WIFEXITED(rc)) ? WEXITSTATUS(rc) : -1;
+    const std::string log = read_file(dir.path() / log_name);
+    if (code != 0) throw std::runtime_error("yosys failed: " + tail(log));
+    return log;
+  };
+
+  try {
+    run_yosys("read_verilog -sv -lib atoms.v; read_verilog -sv top.v; "
+              "synth -top top; abc -liberty " +
+                  lib + " " + dont_use +
+                  "; opt_clean; write_json net.json; "
+                  "write_verilog -noattr net.v",
+              "map.log");
+    const Json root = Json::parse(read_file(dir.path() / "net.json"));
+    if (!root.contains("modules") || !root.at("modules").contains("top"))
+      throw std::runtime_error("mapped netlist has no top module");
+    const Json& cells = root.at("modules").at("top").at("cells");
+    const CdlLibrary library = CdlLibrary::load(cdl);
+    std::map<std::string, int> atom_instances;
+    int cell_cost = 0;
+    for (const auto& [inst, cj] : cells.object()) {
+      const std::string type = cj.at("type").as_string();
+      if (library.has(type)) {
+        if (!static_cell(type))
+          throw std::runtime_error("mapped to non-static cell: " + type);
+        cell_cost +=
+            static_cast<int>(library.cell(type).transistor_count());
+      } else {
+        atom_instances[type]++;
+      }
+    }
+
+    // Measure each atom by mapping the module on its own.
+    std::map<std::string, int> atom_cost;
+    for (const auto& [module, count] : atom_instances) {
+      const std::string json_name = "atom_" + module + ".json";
+      run_yosys("read_verilog -sv atoms.v; synth -top " + module +
+                    "; abc -liberty " + lib + " " + dont_use +
+                    "; opt_clean; write_json " + json_name,
+                "atom.log");
+      const Json aroot = Json::parse(read_file(dir.path() / json_name));
+      if (!aroot.contains("modules") || !aroot.at("modules").contains(module))
+        throw std::runtime_error("atom " + module + " did not map");
+      const Json& acells = aroot.at("modules").at(module).at("cells");
+      std::string error;
+      const int cost =
+          mapped_transistors(acells, library, "atom " + module, error);
+      if (cost < 0) throw std::runtime_error(error);
+      atom_cost[module] = cost;
+      out.atoms.push_back({module, count, cost});
+    }
+
+    for (const auto& use : out.atoms)
+      out.atom_cost += use.instances * use.transistors;
+    out.cell_cost = cell_cost;
+    out.total = out.atom_cost + out.cell_cost;
+    out.verilog = read_file(dir.path() / "net.v");
+    out.json = read_file(dir.path() / "net.json");
+
+    if (spec.has_dont_cares())
+      throw std::runtime_error("--rtl does not support don't-care masks yet");
+    // Prove the RTL composition against the spec, one output at a time.
+    const std::string top_src = read_file(rtl_path);
+    const std::string atoms_src = read_file(atoms_path);
+    for (std::size_t k = 0; k < spec.outputs.size(); ++k) {
+      std::string wrapper = "module dut(";
+      for (std::size_t i = 0; i < spec.vars.size(); ++i)
+        wrapper += (i ? ", " : "") + std::string("input logic ") + spec.vars[i];
+      wrapper += ", output logic Y, output logic ok);\n";
+      for (const auto& n : spec.names) wrapper += "  wire " + n + ";\n";
+      wrapper += "  top u_top(";
+      for (const auto& v : spec.vars) wrapper += "." + v + "(" + v + "), ";
+      for (const auto& n : spec.names) wrapper += "." + n + "(" + n + "), ";
+      wrapper.resize(wrapper.size() - 2);
+      wrapper += ");\n  assign Y = " + spec.names[k] +
+                 ";\n  assign ok = 1'b1;\nendmodule\n";
+      const ToolResult v = prove_yosys(
+          top_src + "\n" + atoms_src + "\n" + wrapper, spec.outputs[k].func,
+          spec.vars);
+      if (!v.ok) {
+        out.reason = "output " + spec.names[k] +
+                     " failed the miter: " + tail(v.output, 8);
+        return out;
+      }
+    }
+    out.verified = true;
+    out.ok = true;
+    return out;
+  } catch (const std::exception& e) {
+    out.reason = std::string("rtl mapping failed: ") + e.what();
+    return out;
+  }
 }
 
 }  // namespace dcstudy

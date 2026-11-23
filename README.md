@@ -351,6 +351,32 @@ multi-output static CMOS: decoder3to8
 - 每个输出至少要有**一行 care**：全 1 的 `any`（输出完全任意）会被直接拒绝，而不是让下游映射出常量空网表。
 - 不带 `any` 的 spec 行为完全不变。
 
+
+#### 复用自定义原子组件：`--rtl` + `--atoms`
+
+`multi synth` 也可以直接吃一份**层次化 RTL**，并把用户模块当成原子单元：
+
+```bash
+./build/dcstudy multi synth --rtl top.v --atoms atoms.v --spec spec.json \
+  --out out/rtl8
+```
+
+- `atoms.v` 里是原子模块（例如 4-2 优先编码器 `pe42`）：读取时按**黑盒**处理，ABC 只映射剩余的胶合逻辑，不会把原子拆开；
+- 每个原子的成本**实测**：把该模块单独映射到同一 Nangate45 库，再数 CDL 晶体管，不写死常数；
+- 胶合逻辑映射到静态标准单元，`total = Σ 实例数×原子成本 + 胶合晶体管`；
+- 验证：对 spec 的每个输出生成 wrapper，用 Yosys miter（`sat -prove mismatch 0`）证明 RTL 组合与真值表一致；
+- 输入数上限 12（受参考真值表限制），`--spec` 不能带 `any`，原子必须是叶子模块（不支持原子内再嵌原子）。
+
+8-3 优先编码器（两个 `pe42` + 胶合逻辑）实测：
+
+```text
+multi synth (RTL + atoms): 66T (32T atoms + 34T glue)
+  pe42 x2  16T each
+  miter: PASS
+```
+
+注意：**组合关系（实例化哪些原子、怎么连）仍由 RTL 表达**，工具优化的是胶合逻辑、映射和成本核算；自动搜索「用哪些原子、怎么分解」是下一步（16-4 还需要 16 输入的真值表/参考，超过当前 12 的上限）。
+
 #### 严格最优：单级静态复杂 CMOS
 
 `multi synth` 是 Yosys/ABC 的启发式映射，不证明最优。严格版本用 `multi exact`：

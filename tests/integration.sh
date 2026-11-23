@@ -245,6 +245,42 @@ JSON
   [ "$(jq -r .verified "$TMP/encoder.synth")" = "true" ] || fail "encoder synth verify"
   "$BIN" multi path --spec "$ROOT/specs/encoder42.json" --max-cost 64 --json > "$TMP/encoder.path" || fail "encoder path"
   [ "$(jq -r .verified "$TMP/encoder.path")" = "true" ] || fail "encoder path verify"
+  # Hierarchical RTL with a user atom: the 4-2 priority encoder stays a
+  # blackbox, the glue is mapped to standard cells, and the composition is
+  # proved per output against the spec.
+  cat > "$TMP/atoms8.v" <<'VERILOG'
+module pe42(input logic A3, A2, A1, A0, output logic Y1, Y0);
+  assign Y1 = A3 | A2;
+  assign Y0 = A3 | (~A2 & A1);
+endmodule
+VERILOG
+  cat > "$TMP/top8.v" <<'VERILOG'
+module top(input logic A7, A6, A5, A4, A3, A2, A1, A0,
+           output logic Y2, Y1, Y0);
+  wire H1, H0, L1, L0;
+  wire hi = A7 | A6 | A5 | A4;
+  pe42 high(A7, A6, A5, A4, H1, H0);
+  pe42 low (A3, A2, A1, A0, L1, L0);
+  assign Y2 = hi;
+  assign Y1 = hi ? H1 : L1;
+  assign Y0 = hi ? H0 : L0;
+endmodule
+VERILOG
+  cat > "$TMP/prio8.json" <<'JSON'
+{"name":"prio8","inputs":["A7","A6","A5","A4","A3","A2","A1","A0"],
+ "outputs":[
+  {"name":"Y2","expr":"A7|A6|A5|A4"},
+  {"name":"Y1","expr":"A7|A6|(~(A7|A6|A5|A4)&(A3|A2))"},
+  {"name":"Y0","expr":"A7|(~A6&A5)|(~(A7|A6|A5|A4)&(A3|(~A2&A1)))"}]}
+JSON
+  "$BIN" multi synth --rtl "$TMP/top8.v" --atoms "$TMP/atoms8.v" \
+    --spec "$TMP/prio8.json" --out "$TMP/rtl8" --json > "$TMP/rtl8.json" \
+    || fail "rtl + atoms"
+  [ "$(jq -r .mode "$TMP/rtl8.json")" = "rtl-atoms" ] || fail "rtl mode"
+  [ "$(jq -r .verified "$TMP/rtl8.json")" = "true" ] || fail "rtl verify"
+  [ "$(jq -r '.atoms[0].module' "$TMP/rtl8.json")" = "pe42" ] || fail "rtl atom"
+  [ "$(jq -r '.total == (.atom_cost + .cell_cost)' "$TMP/rtl8.json")" = "true" ] || fail "rtl cost"
+  [ -f "$TMP/rtl8/netlist.v" ] || fail "rtl netlist"
   # Same free-row spec through the mapper and the path search: 2T as well.
   [ "$("$BIN" multi synth --spec "$TMP/free.json" --json | jq -r .total)" = "2" ] || fail "free-row synth"
   [ "$("$BIN" multi path --spec "$TMP/free.json" --max-cost 64 --json | jq -r .total)" = "2" ] || fail "free-row path"

@@ -357,7 +357,7 @@ Commands:
   pipeline       --funcs 'name=EXPR,...' [--max-cost N] [--out DIR]
                  [--verify none|yosys|sim|both] [--canonical]
   multi synth    --spec FILE [--out DIR] [--png] [--max-fanin N]
-                 [--json]
+                 [--rtl TOP.v --atoms ATOMS.v] [--json]
   multi exact    --spec FILE [--out DIR] [--json]
   multi path     --spec FILE [--max-cost N] [--max-chain N] [--tri-state] [--json]
   multi template --spec FILE [--json]
@@ -381,6 +381,8 @@ Options:
   --tri-state    allow high-Z outputs; a 0 in a one-hot output becomes high-Z
   --spec         JSON circuit spec: {"inputs":[...],"outputs":[{"name":...,"expr":...}]}
   --max-fanin N  static CMOS cell fan-in limit (e.g. 2); 0 = library default
+  --rtl FILE     hierarchical Verilog (top module `top`) to map instead of spec RTL
+  --atoms FILE   atom modules read as blackboxes; cost measured by mapping
   --heavy        allow the n=6 Dedekind count (about 40 s and 10 GB)
   --mem-limit    per-process memory cap in MiB, inherited by every child
                  (not a shared budget: N workers can each reach it). Default:
@@ -1465,7 +1467,7 @@ MultiProblem load_multi_spec(const std::string& path) {
   if (!vars.is_array() || vars.array().empty())
     throw CliError("spec.inputs must be a non-empty array");
   for (const auto& v : vars.array()) s.vars.push_back(v.as_string());
-  if (s.vars.size() > 4) throw CliError("multi synth supports at most 4 inputs");
+  if (s.vars.size() > 12) throw CliError("multi spec supports at most 12 inputs");
   const Json& outs = root.at("outputs");
   if (!outs.is_array() || outs.array().empty())
     throw CliError("spec.outputs must be a non-empty array");
@@ -1810,6 +1812,52 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
   }
   if (sub != "synth") throw CliError("unknown multi subcommand: " + sub);
   const MultiProblem spec = load_multi_spec(a.need("spec"));
+  if (a.has("rtl")) {
+    if (!a.has("atoms"))
+      throw CliError("--rtl needs --atoms FILE (module library)");
+    const RtlSynthResult r =
+        synthesize_rtl_atoms(a.get("rtl"), a.get("atoms"), spec);
+    const bool ok = r.ok && r.verified;
+    const std::string out_dir = a.get("out");
+    if (!out_dir.empty() && r.ok) {
+      std::error_code ec;
+      fs::create_directories(out_dir, ec);
+      std::ofstream(out_dir + "/netlist.v") << r.verilog;
+      std::ofstream(out_dir + "/netlist.json") << r.json;
+    }
+    if (a.is("json")) {
+      Json j;
+      j["ok"] = ok;
+      j["command"] = "multi.synth";
+      j["mode"] = "rtl-atoms";
+      j["title"] = spec.title;
+      j["total"] = r.total;
+      j["atom_cost"] = r.atom_cost;
+      j["cell_cost"] = r.cell_cost;
+      Json atoms = Json::Array{};
+      for (const auto& u : r.atoms) {
+        Json aj;
+        aj["module"] = u.module;
+        aj["instances"] = u.instances;
+        aj["transistors"] = u.transistors;
+        atoms.push_back(std::move(aj));
+      }
+      j["atoms"] = std::move(atoms);
+      j["verified"] = r.verified;
+      if (!ok) j["reason"] = r.reason;
+      std::cout << j.dump() << "\n";
+    } else if (!ok) {
+      std::cerr << "multi synth (rtl) failed: " << r.reason << "\n";
+    } else {
+      std::cout << "multi synth (RTL + atoms): " << r.total << "T ("
+                << r.atom_cost << "T atoms + " << r.cell_cost << "T glue)\n";
+      for (const auto& u : r.atoms)
+        std::cout << "  " << u.module << " x" << u.instances << "  "
+                  << u.transistors << "T each\n";
+      std::cout << "  miter: PASS\n";
+    }
+    return ok ? 0 : 1;
+  }
   const int max_fanin = std::stoi(a.get("max-fanin", "0"));
   if (max_fanin != 0 && (max_fanin < 2 || max_fanin > 4))
     throw CliError("--max-fanin must be 0 or 2..4");
