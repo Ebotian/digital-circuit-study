@@ -85,6 +85,26 @@ struct Cand {
   std::vector<std::vector<unsigned char>> outs; // [output][row]
 };
 
+int bdd_mux_count(const MultiProblem &h) {
+  Bdd bdd;
+  const std::size_t rows = std::size_t{1} << h.vars.size();
+  for (const auto &po : h.outputs) {
+    std::vector<unsigned char> table(rows);
+    for (std::size_t m = 0; m < rows; ++m)
+      table[m] = po.func.value(static_cast<std::uint32_t>(m)) ? 1 : 0;
+    (void)bdd.build(table, static_cast<int>(h.vars.size()), 0);
+  }
+  int count = 0;
+  for (std::size_t id = 2; id < bdd.nodes.size(); ++id) {
+    const Node &nd = bdd.nodes[id];
+    const bool ident = nd.lo == 0 && nd.hi == 1;
+    const bool inv = nd.lo == 1 && nd.hi == 0;
+    if (!ident && !inv)
+      ++count;
+  }
+  return count;
+}
+
 std::string atom_module_rtl(const MultiProblem &atom) {
   std::ostringstream os;
   os << "module " << atom.title << "(";
@@ -192,9 +212,147 @@ compose_from_library(const MultiProblem &spec,
         return total;
       };
 
+  auto build_h =
+      [&](const std::vector<const std::vector<unsigned char> *> &sigs,
+          const std::vector<std::size_t> &order = {})
+      -> std::optional<MultiProblem> {
+    const std::size_t ns = sigs.size();
+    if (ns > 12)
+      return std::nullopt;
+    const std::size_t hrows = std::size_t{1} << ns;
+    std::vector<std::vector<unsigned char>> ht(
+        spec.outputs.size(), std::vector<unsigned char>(hrows, 0));
+    std::vector<bool> seen(hrows, false);
+    for (std::size_t m = 0; m < rows; ++m) {
+      std::size_t idx = 0;
+      for (std::size_t j = 0; j < ns; ++j)
+        idx = (idx << 1) | (*sigs[order.empty() ? j : order[j]])[m];
+      if (seen[idx])
+        continue;
+      seen[idx] = true;
+      for (std::size_t k = 0; k < spec.outputs.size(); ++k)
+        ht[k][idx] = tgt_rows[k * rows + m];
+    }
+    MultiProblem h;
+    h.title = "glue";
+    for (std::size_t j = 0; j < ns; ++j)
+      h.vars.push_back("s" + std::to_string(order.empty() ? j : order[j]));
+    h.names = spec.names;
+    for (std::size_t k = 0; k < spec.outputs.size(); ++k) {
+      Bits bits(hrows);
+      for (std::size_t j = 0; j < hrows; ++j)
+        if (ht[k][j])
+          bits.set(j);
+      h.outputs.push_back({BoolFunc(ns, bits), Bits{}});
+    }
+    return h;
+  };
+
+  auto best_h = [&](const std::vector<const std::vector<unsigned char> *> &sigs)
+      -> std::pair<std::optional<MultiProblem>, int> {
+    const std::size_t ns = sigs.size();
+    std::optional<MultiProblem> best;
+    int best_count = std::numeric_limits<int>::max();
+    std::vector<std::size_t> order(ns);
+    std::iota(order.begin(), order.end(), 0);
+    if (ns > 6) {
+      best = build_h(sigs);
+      return {best, best ? bdd_mux_count(*best) : best_count};
+    }
+    do {
+      auto h = build_h(sigs, order);
+      if (!h)
+        continue;
+      const int c = bdd_mux_count(*h);
+      if (c < best_count) {
+        best = std::move(h);
+        best_count = c;
+      }
+    } while (std::next_permutation(order.begin(), order.end()));
+    if (std::getenv("DCSTUDY_COMPOSE_DEBUG"))
+      std::cerr << "best_h ns=" << ns << " mux=" << best_count << "\n";
+    return {best, best_count};
+  };
+
+  // Partition constructor for a multi-output atom of width k on n = 2k:
+  // two disjoint groups + optional single-output atoms, costed exactly.
+  std::optional<std::vector<int>> partition_best;
+  int partition_total = std::numeric_limits<int>::max();
+  for (std::size_t ai = 0; ai < library.size(); ++ai) {
+    const std::size_t k = library[ai].vars.size();
+    if (library[ai].outputs.size() < 2 || k < 2 || n != 2 * k)
+      continue;
+    std::vector<int> molist, solist;
+    for (std::size_t ci = 0; ci < cands.size(); ++ci) {
+      if (cands[ci].atom == static_cast<int>(ai))
+        molist.push_back(ci);
+      else if (cands[ci].vars.size() == k &&
+               library[cands[ci].atom].outputs.size() == 1)
+        solist.push_back(ci);
+    }
+    for (std::size_t i = 0; i < molist.size(); ++i)
+      for (std::size_t j = i + 1; j < molist.size(); ++j) {
+        const auto &a = cands[molist[i]].vars;
+        const auto &b = cands[molist[j]].vars;
+        std::vector<bool> used(n, false);
+        bool ok = true;
+        for (auto v : a) {
+          if (used[v])
+            ok = false;
+          used[v] = true;
+        }
+        for (auto v : b) {
+          if (used[v])
+            ok = false;
+          used[v] = true;
+        }
+        for (bool u : used)
+          ok = ok && u;
+        if (!ok)
+          continue;
+        for (int mask = 0; mask < 4; ++mask) {
+          std::vector<int> plan{molist[i], molist[j]};
+          for (int g = 0; g < 2; ++g) {
+            if (!(mask & (1 << g)))
+              continue;
+            for (int ci : solist) {
+              if (cands[ci].vars != (g == 0 ? a : b))
+                continue;
+              plan.push_back(ci);
+              break;
+            }
+          }
+          std::vector<const std::vector<unsigned char> *> sv;
+          int cost = 0;
+          for (int ci : plan) {
+            for (const auto &o : cands[ci].outs)
+              sv.push_back(&o);
+            cost += atom_cost[cands[ci].atom];
+          }
+          if (conflicts(sv) != 0)
+            continue;
+          const auto [h, mux] = best_h(sv);
+          if (!h)
+            continue;
+          const int total = cost + 12 * mux;
+          if (total < partition_total) {
+            partition_total = total;
+            partition_best = plan;
+          }
+        }
+      }
+  }
+
   std::vector<int> chosen;
   std::vector<const std::vector<unsigned char> *> sigs;
   long long cur = conflicts(sigs);
+  if (partition_best) {
+    chosen = *partition_best;
+    for (int ci : chosen)
+      for (const auto &o : cands[ci].outs)
+        sigs.push_back(&o);
+    cur = 0;
+  }
   while (cur > 0 && sigs.size() < 12) {
     int best = -1;
     long long best_conf = cur;
@@ -235,36 +393,31 @@ compose_from_library(const MultiProblem &spec,
     }
     std::cerr << " signals=" << sigs.size() << "\n";
   }
-  const std::size_t ns = sigs.size();
-  const std::size_t hrows = std::size_t{1} << ns;
-  std::vector<std::vector<unsigned char>> ht(
-      spec.outputs.size(), std::vector<unsigned char>(hrows, 0));
-  std::vector<bool> seen(hrows, false);
-  for (std::size_t m = 0; m < rows; ++m) {
-    std::size_t idx = 0;
-    for (std::size_t j = 0; j < ns; ++j)
-      idx = (idx << 1) | (*sigs[j])[m];
-    if (seen[idx])
-      continue;
-    seen[idx] = true;
-    for (std::size_t k = 0; k < spec.outputs.size(); ++k)
-      ht[k][idx] = tgt_rows[k * rows + m];
-  }
-  MultiProblem glue_problem;
-  glue_problem.title = "glue";
-  for (std::size_t j = 0; j < ns; ++j)
-    glue_problem.vars.push_back("s" + std::to_string(j));
-  glue_problem.names = spec.names;
-  for (std::size_t k = 0; k < spec.outputs.size(); ++k) {
-    Bits bits(hrows);
-    for (std::size_t j = 0; j < hrows; ++j)
-      if (ht[k][j])
-        bits.set(j);
-    glue_problem.outputs.push_back({BoolFunc(ns, bits), Bits{}});
+  const auto [glue_opt, glue_mux] = best_h(sigs);
+  if (!glue_opt)
+    return std::nullopt;
+  const MultiProblem &glue_problem = *glue_opt;
+  if (std::getenv("DCSTUDY_COMPOSE_DEBUG"))
+    std::cerr << "glue mux=" << glue_mux << "\n";
+  if (std::getenv("DCSTUDY_COMPOSE_DEBUG")) {
+    std::cerr << "glue vars:";
+    for (const auto &v : glue_problem.vars)
+      std::cerr << " " << v;
+    std::cerr << "\n";
+    for (std::size_t k = 0; k < glue_problem.outputs.size(); ++k) {
+      std::cerr << "  y" << k << ": ";
+      for (std::size_t i = 0; i < (std::size_t{1} << glue_problem.vars.size());
+           ++i)
+        std::cerr << (glue_problem.outputs[k].func.value(
+                          static_cast<std::uint32_t>(i))
+                          ? '1'
+                          : '0');
+      std::cerr << "\n";
+    }
   }
   const ComposeResult glue = compose_mux2(glue_problem, {});
-  if (!glue.ok || !glue.verified)
-    return std::nullopt;
+
+  const std::size_t ns = sigs.size();
 
   // Emit the final top: atom instances + the glue module.
   std::ostringstream os;
