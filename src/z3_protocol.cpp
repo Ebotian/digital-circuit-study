@@ -192,15 +192,17 @@ Json encode_switch_problem(const SwitchProblem& p) {
   Json rows = Json::Array{};
   for (auto r : p.rows) rows.push_back(static_cast<std::int64_t>(r));
   j["rows"] = std::move(rows);
-  if (!p.floating.empty()) {
-    Json fl = Json::Array{};
-    for (const auto& row : p.floating) {
+  auto names_json = [](const std::vector<std::vector<std::string>>& rows) {
+    Json out = Json::Array{};
+    for (const auto& row : rows) {
       Json names = Json::Array{};
       for (const auto& n : row) names.push_back(n);
-      fl.push_back(std::move(names));
+      out.push_back(std::move(names));
     }
-    j["floating"] = std::move(fl);
-  }
+    return out;
+  };
+  if (!p.forced0.empty()) j["forced0"] = names_json(p.forced0);
+  if (!p.forced1.empty()) j["forced1"] = names_json(p.forced1);
   Json devs = Json::Array{};
   for (const auto& d : p.devices) {
     Json dj;
@@ -224,15 +226,20 @@ SwitchProblem decode_switch_problem(const Json& j) {
   if (!rs.is_array()) throw std::runtime_error("protocol: rows must be an array");
   for (const auto& r : rs.array())
     p.rows.push_back(static_cast<std::uint32_t>(r.as_int()));
-  if (j.contains("floating") && j.at("floating").is_array()) {
-    for (const auto& row : j.at("floating").array()) {
+  auto read_rows = [&](const char* key,
+                       std::vector<std::vector<std::string>>& dst) {
+    if (!j.contains(key)) return;
+    for (const auto& row : j.at(key).array()) {
       std::vector<std::string> names;
       for (const auto& n : row.array()) names.push_back(n.as_string());
-      p.floating.push_back(std::move(names));
+      dst.push_back(std::move(names));
     }
-    if (p.floating.size() != p.rows.size())
-      throw std::runtime_error("protocol: floating rows do not match rows");
-  }
+    if (dst.size() != p.rows.size())
+      throw std::runtime_error(std::string("protocol: ") + key +
+                               " rows do not match rows");
+  };
+  read_rows("forced0", p.forced0);
+  read_rows("forced1", p.forced1);
   const Json& ds = need(j, "devices");
   if (!ds.is_array()) throw std::runtime_error("protocol: devices must be an array");
   for (const auto& dj : ds.array()) {

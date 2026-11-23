@@ -335,9 +335,19 @@ SwitchAnalysis analyze_switch(const Subckt& cell,
         p.outputs.push_back(base.outputs[j]);
       for (std::size_t j = row_parts[ri].first; j < row_parts[ri].second; ++j) {
         p.rows.push_back(minterms[j]);
-        // The fixed point already knows which gate values it could not force;
-        // hand those to the solver so it can enumerate the stored charge.
-        p.floating.push_back(fps[minterms[j]].floating_gates);
+        // Hand the fixed point's forced values to the solver: fixing them
+        // leaves only genuinely stored (floating) gates free, so a possible
+        // contention can be found with one query instead of enumerating.
+        const FixedPoint& fp = fps[minterms[j]];
+        std::vector<std::string> f0, f1;
+        if (fp.invariant_ok && !fp.conflict) {
+          for (std::size_t v = 0; v < fp.f0.size(); ++v) {
+            if (fp.f0[v]) f0.push_back(ni.names[v]);
+            if (fp.f1[v]) f1.push_back(ni.names[v]);
+          }
+        }
+        p.forced0.push_back(std::move(f0));
+        p.forced1.push_back(std::move(f1));
       }
       sols[ti] = decode_switch_solution(z3_call(encode_switch_problem(p)));
     });

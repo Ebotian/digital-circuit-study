@@ -122,20 +122,12 @@ SwitchSolution z3_solve_switch(const SwitchProblem& p) {
   const auto r0 = reach(vss);
   const auto r1 = reach(vdd);
 
-  for (std::size_t v = 0; v < N; ++v) {
-    solver.add(z3::implies(r0[v], !val[v]));
-    solver.add(z3::implies(r1[v], val[v]));
-    solver.add(!(r0[v] && r1[v]));
-  }
-
-  // Floating gates come from the fixed point (p.floating, parallel to rows):
-  // any gate whose stored value the propagation could not force, whether or
-  // not it also sits on a channel terminal.  Enumerating them catches a gate
-  // that can turn on both the pull-up and the pull-down; the "both rails"
-  // constraint below prunes that state, so it must be probed explicitly.
-  // Booleans per gate are bounded to keep the row cost sane.
-  constexpr std::size_t kMaxFloating = 8;
-
+  // Value rules are added per row.  When the fixed point gives reliable
+  // forcing data, fix those nets: the only remaining freedom is the stored
+  // charge on gates it could not force, so "can both rails reach this output?"
+  // is a single query rather than an enumeration of charge combinations.
+  // Rows without forcing data keep the old "a net is never on both rails"
+  // rule (no contention detection there).
   SwitchSolution out;
   out.rows.reserve(p.rows.size());
   for (std::size_t row_index = 0; row_index < p.rows.size(); ++row_index) {
@@ -145,30 +137,25 @@ SwitchSolution z3_solve_switch(const SwitchProblem& p) {
       const bool bit = ((minterm >> (input_idx.size() - 1 - i)) & 1U) != 0;
       solver.add(bit ? val[input_idx[i]] : !val[input_idx[i]]);
     }
+    const bool have_forcing =
+        row_index < p.forced0.size() &&
+        !(p.forced0[row_index].empty() && p.forced1[row_index].empty());
+    if (have_forcing) {
+      for (const auto& n : p.forced0[row_index]) solver.add(!val[ni.get(n)]);
+      for (const auto& n : p.forced1[row_index]) solver.add(val[ni.get(n)]);
+      for (std::size_t v = 0; v < N; ++v) {
+        solver.add(z3::implies(r0[v] && !r1[v], !val[v]));
+        solver.add(z3::implies(r1[v] && !r0[v], val[v]));
+      }
+    } else {
+      for (std::size_t v = 0; v < N; ++v) {
+        solver.add(z3::implies(r0[v], !val[v]));
+        solver.add(z3::implies(r1[v], val[v]));
+        solver.add(!(r0[v] && r1[v]));
+      }
+    }
     SwitchSolutionRow row;
     row.values.assign(out_idx.size(), Logic::Float);
-    // Enumerate the stored charge on this row's floating gates and look for a
-    // setting that shorts the network.
-    std::vector<std::size_t> floating_idx;
-    if (p.floating.size() == p.rows.size()) {
-      for (const auto& n : p.floating[row_index]) {
-        if (floating_idx.size() >= kMaxFloating) break;
-        floating_idx.push_back(ni.get(n));
-      }
-    }
-    bool gate_short = false;
-    if (!floating_idx.empty()) {
-      const std::size_t combos = std::size_t{1} << floating_idx.size();
-      for (std::size_t mask = 0; mask < combos && !gate_short; ++mask) {
-        solver.push();
-        for (std::size_t i = 0; i < floating_idx.size(); ++i)
-          solver.add(((mask >> i) & 1) ? val[floating_idx[i]]
-                                       : !val[floating_idx[i]]);
-        if (checked(solver) != z3::sat) gate_short = true;
-        solver.pop();
-      }
-    }
-    if (gate_short) row.conflict = true;
     if (checked(solver) != z3::sat) {
       row.values.assign(out_idx.size(), Logic::Race);
       row.conflict = true;
@@ -178,29 +165,34 @@ SwitchSolution z3_solve_switch(const SwitchProblem& p) {
       continue;
     }
     for (std::size_t oi = 0; oi < out_idx.size(); ++oi) {
-      if (gate_short) {
-        row.values[oi] = Logic::Race;
-        continue;
+      const std::size_t y = out_idx[oi];
+      if (have_forcing) {
+        // A stored gate can enable both rails at once: contention.
+        solver.push();
+        solver.add(r0[y] && r1[y]);
+        const bool race = (checked(solver) == z3::sat);
+        solver.pop();
+        if (race) {
+          row.values[oi] = Logic::Race;
+          row.conflict = true;
+          continue;
+        }
       }
+      // Definite 0 / 1: exactly one rail reaches the output.
       solver.push();
-      solver.add(!val[out_idx[oi]]);
-      solver.add(r0[out_idx[oi]]);
+      solver.add(r0[y] && !r1[y]);
       const bool can0 = (checked(solver) == z3::sat);
       solver.pop();
 
       solver.push();
-      solver.add(val[out_idx[oi]]);
-      solver.add(r1[out_idx[oi]]);
+      solver.add(r1[y] && !r0[y]);
       const bool can1 = (checked(solver) == z3::sat);
       solver.pop();
 
-      // can0/can1 are existential: "some consistent state drives the output
-      // to 0/1".  An undriven gate can leave the output floating in another
-      // state, so also ask whether both rails can be unreachable.  When that
-      // holds the rail value is only possible, not guaranteed.
+      // Neither rail: the output is undriven (Z).  When that can happen
+      // alongside a driven state, the driven value is not guaranteed.
       solver.push();
-      solver.add(!r0[out_idx[oi]]);
-      solver.add(!r1[out_idx[oi]]);
+      solver.add(!r0[y] && !r1[y]);
       const bool can_float = (checked(solver) == z3::sat);
       solver.pop();
 
