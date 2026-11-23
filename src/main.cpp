@@ -384,6 +384,7 @@ Options:
   --max-fanin N  static CMOS cell fan-in limit (e.g. 2); 0 = library default
   --rtl FILE     hierarchical Verilog (top module `top`) to map instead of spec RTL
   --atoms FILE   atom modules read as blackboxes; "-" pipes in a previous stage
+  --ref FILE     verify structurally against module FILE (spec optional)
   --emit-atom N  emit the generated module (state RTL) as atom N on stdout
   --heavy        allow the n=6 Dedekind count (about 40 s and 10 GB)
   --mem-limit    per-process memory cap in MiB, inherited by every child
@@ -1813,7 +1814,10 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
     return cmd_multi_template(a, spec);
   }
   if (sub != "synth") throw CliError("unknown multi subcommand: " + sub);
-  const MultiProblem spec = load_multi_spec(a.need("spec"));
+  if (!a.has("spec") && !(a.has("rtl") && a.has("ref")))
+    throw CliError("multi synth needs --spec (or --rtl with --ref)");
+  const MultiProblem spec =
+      a.has("spec") ? load_multi_spec(a.get("spec")) : MultiProblem{};
   if (a.has("rtl")) {
     if (!a.has("atoms"))
       throw CliError("--rtl needs --atoms FILE (module library)");
@@ -1847,7 +1851,7 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
       atoms_path = temp_atoms;
     }
     const RtlSynthResult r =
-        synthesize_rtl_atoms(a.get("rtl"), atoms_path, spec);
+        synthesize_rtl_atoms(a.get("rtl"), atoms_path, spec, a.get("ref"));
     if (!temp_atoms.empty()) fs::remove(temp_atoms);
     const bool ok = r.ok && r.verified;
     const std::string out_dir = a.get("out");

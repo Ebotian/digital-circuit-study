@@ -464,7 +464,8 @@ int mapped_transistors(const Json& cells, const CdlLibrary& library,
 
 RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
                                     const std::string& atoms_path,
-                                    const MultiProblem& spec) {
+                                    const MultiProblem& spec,
+                                    const std::string& ref_path) {
   RtlSynthResult out;
   out.outputs = spec.names;
   const std::string lib = default_liberty_path();
@@ -551,8 +552,10 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
       std::string blackbox;
       for (const auto& m : lib_modules)
         if (m != module) blackbox += m + " ";
+      const std::string bb =
+          blackbox.empty() ? std::string() : "; blackbox " + blackbox;
       const std::string json_name = "atom_" + module + ".json";
-      run_yosys("read_verilog -sv atoms.v; blackbox " + blackbox +
+      run_yosys("read_verilog -sv atoms.v" + bb +
                     "; synth -top " + module + "; abc -liberty " + lib +
                     " " + dont_use + "; opt_clean; write_json " + json_name,
                 "atom.log");
@@ -589,6 +592,66 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
     out.verilog = read_file(dir.path() / "net.v");
     out.json = read_file(dir.path() / "net.json");
 
+    if (!ref_path.empty()) {
+      // Structural miter: no truth table, so the input count is not bounded
+      // by kMaxArity; only by the (128) port limit below.
+      if (!fs::exists(ref_path))
+        throw std::runtime_error("cannot read ref: " + ref_path);
+      const std::string ref_src = read_file(ref_path);
+      std::smatch m;
+      const std::regex rm("\\bmodule\\s+([A-Za-z_]\\w*)");
+      if (!std::regex_search(ref_src, m, rm))
+        throw std::runtime_error("ref has no module: " + ref_path);
+      const std::string ref_mod = m[1].str();
+      const Json& ports = root.at("modules").at("top").at("ports");
+      std::string header, wires, conns, cmps;
+      int n_in = 0, n_out = 0;
+      for (const auto& [name, pj] : ports.object()) {
+        const std::string dir = pj.at("direction").as_string();
+        const auto width = pj.at("bits").size();
+        const std::string range =
+            width > 1 ? " [" + std::to_string(width - 1) + ":0] " : " ";
+        if (dir == "input") {
+          header += "input logic" + range + name + ", ";
+          conns += "." + name + "(" + name + "), ";
+          ++n_in;
+        } else {
+          wires += "  wire" + range + "t_" + name + ", r_" + name + ";\n";
+          conns += "." + name + "(t_" + name + "), ";
+          cmps += " | (t_" + name + " !== r_" + name + ")";
+          if (spec.names.empty()) out.outputs.push_back(name);
+          ++n_out;
+        }
+      }
+      if (n_in == 0 || n_out == 0)
+        throw std::runtime_error("mapped netlist has no usable ports");
+      if (n_in > 128)
+        throw std::runtime_error("too many inputs: " + std::to_string(n_in) +
+                                 " (max 128)");
+      // Reference instance uses r_* outputs: rebuild the connection list for
+      // it by replacing the output wires.
+      std::string ref_conns;
+      for (const auto& [name, pj] : ports.object()) {
+        if (pj.at("direction").as_string() == "input")
+          ref_conns += "." + name + "(" + name + "), ";
+        else
+          ref_conns += "." + name + "(r_" + name + "), ";
+      }
+      std::string miter = "module miter(" + header +
+                          "output logic mismatch);\n" + wires +
+                          "  top u_top(" + conns + ");\n  " + ref_mod +
+                          " u_ref(" + ref_conns + ");\n  assign mismatch = 1'b0" +
+                          cmps + ";\nendmodule\n";
+      write_text(dir.path() / "ref.v", ref_src);
+      write_text(dir.path() / "miter.v", miter);
+      run_yosys("read_verilog -sv atoms.v; read_verilog -sv top.v; "
+                "read_verilog -sv ref.v; read_verilog -sv miter.v; "
+                "prep -top miter; flatten; delete t:$scopeinfo; opt -full; sat -verify -prove mismatch 0 miter",
+                "ref.log");
+      out.verified = true;
+      out.ok = true;
+      return out;
+    }
     if (spec.has_dont_cares())
       throw std::runtime_error("--rtl does not support don't-care masks yet");
     // Prove the RTL composition against the spec, one output at a time.

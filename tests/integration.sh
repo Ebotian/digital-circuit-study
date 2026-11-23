@@ -308,6 +308,25 @@ V
   [ "$(jq -r .verified "$TMP/pipe-chain.json")" = "true" ] || fail "chain verify"
   [ "$(jq -r '.atoms[0].module' "$TMP/pipe-chain.json")" = "pe8" ] || fail "chain atom"
   [ "$(jq -r '.atoms[0].transistors' "$TMP/pipe-chain.json")" = "66" ] || fail "chain cost"
+  # Structural verification: no spec, reference module + miter.
+  cat > "$TMP/gold8.v" <<'VERILOG'
+module golden(input logic A7, A6, A5, A4, A3, A2, A1, A0,
+              output logic Y2, Y1, Y0);
+  logic [7:0] a;
+  logic [2:0] y;
+  assign a = {A7, A6, A5, A4, A3, A2, A1, A0};
+  always_comb begin
+    y = 3'd0;
+    for (int i = 0; i < 8; i++) if (a[i]) y = i[2:0];
+  end
+  assign Y2 = y[2]; assign Y1 = y[1]; assign Y0 = y[0];
+endmodule
+VERILOG
+  "$BIN" multi synth --rtl "$TMP/top8.v" --atoms "$TMP/atoms8.v" \
+    --ref "$TMP/gold8.v" --json > "$TMP/ref8.json" || fail "structural ref"
+  [ "$(jq -r .verified "$TMP/ref8.json")" = "true" ] || fail "ref verify"
+  [ "$(jq -r .total "$TMP/ref8.json")" = "66" ] || fail "ref cost"
+
 
   # Same free-row spec through the mapper and the path search: 2T as well.
   [ "$("$BIN" multi synth --spec "$TMP/free.json" --json | jq -r .total)" = "2" ] || fail "free-row synth"
