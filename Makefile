@@ -12,7 +12,7 @@ FILC_SOURCES := src/cli/main.cpp src/switch/bdd_switch.cpp src/core/boolfunc.cpp
                 src/core/driver_profile.cpp src/cli/math_client.cpp \
                 src/synthesis/multi_path.cpp src/synthesis/multistage.cpp \
                 src/synthesis/path_search.cpp src/core/limits.cpp \
-                src/core/partial.cpp src/synthesis/static_exact.cpp \
+                src/core/partial.cpp src/synthesis/static_exact.cpp src/synthesis/compose.cpp \
                 src/synthesis/template_synth.cpp src/switch/switchlevel.cpp \
                 src/synthesis/synthesis.cpp src/core/verilog.cpp \
                 src/core/verify.cpp src/cli/worker_client.cpp \
@@ -50,10 +50,10 @@ $(CCDB):
 
 # Formatting: clice's default style (no .clang-format in the repo).
 format: $(CCDB)
-	clice format
+	clice format src include tests
 
 format-check: $(CCDB)
-	clice format --check
+	clice format --check src include tests
 
 # Full gate for CI: format, lint, unit+smoke, instances+formal+integration.
 ci: format-check lint werror test verify-all

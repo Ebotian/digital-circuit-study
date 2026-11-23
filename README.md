@@ -65,6 +65,18 @@
 
 > **两个 PDK 都不在本仓库内**(体积与许可原因)。CLI 通过环境变量找它们。
 
+
+### 可选依赖：mockturtle（库映射实验）
+
+`third_party/mockturtle` 以 **git submodule** 管理（pinned commit `a3f817d`，MIT），默认不参与构建：
+
+```bash
+git submodule update --init --recursive
+cmake -S . -B build-epfl -DDCSTUDY_WITH_EPFL=ON
+```
+
+它自带 kitty/lorina/percy 等依赖（都在子模块的 `lib/` 下），不需要 pacman 安装。`make format`/`lint` 只覆盖 `src include tests`，不会改子模块文件。
+
 ### 构建
 
 ```bash
@@ -368,6 +380,22 @@ multi-output static CMOS: decoder3to8
 - `--tri-state` 不接受 `any`：三态的“Z”不是“任意 0/1”的扩展，语义不同，命令会直接报错。
 - 每个输出至少要有**一行 care**：全 1 的 `any`（输出完全任意）会被直接拒绝，而不是让下游映射出常量空网表。
 - 不带 `any` 的 spec 行为完全不变。
+
+### 自动组合：multi compose
+
+`multi compose` 直接从 spec 构造网络：对每个输出建 reduced ordered BDD，每个非平凡节点实例化一个 `mux2` 原子（`S?B:A`），再交给 `--rtl --atoms` 流程映射、计成本和证明。
+
+```bash
+./build/dcstudy multi compose \
+  --spec tests/verify/instances/specs/mux4_3bit.json --json
+# {"nodes":9,"total":108,"atoms":[{"module":"mux2","instances":9,"transistors":12}],"verified":true}
+```
+
+- BDD 变量顺序 = spec 的 `inputs` 顺序；mux 类函数把选择信号放前面、数据放后面。
+- 单字面量节点不实例化 mux（`v?1:0` 直接接 `v`，`v?0:1` 接 `~v`），所以 4:1 选择器正好是每位 3 个 mux2。
+- 验证：≤12 输入走 spec 真值表 miter；13–16 输入用「穷举自检（BDD 对 spec 全行）+ 结构 miter（映射网表对 BDD 行为参考）」。
+- spec 输入上限：compose 为 16，其他 `multi` 子命令仍为 12。
+
 
 
 #### 复用自定义原子组件：`--rtl` + `--atoms`

@@ -49,6 +49,7 @@ add_library(dcstudy_core STATIC
   src/synthesis/multi_path.cpp
   src/synthesis/multistage.cpp
   src/synthesis/path_search.cpp
+  src/synthesis/compose.cpp
   src/switch/switchlevel.cpp
   src/switch/bdd_switch.cpp
   src/cli/math_client.cpp
@@ -58,6 +59,17 @@ add_library(dcstudy_core STATIC
   src/z3/z3_protocol.cpp
 )
 target_include_directories(dcstudy_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+option(DCSTUDY_WITH_EPFL "Enable mockturtle-based library mapping (needs the submodule)" OFF)
+if(DCSTUDY_WITH_EPFL)
+  if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/mockturtle/include/mockturtle/algorithms/emap.hpp")
+    message(FATAL_ERROR "mockturtle submodule missing; run: git submodule update --init --recursive")
+  endif()
+  set(MOCKTURTLE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(MOCKTURTLE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  add_subdirectory(third_party/mockturtle EXCLUDE_FROM_ALL)
+  target_link_libraries(dcstudy_core PUBLIC mockturtle)
+endif()
+
 
 add_executable(dcstudy src/cli/main.cpp)
 target_link_libraries(dcstudy PRIVATE dcstudy_core)

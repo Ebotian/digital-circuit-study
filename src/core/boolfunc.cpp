@@ -10,7 +10,7 @@
 namespace dcstudy {
 namespace {
 
-constexpr std::size_t kMaxArity = 12;
+constexpr std::size_t kMaxArity = 16;
 
 struct Token {
   enum Kind { Ident, Const, And, Or, Xor, Not, LParen, RParen, End } kind;
@@ -157,7 +157,7 @@ struct Parser {
 
 BoolFunc::BoolFunc(std::size_t n, Bits bits) : n_(n), bits_(std::move(bits)) {
   if (n_ > kMaxArity)
-    throw std::invalid_argument("arithmetic limited to n <= 12");
+    throw std::invalid_argument("arithmetic limited to n <= 16");
   if (bits_.size() != (std::size_t{1} << n_))
     throw std::invalid_argument("truth table width does not match arity");
 }

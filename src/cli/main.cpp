@@ -27,6 +27,7 @@
 #include "core/verilog.hpp"
 #include "switch/bdd_switch.hpp"
 #include "switch/switchlevel.hpp"
+#include "synthesis/compose.hpp"
 #include "synthesis/multi_path.hpp"
 #include "synthesis/multistage.hpp"
 #include "synthesis/path_search.hpp"
@@ -384,6 +385,7 @@ Commands:
   multi synth    --spec FILE [--out DIR] [--png] [--max-fanin N]
                  [--rtl TOP.v --atoms ATOMS.v] [--json]
   multi exact    --spec FILE [--out DIR] [--json]
+  multi compose  --spec FILE [--out DIR] [--json]  (BDD -> 2:1 mux network)
   multi path     --spec FILE [--max-cost N] [--max-chain N] [--tri-state] [--json]
   multi template --spec FILE [--json]
   render         --expr EXPR | --tt BITS [--max-cost N] [--limit N]
@@ -1564,7 +1566,8 @@ int cmd_verify(const std::string &sub, int argc, char **argv) {
   return r.ok ? 0 : 1;
 }
 
-MultiProblem load_multi_spec(const std::string &path) {
+MultiProblem load_multi_spec(const std::string &path,
+                             std::size_t max_vars = 12) {
   std::ifstream in(path);
   if (!in)
     throw CliError("cannot read spec: " + path);
@@ -1579,8 +1582,9 @@ MultiProblem load_multi_spec(const std::string &path) {
     throw CliError("spec.inputs must be a non-empty array");
   for (const auto &v : vars.array())
     s.vars.push_back(v.as_string());
-  if (s.vars.size() > 12)
-    throw CliError("multi spec supports at most 12 inputs");
+  if (s.vars.size() > max_vars)
+    throw CliError("multi spec supports at most " + std::to_string(max_vars) +
+                   " inputs");
   const Json &outs = root.at("outputs");
   if (!outs.is_array() || outs.array().empty())
     throw CliError("spec.outputs must be a non-empty array");
@@ -1832,6 +1836,53 @@ int cmd_multi_path(const Args &a, const MultiProblem &spec) {
   return 0;
 }
 
+int cmd_multi_compose(const Args &a, const MultiProblem &spec) {
+  const ComposeResult r = compose_mux2(spec);
+  const bool json = a.is("json");
+  const std::string out_dir = a.get("out");
+  if (r.ok && !out_dir.empty()) {
+    std::error_code ec;
+    fs::create_directories(out_dir, ec);
+    std::ofstream(out_dir + "/compose.v") << r.rtl;
+    std::ofstream(out_dir + "/mux2.v") << r.atom_rtl;
+    std::ofstream(out_dir + "/netlist.v") << r.synth.verilog;
+    std::ofstream(out_dir + "/netlist.json") << r.synth.json;
+  }
+  if (json) {
+    Json j;
+    j["ok"] = r.ok;
+    j["command"] = "multi.compose";
+    j["mode"] = "bdd-mux2";
+    j["title"] = spec.title;
+    j["nodes"] = r.nodes;
+    j["total"] = r.synth.total;
+    j["atom_cost"] = r.synth.atom_cost;
+    j["cell_cost"] = r.synth.cell_cost;
+    Json atoms = Json::Array{};
+    for (const auto &u : r.synth.atoms) {
+      Json aj;
+      aj["module"] = u.module;
+      aj["instances"] = u.instances;
+      aj["transistors"] = u.transistors;
+      if (!u.parameters.empty())
+        aj["parameters"] = u.parameters;
+      atoms.push_back(std::move(aj));
+    }
+    j["atoms"] = std::move(atoms);
+    j["verified"] = r.verified;
+    if (!r.ok)
+      j["reason"] = r.reason;
+    std::cout << j.dump() << "\n";
+  } else if (!r.ok) {
+    std::cerr << "multi compose failed: " << r.reason << "\n";
+  } else {
+    std::cout << "multi compose (BDD -> mux2): " << r.nodes << " mux2, "
+              << r.synth.total << "T (" << r.synth.atom_cost << "T atoms + "
+              << r.synth.cell_cost << "T glue)\n  miter: PASS\n";
+  }
+  return (r.ok && r.verified) ? 0 : 1;
+}
+
 int cmd_multi_exact(const Args &a, const MultiProblem &spec) {
   const StaticExactResult r = synthesize_static_exact_multi(spec);
   const bool json = a.is("json");
@@ -1930,6 +1981,10 @@ int cmd_multi_exact(const Args &a, const MultiProblem &spec) {
 
 int cmd_multi(const std::string &sub, int argc, char **argv) {
   const Args a = parse_args(argc, argv, 3);
+  if (sub == "compose") {
+    const MultiProblem spec = load_multi_spec(a.need("spec"), 16);
+    return cmd_multi_compose(a, spec);
+  }
   if (sub == "exact") {
     const MultiProblem spec = load_multi_spec(a.need("spec"));
     return cmd_multi_exact(a, spec);

@@ -1,7 +1,7 @@
 # Verification targets (run from the repo root with `make -C tests/verify ...`).
 BIN ?= $(abspath ../../build/dcstudy)
 
-INSTANCE_CASES := decoder38 encoder42 hex7seg prio42 nor2 xor2 xnor2 mux2 mux4_3bit prio16 lzcount16
+INSTANCE_CASES := decoder38 encoder42 hex7seg prio42 nor2 xor2 xnor2 mux2 mux4_3bit compose_mux4_3bit prio16 lzcount16
 INSTANCE_TARGETS := $(addprefix instance-,$(INSTANCE_CASES))
 
 .PHONY: all instances simulation formal optional $(INSTANCE_TARGETS)
