@@ -381,10 +381,10 @@ Options:
   --spec         JSON circuit spec: {"inputs":[...],"outputs":[{"name":...,"expr":...}]}
   --max-fanin N  static CMOS cell fan-in limit (e.g. 2); 0 = library default
   --heavy        allow the n=6 Dedekind count (about 40 s and 10 GB)
-  --mem-limit    memory cap in MiB for dcstudy and every child it spawns.
-                 Default: all of MemAvailable except 2 GiB, which is the only
-                 thing kept free. DCSTUDY_MEM_LIMIT_MB sets the same cap;
-                 0 = hard rlimit
+  --mem-limit    per-process memory cap in MiB, inherited by every child
+                 (not a shared budget: N workers can each reach it). Default:
+                 all of MemAvailable except 2 GiB. DCSTUDY_MEM_LIMIT_MB sets
+                 the same cap; 0 = hard rlimit
 
 Exit codes: 0 success, 1 verification/feasibility failure, 2 usage/runtime error.
 )";
