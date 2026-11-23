@@ -26,7 +26,8 @@ tests/verify/
     rtl/                # 该实例的 RTL 夹具（pe42/top16/gold16）
   formal/
     core.sh             # 单元/性质测试（ctest）
-    optional.sh         # 完整 CLI/开关级/Z3/Yosys 套件（integration.sh）
+    optional.sh         # Verilator 回归 + 完整 CLI/开关级/Z3/Yosys 套件
+    optional/verilator-xor6/  # 开关级 6T XOR：4/4 正例 + 注入故障负例
 ```
 
 ## 实例验证矩阵
@@ -47,7 +48,7 @@ tests/verify/
 | 层 | 内容 | 依赖 | 何时跑 |
 |---|---|---|---|
 | core | 布尔/精确覆盖/开关级/CDL/浮空/别名/dc 规则 | 仅构建产物 | 每次提交（CI） |
-| optional | CLI 端到端、Yosys SAT、Verilator、Z3 工作进程、PDK 单元 | yosys/verilator/z3/PDK | 本地完整回归、CI |
+| optional | Verilator 开关级 XOR6（正/负对照）、CLI 端到端、Yosys SAT、Z3 工作进程、PDK 单元 | verilator/yosys/z3/PDK | 本地完整回归、CI |
 
 ## 运行
 

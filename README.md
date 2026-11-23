@@ -577,8 +577,6 @@ verilator --binary --timing -Wno-fatal -Wno-WIDTH -Wno-UNUSEDSIGNAL \
 │   └── verify/           验证目录: instances(实例) / formal(核心/可选)
 ├── docs/                 四本 HTML 讲义(见上)
 │   └── lecture-rtl-examples/  讲义用 XOR 写法示例(不是测试/工具输入)
-
-├── verilog/              Verilator 手工回归(含负对照)
 └── tools/pdk/            yosys-sta 的 PDK 描述文件
 ```
 
@@ -609,7 +607,7 @@ Dedekind 计数本质上是指数级的(输出就那么大),这里做的是**约
 | 部分 | 许可 |
 |---|---|
 | `docs/*.html`(讲义文档) | [CC BY-NC 4.0](LICENSE-docs) |
-| `include/` `src/` `tests/` `workers/` `verilog/` `tools/` `docs/lecture-rtl-examples/`(代码) | [GPL-3.0-only](LICENSE) |
+| `include/` `src/` `tests/` `workers/` `tools/` `docs/lecture-rtl-examples/`(代码) | [GPL-3.0-only](LICENSE) |
 
 > ⚠️ **请留意**:CC BY-NC **禁止商业性使用**,它不是 OSI 认可的开源许可。所以本仓库**整体上不是一个开源仓库** —— 只有代码部分是 GPL-3.0 开源。
 > 两类文件是分开的,不构成混合作品;但如果你要商用,请注意讲义部分不可用于商业目的。
