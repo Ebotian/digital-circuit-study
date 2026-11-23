@@ -32,6 +32,19 @@ std::vector<int> target_of(const FuncSpec& s) {
 }
 }  // namespace
 
+TEST_CASE("series-chain enumeration is order-canonical") {
+  // A series stack conducts the same way in any order, so all_chains keeps one
+  // representative per multiset of atoms.  For n=4 that is 58,890 chains
+  // (down from 1,082,401 permutations) times 10 sources.  A regression here
+  // means the candidate explosion is back.
+  SpaceOptions opt;
+  opt.max_chain = 4;
+  opt.max_cost = 8;
+  opt.allow_tg = true;
+  const auto branches = build_branches({"A", "B", "C", "D"}, opt);
+  REQUIRE(branches.size() == 588890);
+}
+
 TEST_CASE("memory limit values parse strictly") {
   REQUIRE(parse_mem_limit_mb("0") == 0);
   REQUIRE(parse_mem_limit_mb("512") == 512);
