@@ -22,6 +22,7 @@ tests/verify/
     nor2.sh             # NOR2：可直接综合（单级互补门）4T
     xor2.sh / xnor2.sh  # XOR/XNOR：不可直接综合，自动设计仍给出 12T/14T/12T
     prio16.sh           # 16-4 优先编码器：4x pe42 + 胶合 = 172T，结构 miter
+    lzcount16.sh        # 前导/尾随 0/1 计数：4x pe16 + 胶合 = 866T，结构 miter + 仿真
     *.json              # 各实例的 spec：decoder38/encoder42/hex7seg/pe42/nor2/xor2/xnor2
     rtl/                # 该实例的 RTL 夹具（pe42/top16/gold16）
     simulation/verilator-xor6/  # 同一实例层级、不同验证层：开关级 XOR6 动态仿真
@@ -39,6 +40,7 @@ tests/verify/
 | 4-7 段译码器（hex7seg） | spec | synth（默认 / --max-fanin 2）+ exact | 31 cells/162T；44 cells/192T；180T |
 | 4-2 优先编码器 | spec | 逐输出开关级 miter | 16T，verified |
 | 16-4 优先编码器 | RTL + 原子 + --ref | 结构 miter（无真值表） | 172T = 4x16T + 108T，PASS |
+| 前导/尾随 0/1 计数（lzcount16） | RTL + 4x pe16 + --ref | 结构 miter + Verilator 激励 | 866T = 4x172T + 178T；16392 → LZ=1, TZ=3 |
 | 开关级 XOR6（仿真） | Verilator testbench | 4/4 正例 + 注入故障必须被检出 | 动态仿真，非穷举 |
 | NOR2（可直接综合） | spec | `bool info` realizable=true，exact/synth/path | 4T，verified |
 | XOR2（不可直接综合） | spec | realizable=false，但仍可自动设计（输入反相器） | exact 12T / synth 14T / path 12T |
