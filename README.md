@@ -271,7 +271,7 @@ optimum: 6T  designs=...
 共享输入反相器、fanout 和中间逻辑，再把每个标准单元展开成 CDL，
 用现有的 `analyze_switch` 对**所有输出**做全输入 switch-level 证明。
 
-`/tmp/decoder38.json`：
+`specs/decoder38.json`(仓库自带,可直接复现)：
 
 ```json
 {
@@ -291,8 +291,8 @@ optimum: 6T  designs=...
 ```
 
 ```bash
-./build/dcstudy multi synth --spec /tmp/decoder38.json \
-  --out /tmp/decoder38 --png --json
+./build/dcstudy multi synth --spec specs/decoder38.json \
+  --out out/decoder38 --png --json
 ```
 
 输出：
@@ -485,7 +485,7 @@ verilator --binary --timing -Wno-fatal -Wno-WIDTH -Wno-UNUSEDSIGNAL \
 │   ├── filc_smoke.cpp    Fil-C 内存安全冒烟(Z3-free 内核)
 │   └── integration.sh    黑盒 CLI / 形式工具集成测试
 ├── docs/                 四本 HTML 讲义(见上)
-├── specs/                可复现的 multi-output JSON spec(含 hex7seg)
+├── specs/                可复现的 multi-output JSON spec(decoder38、hex7seg)
 ├── verilog/              Verilator 手工回归(含负对照)
 ├── rtl/                  讲义实验用 RTL
 └── tools/pdk/            yosys-sta 的 PDK 描述文件

@@ -112,28 +112,16 @@ pass "static CMOS constraint"
 
 # General multi-output synthesis: the 3-to-8 decoder is only a spec file.
 if [ -f "$CDL" ] && command -v yosys >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
-  cat > "$TMP/decoder38.json" <<'JSON'
-{
-  "name": "decoder3to8",
-  "inputs": ["A", "B", "C"],
-  "outputs": [
-    {"name": "Y0", "expr": "~A&~B&~C"},
-    {"name": "Y1", "expr": "~A&~B&C"},
-    {"name": "Y2", "expr": "~A&B&~C"},
-    {"name": "Y3", "expr": "~A&B&C"},
-    {"name": "Y4", "expr": "A&~B&~C"},
-    {"name": "Y5", "expr": "A&~B&C"},
-    {"name": "Y6", "expr": "A&B&~C"},
-    {"name": "Y7", "expr": "A&B&C"}
-  ]
-}
-JSON
-  "$BIN" multi synth --spec "$TMP/decoder38.json" --out "$TMP/decoder38"     --json > "$TMP/decoder38.out" || fail "multi-output decoder"
+  "$BIN" multi synth --spec "$ROOT/specs/decoder38.json" --out "$TMP/decoder38"     --json > "$TMP/decoder38.out" || fail "multi-output decoder"
   [ "$(jq -r .verified "$TMP/decoder38.out")" = "true" ] || fail "multi-output verify"
   [ "$(jq -r .total "$TMP/decoder38.out")" = "54" ] || fail "decoder 54T"
-  [ "$(jq -r '.truths.Y0' "$TMP/decoder38.out")" = "10000000" ] || fail "decoder Y0"
-  [ "$(jq -r '.truths.Y7' "$TMP/decoder38.out")" = "00000001" ] || fail "decoder Y7"
-  "$BIN" multi exact --spec "$TMP/decoder38.json" --json > "$TMP/decoder38.exact"     || fail "multi-output exact"
+  # Every output, so a rotated or shifted decoder cannot pass.
+  i=0
+  for want in 10000000 01000000 00100000 00010000 00001000 00000100 00000010 00000001; do
+    [ "$(jq -r ".truths.Y$i" "$TMP/decoder38.out")" = "$want" ] || fail "decoder Y$i truth"
+    i=$((i + 1))
+  done
+  "$BIN" multi exact --spec "$ROOT/specs/decoder38.json" --json > "$TMP/decoder38.exact"     || fail "multi-output exact"
   [ "$(jq -r .optimal "$TMP/decoder38.exact")" = "54" ] || fail "decoder exact 54T"
   [ "$(jq -r .proof "$TMP/decoder38.exact")" = "true" ] || fail "decoder optimality proof"
   [ "$(jq -r .verified "$TMP/decoder38.exact")" = "true" ] || fail "decoder exact verification"
@@ -151,7 +139,7 @@ JSON
   ]
 }
 JSON
-  "$BIN" multi path --spec "$TMP/decoder38.json" --tri-state --max-cost 40 --json     > "$TMP/decoder38.tri" || fail "tri-state 3-8 decoder"
+  "$BIN" multi path --spec "$ROOT/specs/decoder38.json" --tri-state --max-cost 40 --json     > "$TMP/decoder38.tri" || fail "tri-state 3-8 decoder"
   [ "$(jq -r .total "$TMP/decoder38.tri")" = "16" ] || fail "tri 3-8 decoder 16T"
   [ "$(jq -r .verified "$TMP/decoder38.tri")" = "true" ] || fail "tri 3-8 verification"
   "$BIN" multi path --spec "$TMP/demux4.json" --tri-state --max-cost 40 --json     > "$TMP/demux4.tri" || fail "tri-state 1-to-4 demux"
@@ -162,7 +150,7 @@ JSON
   [ "$(jq -r .verified "$TMP/demux4.static")" = "true" ] || fail "1-to-4 dual-rail verification"
   [ "$(jq -r '.graph.sources | length' "$TMP/demux4.static")" = "2" ] || fail "1-to-4 dual rails"
   [ "$(jq -r .mode "$TMP/demux4.static")" = "dual-rail" ] || fail "1-to-4 dual-rail mode"
-  "$BIN" multi path --spec "$TMP/decoder38.json" --max-cost 54 --json     > "$TMP/decoder38.static" || fail "3-8 dual-rail path"
+  "$BIN" multi path --spec "$ROOT/specs/decoder38.json" --max-cost 54 --json     > "$TMP/decoder38.static" || fail "3-8 dual-rail path"
   [ "$(jq -r .total "$TMP/decoder38.static")" = "26" ] || fail "3-8 dual-rail 26T"
   [ "$(jq -r .verified "$TMP/decoder38.static")" = "true" ] || fail "3-8 dual-rail verification"
   [ -f "$TMP/decoder38/index.html" ] || fail "decoder render index"
@@ -177,7 +165,6 @@ JSON
   [ "$(jq -r .verified "$TMP/hex7seg.fanin2")" = "true" ] || fail "hex7seg 2-input verify"
   [ "$(jq -r .cells "$TMP/hex7seg.fanin2")" = "44" ] || fail "hex7seg 2-input cell count"
   [ "$(jq -r .total "$TMP/hex7seg.fanin2")" = "192" ] || fail "hex7seg 2-input 192T"
-  [ "$(jq -r '.truths.seg_a' "$TMP/hex7seg.fanin2")" = "1011011111101011" ] || fail "hex7seg seg_a truth"
   "$BIN" multi synth --spec "$ROOT/specs/hex7seg.json" --json \
     > "$TMP/hex7seg.default" || fail "hex7seg default fan-in"
   [ "$(jq -r .verified "$TMP/hex7seg.default")" = "true" ] || fail "hex7seg default verify"
@@ -187,6 +174,17 @@ JSON
   [ "$(jq -r .optimal "$TMP/hex7seg.exact")" = "180" ] || fail "hex7seg exact 180T"
   [ "$(jq -r .proof "$TMP/hex7seg.exact")" = "true" ] || fail "hex7seg optimality proof"
   [ "$(jq -r .verified "$TMP/hex7seg.exact")" = "true" ] || fail "hex7seg exact verify"
+  # All seven segments on both mappings: this is the intended glyph table
+  # (0-9, A, b, C, d, E, F), checked by hand against a standard display, so a
+  # spec edit that changes a glyph fails here instead of passing silently.
+  for file in "$TMP/hex7seg.fanin2" "$TMP/hex7seg.exact"; do
+    for want in seg_a=1011011111101011 seg_b=1111100111100100 \
+                seg_c=1101111111110100 seg_d=1011011011011110 \
+                seg_e=1010001010111111 seg_f=1000111011111011 \
+                seg_g=0011111011110111; do
+      [ "$(jq -r ".truths.${want%%=*}" "$file")" = "${want#*=}" ] || fail "hex7seg ${want%%=*} truth"
+    done
+  done
   pass "hex7seg spec (2-input / default / exact)"
 
   # The cap is inherited by yosys and dcstudy-z3: 1 GiB is plenty for this

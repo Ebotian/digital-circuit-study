@@ -1,0 +1,14 @@
+{
+  "name": "decoder3to8",
+  "inputs": ["A", "B", "C"],
+  "outputs": [
+    {"name": "Y0", "expr": "~A&~B&~C"},
+    {"name": "Y1", "expr": "~A&~B&C"},
+    {"name": "Y2", "expr": "~A&B&~C"},
+    {"name": "Y3", "expr": "~A&B&C"},
+    {"name": "Y4", "expr": "A&~B&~C"},
+    {"name": "Y5", "expr": "A&~B&C"},
+    {"name": "Y6", "expr": "A&B&~C"},
+    {"name": "Y7", "expr": "A&B&C"}
+  ]
+}
