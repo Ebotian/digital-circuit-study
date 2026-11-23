@@ -423,142 +423,119 @@ MultiPathSynthesisResult synthesize_dual_rail_multi(
     return out;
   }
 
-  SwitchGraph& g = out.graph;
-  const int zero = g.add_net("0");
-  const int one = g.add_net("1");
-  g.source_ids = {zero, one};
-  std::vector<int> output_nodes;
-  for (const auto& n : names) output_nodes.push_back(g.add_net("Y" + n));
-  g.outputs = output_nodes;
-  g.output = output_nodes.front();
-  std::map<std::string, int> nodes;
-  nodes.emplace("0", zero);
-  nodes.emplace("1", one);
-  std::map<std::string, bool> added_edge;
-  auto node = [&](const std::string& name) {
-    auto it = nodes.find(name);
-    if (it != nodes.end()) return it->second;
-    const int id = g.add_net(name);
-    nodes.emplace(name, id);
-    return id;
-  };
+  // Truth targets for the joint electrical check: every output must be driven
+  // to 0/1 in every row by exactly one rail, through a strong path.
+  std::vector<std::vector<int>> truth_targets;
+  truth_targets.reserve(funcs.size());
+  for (const auto& f : funcs) {
+    std::vector<int> t;
+    for (std::uint32_t m = 0; m < rows; ++m) t.push_back(f.value(m) ? 1 : 0);
+    truth_targets.push_back(std::move(t));
+  }
 
-  auto emit = [&](const RailSolution& r) {
-    for (int pi : r.selected) {
-      const PathInfo& p = r.paths[static_cast<std::size_t>(pi)];
-      const Branch& b = r.all[static_cast<std::size_t>(p.path)].branch;
-      int prev = node(b.source);
-      for (std::size_t j = 0; j < p.edges.size(); ++j) {
-        const int eid = p.edges[j];
-        const std::string& k = r.keys[static_cast<std::size_t>(eid)];
-        const int next = node(k);
-        if (!added_edge[k]) {
-          SwitchGraphEdge e;
-          e.from = prev;
-          e.to = next;
-          e.kind = r.edges[static_cast<std::size_t>(eid)].kind;
-          e.lit = r.edges[static_cast<std::size_t>(eid)].lit;
-          e.strong = true;
-          e.cost = r.edges[static_cast<std::size_t>(eid)].cost;
-          g.edges.push_back(std::move(e));
-          added_edge[k] = true;
-        }
-        prev = next;
-      }
-      const std::string wire = "wire:" + std::to_string(prev) + ":" +
-                               std::to_string(p.output);
-      if (!added_edge[wire]) {
-        SwitchGraphEdge e;
-        e.from = prev;
-        e.to = output_nodes[static_cast<std::size_t>(p.output)];
-        e.kind = SwKind::TGH;
-        e.lit = "1";
-        e.strong = true;
-        e.cost = 0;
-        g.edges.push_back(std::move(e));
-        added_edge[wire] = true;
-      }
-    }
-  };
-  emit(best.pun);
-  emit(best.pdn);
-
-  out.edge_cost = best.pun.edge_cost + best.pdn.edge_cost;
-  out.inverter_cost = 2 * static_cast<int>(__builtin_popcountll(best.used_mask));
-  out.total = out.edge_cost + out.inverter_cost;
-  out.proof = true;
-  out.ok = true;
-
-  // Do not ask the combined graph whether both supplies reach Y: the graph is
-  // undirected, so source 0 can walk through Y and backwards into the PUN to
-  // source 1.  Verify each rail as a one-source graph with the opposite rail's
-  // rows marked as high-Z/don't-care.  This is the actual PUN/PDN condition.
-  auto verify_rail_output = [&](const RailSolution& r,
-                                  const std::string& source, int output) {
-    SwitchGraph rg;
-    const int src = rg.add_net(source);
-    rg.source_ids = {src};
-    const int y = rg.add_net("Y" + names[static_cast<std::size_t>(output)]);
-    rg.output = y;
-    rg.outputs = {y};
-    std::map<std::string, int> rnodes;
-    rnodes.emplace(source, src);
-    std::map<std::string, bool> redges;
-    auto rnode = [&](const std::string& n) {
-      auto it = rnodes.find(n);
-      if (it != rnodes.end()) return it->second;
-      const int id = rg.add_net(n);
-      rnodes.emplace(n, id);
+  // Emit the selected paths into a fresh graph.  A path's last switch lands
+  // directly on its output net: there is deliberately no zero-cost "wire"
+  // connector, because a node shared by several outputs would short them
+  // together and the per-output cone check would never see it.  Prefix nodes
+  // may be shared between outputs when share_prefixes is set; the finished
+  // graph still has to pass the joint check below.
+  auto build_graph = [&](bool share_prefixes, SwitchGraph& g) {
+    const int zero = g.add_net("0");
+    const int one = g.add_net("1");
+    g.source_ids = {zero, one};
+    std::vector<int> output_nodes;
+    for (const auto& n : names) output_nodes.push_back(g.add_net("Y" + n));
+    g.outputs = output_nodes;
+    g.output = output_nodes.empty() ? one : output_nodes.front();
+    std::map<std::string, int> nodes;
+    nodes.emplace("0", zero);
+    nodes.emplace("1", one);
+    std::map<std::string, bool> added;
+    auto node = [&](const std::string& name, int output) {
+      const std::string key =
+          share_prefixes ? name : name + "@" + std::to_string(output);
+      auto it = nodes.find(key);
+      if (it != nodes.end()) return it->second;
+      const int id = g.add_net(key);
+      nodes.emplace(key, id);
       return id;
     };
-    for (int pi : r.selected) {
-      const PathInfo& p = r.paths[static_cast<std::size_t>(pi)];
-      if (p.output != output) continue;
-      const Branch& b = r.all[static_cast<std::size_t>(p.path)].branch;
-      int prev = rnode(b.source);
-      for (std::size_t j = 0; j < p.edges.size(); ++j) {
-        const int eid = p.edges[j];
-        const std::string& k = r.keys[static_cast<std::size_t>(eid)];
-        const int next = rnode(k);
-        if (!redges[k]) {
-          SwitchGraphEdge e;
-          e.from = prev;
-          e.to = next;
-          e.kind = r.edges[static_cast<std::size_t>(eid)].kind;
-          e.lit = r.edges[static_cast<std::size_t>(eid)].lit;
-          e.strong = true;
-          e.cost = r.edges[static_cast<std::size_t>(eid)].cost;
-          rg.edges.push_back(std::move(e));
-          redges[k] = true;
+    auto emit = [&](const RailSolution& r) {
+      for (int pi : r.selected) {
+        const PathInfo& p = r.paths[static_cast<std::size_t>(pi)];
+        const Branch& b = r.all[static_cast<std::size_t>(p.path)].branch;
+        const int o = p.output;
+        int prev = node(b.source, o);
+        for (std::size_t j = 0; j < p.edges.size(); ++j) {
+          const int eid = p.edges[j];
+          const std::string& k = r.keys[static_cast<std::size_t>(eid)];
+          const bool last = j + 1 == p.edges.size();
+          const int next =
+              last ? output_nodes[static_cast<std::size_t>(o)] : node(k, o);
+          const std::string key =
+              last ? ("term:" + std::to_string(o) + ":" + k)
+                   : (share_prefixes ? k : k + "@" + std::to_string(o));
+          if (!added[key]) {
+            SwitchGraphEdge e;
+            e.from = prev;
+            e.to = next;
+            e.kind = r.edges[static_cast<std::size_t>(eid)].kind;
+            e.lit = r.edges[static_cast<std::size_t>(eid)].lit;
+            e.strong = true;
+            e.cost = r.edges[static_cast<std::size_t>(eid)].cost;
+            g.edges.push_back(std::move(e));
+            added[key] = true;
+          }
+          prev = next;
         }
-        prev = next;
       }
-      const std::string wire = "wire:" + std::to_string(prev) + ":" +
-                               std::to_string(p.output);
-      if (!redges[wire]) {
-        SwitchGraphEdge e;
-        e.from = prev;
-        e.to = y;
-        e.kind = SwKind::TGH;
-        e.lit = "1";
-        e.strong = true;
-        e.cost = 0;
-        rg.edges.push_back(std::move(e));
-        redges[wire] = true;
-      }
-    }
-    const auto& src_targets = source == "1" ? pun_targets : pdn_targets;
-    const std::vector<std::vector<int>> one_target{
-        src_targets[static_cast<std::size_t>(output)]};
-    const auto prof = analyze_switch_graph_outputs(rg, vars, one_target, true);
-    return prof.size() == 1 && prof[0].valid;
+    };
+    emit(best.pun);
+    emit(best.pdn);
   };
 
+  auto graph_cost = [](const SwitchGraph& g) {
+    int cost = 0;
+    for (const auto& e : g.edges) cost += e.cost;
+    return cost;
+  };
+  auto graph_ok = [&](const SwitchGraph& g) {
+    const auto prof =
+        analyze_switch_graph_outputs(g, vars, truth_targets, false);
+    if (prof.size() != names.size()) return false;
+    for (const auto& p : prof)
+      if (!p.valid) return false;
+    return true;
+  };
+
+  // Prefer the cheaper shared-prefix network, but only when the complete
+  // network passes the joint check.  Otherwise fall back to a private copy per
+  // output (no shared nodes at all), which cannot create cross-output paths.
+  SwitchGraph shared;
+  build_graph(true, shared);
+  SwitchGraph private_g;
+  build_graph(false, private_g);
+  if (graph_ok(shared)) {
+    out.graph = std::move(shared);
+  } else if (graph_ok(private_g)) {
+    out.graph = std::move(private_g);
+  } else {
+    out.reason = "dual-rail path network failed the joint electrical check";
+    return out;
+  }
+
+  out.edge_cost = graph_cost(out.graph);
+  out.inverter_cost =
+      2 * static_cast<int>(__builtin_popcountll(best.used_mask));
+  out.total = out.edge_cost + out.inverter_cost;
+  if (out.total > opt.max_cost) {
+    out.reason = "valid dual-rail network needs " + std::to_string(out.total) +
+                 "T, over --max-cost";
+    return out;
+  }
   out.verified = true;
-  for (std::size_t o = 0; o < names.size(); ++o)
-    out.verified = out.verified && verify_rail_output(best.pun, "1", static_cast<int>(o)) &&
-                   verify_rail_output(best.pdn, "0", static_cast<int>(o));
-  if (!out.verified) out.reason = "dual-rail path graph failed verification";
+  out.proof = true;
+  out.ok = true;
   return out;
 }
 
