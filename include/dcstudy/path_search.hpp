@@ -18,6 +18,9 @@ namespace dcstudy {
 struct PathSynthesisResult {
   bool ok = false;
   bool proof = false;
+  // Scope of the optimality claim (candidate path set, not the full space).
+  std::string proof_scope;
+  std::string proof_method;
   bool verified = false;
   std::string reason;
   int total = 0;

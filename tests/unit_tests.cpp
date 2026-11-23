@@ -62,6 +62,50 @@ TEST_CASE("default memory cap keeps exactly 2 GiB free") {
   REQUIRE(available_memory_mb() > 0);
 }
 
+TEST_CASE("joint switch-graph check rejects outputs sharing a node") {
+  // Y0 = ~A, Y1 = A.  Each output's own cone is correct, but both pull-downs
+  // meet at the shared node u, so shaping one output drags the other.  A
+  // per-output cone check cannot see that; the joint check must reject it.
+  auto build = [](bool share) {
+    SwitchGraph g;
+    const int zero = g.add_net("0");
+    const int one = g.add_net("1");
+    const int y0 = g.add_net("Y0");
+    const int y1 = g.add_net("Y1");
+    const int u0 = share ? g.add_net("u") : g.add_net("u0");
+    const int u1 = share ? u0 : g.add_net("u1");
+    g.source_ids = {zero, one};
+    g.outputs = {y0, y1};
+    g.output = y0;
+    auto add = [&](int from, int to, SwKind kind, const std::string& lit) {
+      SwitchGraphEdge e;
+      e.from = from;
+      e.to = to;
+      e.kind = kind;
+      e.lit = lit;
+      e.strong = true;
+      e.cost = 1;
+      g.edges.push_back(std::move(e));
+    };
+    add(one, y0, SwKind::P, "A");   // Y0 = 1 when A = 0
+    add(one, y1, SwKind::P, "Ab");  // Y1 = 1 when A = 1
+    add(zero, u0, SwKind::N, "A");  // pulls low when A = 1
+    add(zero, u1, SwKind::N, "Ab"); // pulls low when A = 0
+    add(u0, y0, SwKind::TGH, "1");
+    add(u1, y1, SwKind::TGH, "1");
+    return g;
+  };
+  const std::vector<std::vector<int>> targets{{1, 0}, {0, 1}};
+  const auto shared =
+      analyze_switch_graph_outputs(build(true), {"A"}, targets, false);
+  REQUIRE(shared.size() == 2);
+  for (const auto& p : shared) REQUIRE_FALSE(p.valid);
+  const auto split =
+      analyze_switch_graph_outputs(build(false), {"A"}, targets, false);
+  REQUIRE(split.size() == 2);
+  for (const auto& p : split) REQUIRE(p.valid);
+}
+
 TEST_CASE("parallel_for covers every index") {
   std::vector<int> seen(37, 0);
   parallel_for(seen.size(), 4, [&](std::size_t i) { seen[i] = 1; });

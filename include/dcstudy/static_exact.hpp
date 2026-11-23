@@ -24,6 +24,10 @@ namespace dcstudy {
 struct StaticExactResult {
   bool ok = false;
   bool proof = false;
+  // How optimality was established: "exhaustive" (every inverter subset) or
+  // "analytic_shortcut" (all outputs are single cubes, so the minimum is
+  // fixed without enumerating the 2^n subsets).
+  std::string proof_method;
   bool verified = false;
   std::string reason;
   int total = 0;

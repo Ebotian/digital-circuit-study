@@ -15,6 +15,10 @@ namespace dcstudy {
 struct MultiPathSynthesisResult {
   bool ok = false;
   bool proof = false;
+  // What the proof actually covers: the search is exact only over the
+  // retained candidate path set, not over the whole design space.
+  std::string proof_scope;
+  std::string proof_method;
   bool verified = false;
   std::string reason;
   int total = 0;

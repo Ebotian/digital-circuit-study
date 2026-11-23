@@ -377,6 +377,7 @@ StaticExactResult synthesize_static_exact_multi(
   out.nfet = nfet;
   out.pfet = pfet;
   out.proof = true;
+  out.proof_method = cube_form ? "analytic_shortcut" : "exhaustive";
   out.ok = true;
 
   // The outputs of this model are independent single-stage gates.  Verify

@@ -77,7 +77,7 @@ make filc-smoke      # 可选:用 Fil-C 跑 Z3-free 内核(约 15 s)
 
 渲染命令默认用 Node(直接跑 `workers/render_worker.ts`);`--png` 额外需要 `rsvg-convert`,`logic.svg` 额外需要 `pdflatex` + `circuitikz`(缺失时退回逻辑块)。Python worker 保留作对照,可用 `DCSTUDY_RENDER_HELPER=workers/render_worker.py` 切回;Python 版没有逻辑面板。
 
-没有 Catch2 时 CMake 仍会构建主程序,只是跳过单元测试。**Z3 只被 worker 链接**:主程序本身不依赖 `z3++.h`/`libz3`;构建 worker 才需要它们。
+没有 Catch2 时 CMake 仍会构建主程序,但会注册一个**必定失败**的 `unit_missing_catch2` 测试,`ctest` 不会出现“零测试=通过”。集成测试缺少 CDL/Yosys/Node 时本地只打印 skip,**设了 `CI` 环境变量则直接 fail**,避免关键路径在 CI 里静默跳过。**Z3 只被 worker 链接**:主程序本身不依赖 `z3++.h`/`libz3`;构建 worker 才需要它们。
 
 ### Worker 进程隔离
 
@@ -328,7 +328,7 @@ multi-output static CMOS: decoder3to8
 - 输入反相器是共享的 2T 反相器；
 - 不允许 TG/pass-transistor、不允许门间共享、不允许输出反相器。
 
-优化器穷举全部 `2^n` 个反相器集合，并对每个输出求精确最小 DNF，因此在这个模型内是**带最优性证明**的。3-8 译码器：
+优化器穷举全部 `2^n` 个反相器集合，并对每个输出求精确最小 DNF，因此在这个模型内是**带最优性证明**的。有一个快捷路径：如果每个输出恰好是单个 cube，PDN 字面量和反相器集合都被唯一确定，就不必再跑 `2^n` 枚举。JSON 里用 `proof_method` 区分 `exhaustive` 与 `analytic_shortcut`，`proof_scope` 固定写 `single-stage static CMOS model`，不会把两者混成一个 “proof”。3-8 译码器（单 cube，走 analytic 分支）：
 
 ```text
 optimal: 54T
@@ -380,7 +380,8 @@ optimal: 54T
 
 - 3-8 译码器：通用路径搜索找到 **16T** 的输入源选择网络；
 - 1-to-4 分路器：**6T**；
-- 同一个 spec 不加 `--tri-state` 时走 PUN/PDN 双轨搜索：3-8 译码器 **44T**、1-to-4 分路器 **18T**，每个输出始终驱动 0/1；输出端不再有零成本“导线”连接，整张网络必须通过联合电气校验（每个输出每行恰好一个强驱动源）；
+- 同一个 spec 不加 `--tri-state` 时走 PUN/PDN 双轨搜索：3-8 译码器 **44T**、1-to-4 分路器 **18T**，每个输出始终驱动 0/1；输出端不再有零成本“导线”连接，整张网络必须通过联合电气校验（每个输出每行恰好一个强驱动源），共享前缀版失败时退回每输出私有节点再查一次；
+- `multi path` 的 `proof` 只覆盖**保留的候选路径集合**：JSON 带 `proof_scope: "retained candidate path set"`。候选集做了有界 Pareto 去重（同成本、非边集包含）和串联链顺序归并，不是完整设计空间，所以不要把它读成全局最优；
 - 经典 14 TG + 3 INV 的 TG demux 树是 34T 的一个结构化实现，但不是唯一解。
 
 标准画法参考：Mano《Digital Design》3-to-8 decoder 图（3 个反相器提供补码，8 个与门产生 minterm），以及 KFUPM EE200 讲义中的同款画法；低有效输出版本通常直接用 8 个 NAND 门。这里因为走静态互补 CMOS，所以实际单元是 NOR3（与 AND3 在 De Morgan 意义下等价）。

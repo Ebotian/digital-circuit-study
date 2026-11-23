@@ -300,6 +300,8 @@ PathSynthesisResult synthesize_path_variables(
   out.verified = !profiles.empty() && profiles[0].valid;
   out.ok = true;
   out.proof = true;
+  out.proof_scope = "retained candidate path set";
+  out.proof_method = "branch-and-bound over deduped covers";
   if (!out.verified) out.reason = "path graph failed dynamic driver validation";
   return out;
 }

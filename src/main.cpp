@@ -1574,6 +1574,8 @@ int cmd_multi_path(const Args& a, const MultiSpec& spec) {
       j["gate_cost"] = s.gate_cost;
       j["inverter_cost"] = s.inverter_cost;
       j["proof"] = s.proof;
+      j["proof_method"] = s.proof_method;
+      j["proof_scope"] = "single-stage static CMOS model";
       j["verified"] = s.verified;
       std::cout << j.dump() << "\n";
       return 0;
@@ -1619,6 +1621,8 @@ int cmd_multi_path(const Args& a, const MultiSpec& spec) {
   j["edge_cost"] = r.edge_cost;
   j["inverter_cost"] = r.inverter_cost;
   j["proof"] = r.proof;
+  j["proof_method"] = r.proof_method;
+  j["proof_scope"] = r.proof_scope;
   j["verified"] = r.verified;
   Json outs = Json::Array{};
   for (const auto& o : r.outputs) outs.push_back(o);
@@ -1688,6 +1692,8 @@ int cmd_multi_exact(const Args& a, const MultiSpec& spec) {
   j["nfet"] = r.nfet;
   j["pfet"] = r.pfet;
   j["proof"] = r.proof;
+  j["proof_method"] = r.proof_method;
+  j["proof_scope"] = "single-stage static CMOS model";
   j["verified"] = r.verified;
   Json outs = Json::Array{};
   Json truths;
@@ -1739,8 +1745,12 @@ int cmd_multi_exact(const Args& a, const MultiSpec& spec) {
       }
     if (!any) std::cout << " none";
     std::cout << "\n";
-    std::cout << "  proof: exhaustive over all 2^" << spec.vars.size()
-              << " inverter sets + exact minimum DNF per output\n";
+    if (r.proof_method == "analytic_shortcut")
+      std::cout << "  proof: analytic -- every output is a single cube, so the\n"
+                   "         minimum PDN literals and inverter set are fixed\n";
+    else
+      std::cout << "  proof: exhaustive over all 2^" << spec.vars.size()
+                << " inverter sets + exact minimum DNF per output\n";
     std::cout << "  switch-level: PASS\n";
   }
   return 0;

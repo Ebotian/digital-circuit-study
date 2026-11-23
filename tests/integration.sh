@@ -11,6 +11,12 @@ trap 'rm -rf "$TMP"' EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "ok   $*"; }
+# Missing dependency: skip locally, but never let CI go green without running
+# the check (a silent skip once hid a broken multi-output verification).
+skip_or_fail() {
+  if [ -n "${CI:-}" ]; then fail "${1:-missing dependency}"; fi
+  echo "skip $*"
+}
 
 [ -x "$BIN" ] || fail "missing $BIN (run make)"
 command -v jq >/dev/null || fail "jq is required for integration tests"
@@ -52,7 +58,7 @@ if [ -f "$CDL" ]; then
   [ "$("$BIN" cdl solve --cdl "$CDL" --cell XOR2_X1 --graphblas --json | jq -r .truth.Z)" = "0110" ] || fail "CDL XOR2 GraphBLAS"
   pass "CDL switch level"
 else
-  echo "skip CDL checks (no $CDL)"
+  skip_or_fail "CDL checks (no $CDL)"
 fi
 
 # Minimum pass network + Yosys SAT proof.
@@ -124,6 +130,8 @@ if [ -f "$CDL" ] && command -v yosys >/dev/null 2>&1 && command -v node >/dev/nu
   "$BIN" multi exact --spec "$ROOT/specs/decoder38.json" --json > "$TMP/decoder38.exact"     || fail "multi-output exact"
   [ "$(jq -r .optimal "$TMP/decoder38.exact")" = "54" ] || fail "decoder exact 54T"
   [ "$(jq -r .proof "$TMP/decoder38.exact")" = "true" ] || fail "decoder optimality proof"
+  # Every output is one cube, so the exact model takes the analytic shortcut.
+  [ "$(jq -r .proof_method "$TMP/decoder38.exact")" = "analytic_shortcut" ] || fail "decoder proof method"
   [ "$(jq -r .verified "$TMP/decoder38.exact")" = "true" ] || fail "decoder exact verification"
   [ "$(jq -r .nfet "$TMP/decoder38.exact")" = "27" ] || fail "decoder exact NMOS"
   [ "$(jq -r '.inverted | length' "$TMP/decoder38.exact")" = "3" ] || fail "decoder exact inverters"
@@ -150,8 +158,12 @@ JSON
   [ "$(jq -r .verified "$TMP/demux4.static")" = "true" ] || fail "1-to-4 dual-rail verification"
   [ "$(jq -r '.graph.sources | length' "$TMP/demux4.static")" = "2" ] || fail "1-to-4 dual rails"
   [ "$(jq -r .mode "$TMP/demux4.static")" = "dual-rail" ] || fail "1-to-4 dual-rail mode"
+  [ "$(jq -r '[.graph.nets[] | select(startswith("wire:"))] | length' "$TMP/demux4.static")" = "0" ] || fail "demux still has wire connectors"
   "$BIN" multi path --spec "$ROOT/specs/decoder38.json" --max-cost 54 --json     > "$TMP/decoder38.static" || fail "3-8 dual-rail path"
   [ "$(jq -r .total "$TMP/decoder38.static")" = "44" ] || fail "3-8 dual-rail 44T"
+  [ "$(jq -r .proof_scope "$TMP/decoder38.static")" = "retained candidate path set" ] || fail "path proof scope"
+  # The old emitter tied outputs together with zero-cost "wire" TGH edges.
+  [ "$(jq -r '[.graph.nets[] | select(startswith("wire:"))] | length' "$TMP/decoder38.static")" = "0" ] || fail "decoder still has wire connectors"
   [ "$(jq -r .verified "$TMP/decoder38.static")" = "true" ] || fail "3-8 dual-rail verification"
   [ -f "$TMP/decoder38/index.html" ] || fail "decoder render index"
   [ -f "$TMP/decoder38/scheme-0.svg" ] || fail "decoder schematic"
@@ -173,6 +185,7 @@ JSON
     > "$TMP/hex7seg.exact" || fail "hex7seg exact"
   [ "$(jq -r .optimal "$TMP/hex7seg.exact")" = "180" ] || fail "hex7seg exact 180T"
   [ "$(jq -r .proof "$TMP/hex7seg.exact")" = "true" ] || fail "hex7seg optimality proof"
+  [ "$(jq -r .proof_method "$TMP/hex7seg.exact")" = "exhaustive" ] || fail "hex7seg proof method"
   [ "$(jq -r .verified "$TMP/hex7seg.exact")" = "true" ] || fail "hex7seg exact verify"
   # All seven segments on both mappings: this is the intended glyph table
   # (0-9, A, b, C, d, E, F), checked by hand against a standard display, so a
@@ -215,7 +228,7 @@ JSON
 [ "$(jq -r '.outputs | length' "$TMP/mpath.json")" = "2" ] || fail "multi-output path output count"
 [ "$(jq -r .proof "$TMP/mpath.json")" = "true" ] || fail "multi-output path proof"
 else
-  echo "skip multi-output checks (no CDL/yosys/node)"
+  skip_or_fail "multi-output checks (no CDL/yosys/node)"
 fi
 
 # Automated schematic rendering (TS/Node worker by default).
@@ -252,7 +265,7 @@ PY
   fi
   pass "render"
 else
-  echo "skip render (no node)"
+  skip_or_fail "render (no node)"
 fi
 
 # A wrong DUT must be rejected (negative control).

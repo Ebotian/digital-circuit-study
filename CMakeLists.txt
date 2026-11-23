@@ -77,10 +77,16 @@ endif()
 
 enable_testing()
 find_package(Catch2 3 QUIET)
-if(Catch2_FOUND AND DCSTUDY_BUILD_Z3_HELPER)
+if(Catch2_FOUND)
   add_executable(dcstudy_tests tests/unit_tests.cpp)
   target_link_libraries(dcstudy_tests PRIVATE dcstudy_core Catch2::Catch2WithMain)
   add_test(NAME unit COMMAND dcstudy_tests)
-  set_tests_properties(unit PROPERTIES
-    ENVIRONMENT "DCSTUDY_Z3_HELPER=$<TARGET_FILE:dcstudy_z3>")
+  if(DCSTUDY_BUILD_Z3_HELPER)
+    set_tests_properties(unit PROPERTIES
+      ENVIRONMENT "DCSTUDY_Z3_HELPER=$<TARGET_FILE:dcstudy_z3>")
+  endif()
+else()
+  # Missing dependency must not look like "all tests passed".
+  add_test(NAME unit_missing_catch2
+    COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/require_catch2.cmake)
 endif()

@@ -555,6 +555,8 @@ MultiPathSynthesisResult synthesize_dual_rail_multi(
   }
   out.verified = true;
   out.proof = true;
+  out.proof_scope = "retained candidate path set";
+  out.proof_method = "branch-and-bound over deduped covers";
   out.ok = true;
   return out;
 }
@@ -782,6 +784,8 @@ MultiPathSynthesisResult synthesize_path_variables_multi(
   }
   out.ok = true;
   out.proof = true;
+  out.proof_scope = "retained candidate path set";
+  out.proof_method = "branch-and-bound over deduped covers";
   if (!out.verified) {
     std::string detail;
     for (std::size_t oi = 0; oi < profiles.size(); ++oi) {
