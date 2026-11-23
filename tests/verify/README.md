@@ -24,11 +24,10 @@ tests/verify/
     prio16.sh           # 16-4 优先编码器：4x pe42 + 胶合 = 172T，结构 miter
     *.json              # 各实例的 spec：decoder38/encoder42/hex7seg/pe42/nor2/xor2/xnor2
     rtl/                # 该实例的 RTL 夹具（pe42/top16/gold16）
+    simulation/verilator-xor6/  # 同一实例层级、不同验证层：开关级 XOR6 动态仿真
   formal/
     core.sh             # 单元/性质测试（ctest）
     optional.sh         # 完整 CLI/开关级/Z3/Yosys 套件（integration.sh）
-  simulation/
-    verilator-xor6/     # 开关级 6T XOR：4/4 正例 + 注入故障负例（动态仿真）
 ```
 
 ## 实例验证矩阵
@@ -40,6 +39,7 @@ tests/verify/
 | 4-7 段译码器（hex7seg） | spec | synth（默认 / --max-fanin 2）+ exact | 31 cells/162T；44 cells/192T；180T |
 | 4-2 优先编码器 | spec | 逐输出开关级 miter | 16T，verified |
 | 16-4 优先编码器 | RTL + 原子 + --ref | 结构 miter（无真值表） | 172T = 4x16T + 108T，PASS |
+| 开关级 XOR6（仿真） | Verilator testbench | 4/4 正例 + 注入故障必须被检出 | 动态仿真，非穷举 |
 | NOR2（可直接综合） | spec | `bool info` realizable=true，exact/synth/path | 4T，verified |
 | XOR2（不可直接综合） | spec | realizable=false，但仍可自动设计（输入反相器） | exact 12T / synth 14T / path 12T |
 | XNOR2（不可直接综合） | spec | 同 XOR2 | exact 12T / synth 14T / path 12T |
@@ -50,15 +50,13 @@ tests/verify/
 |---|---|---|---|
 | core | 布尔/精确覆盖/开关级/CDL/浮空/别名/dc 规则 | 仅构建产物 | 每次提交（CI） |
 | optional | CLI 端到端、Yosys SAT、Z3 工作进程、PDK 单元 | yosys/z3/PDK | 本地完整回归、CI |
-| simulation | Verilator 开关级 XOR6（4/4 正例 + 注入故障负例） | verilator | 本地/CI |
 
 ## 运行
 
 ```bash
-tests/verify/run.sh instances   # 实例验证
+tests/verify/run.sh instances   # 实例验证（含 Verilator 仿真）
 tests/verify/run.sh formal      # 形式化核心
 tests/verify/run.sh optional    # 形式化可选（完整 CLI）
-tests/verify/run.sh simulation  # 动态仿真（Verilator）
 tests/verify/run.sh all
 make verify                     # 只跑实例验证
 ```
