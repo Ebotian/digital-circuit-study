@@ -18,6 +18,8 @@ tests/verify/
     decoder38.sh        # 3-8 译码器：54T
     encoder42.sh        # 4-2 编码器（any）：exact 8T / synth 8T / path 7T
     prio42.sh           # 4-2 优先编码器：16T
+    nor2.sh             # NOR2：可直接综合（单级互补门）4T
+    xor2.sh / xnor2.sh  # XOR/XNOR：不可直接综合，自动设计仍给出 12T/14T/12T
     prio16.sh           # 16-4 优先编码器：4x pe42 + 胶合 = 172T，结构 miter
     rtl/                # 该实例的 RTL 夹具（pe42/top16/gold16）
   formal/
@@ -33,6 +35,9 @@ tests/verify/
 | 4-2 编码器（any） | spec + any 掩码 | exact 的 dc 空间搜索 + 开关级 | 8T / 8T / 7T |
 | 4-2 优先编码器 | spec | 逐输出开关级 miter | 16T，verified |
 | 16-4 优先编码器 | RTL + 原子 + --ref | 结构 miter（无真值表） | 172T = 4x16T + 108T，PASS |
+| NOR2（可直接综合） | spec | `bool info` realizable=true，exact/synth/path | 4T，verified |
+| XOR2（不可直接综合） | spec | realizable=false，但仍可自动设计（输入反相器） | exact 12T / synth 14T / path 12T |
+| XNOR2（不可直接综合） | spec | 同 XOR2 | exact 12T / synth 14T / path 12T |
 
 ## 形式化验证矩阵
 

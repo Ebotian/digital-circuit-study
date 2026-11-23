@@ -1,0 +1,1 @@
+{"name":"xor2","inputs":["A","B"],"outputs":[{"name":"Y","expr":"A^B"}]}
