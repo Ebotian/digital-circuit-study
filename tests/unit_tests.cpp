@@ -255,6 +255,37 @@ TEST_CASE("emitted dut is Verilog") {
   REQUIRE(emit_ref(s.func, s.vars).find("module ref") != std::string::npos);
 }
 
+TEST_CASE("CDL aliases keep both output ports") {
+  // Two outputs on one net: the exported subckt lists both ports and declares
+  // the alias; the analysis must report both, not leave Y1 dangling.
+  Subckt c;
+  c.name = "ALIAS";
+  c.ports = {"A", "B", "Y0", "Y1", "VDD", "VSS"};
+  c.pin_dir = {{"A", PinDir::Input},   {"B", PinDir::Input},
+               {"Y0", PinDir::Output}, {"Y1", PinDir::Output},
+               {"VDD", PinDir::Power}, {"VSS", PinDir::Ground}};
+  c.aliases = {{"Y1", "Y0"}};
+  auto n = [](const std::string& name, const std::string& d,
+              const std::string& g, const std::string& s) {
+    return Device{name, d, g, s, "NMOS", false};
+  };
+  auto p = [](const std::string& name, const std::string& d,
+              const std::string& g, const std::string& s) {
+    return Device{name, d, g, s, "PMOS", true};
+  };
+  c.devices = {n("N1", "Y0", "A", "net"), n("N2", "net", "B", "VSS"),
+               p("P1", "Y0", "A", "VDD"), p("P2", "Y0", "B", "VDD")};
+  const auto r = analyze_switch(c, {"A", "B"}, {"Y0", "Y1"}, true);
+  REQUIRE(r.rows.size() == 4);
+  std::string t0, t1;
+  for (const auto& row : r.rows) {
+    t0.push_back(logic_symbol(row.values[0]));
+    t1.push_back(logic_symbol(row.values[1]));
+  }
+  REQUIRE(t0 == "1110");
+  REQUIRE(t1 == "1110");
+}
+
 TEST_CASE("hex truth tables fill the table bit by bit") {
   const std::vector<std::string> vars{"A", "B", "C", "D", "E", "F", "G"};
   const FuncSpec wide = spec_from_truth("0x1", vars);
@@ -269,6 +300,11 @@ TEST_CASE("hex truth tables fill the table bit by bit") {
                     std::invalid_argument);
   const FuncSpec full = spec_from_truth("0xf", {"A", "B"});
   for (std::uint32_t m = 0; m < 4; ++m) REQUIRE(full.func.value(m));
+  // 64 variables used to turn 1 << n into an undefined shift.
+  std::vector<std::string> too_many(64);
+  for (std::size_t i = 0; i < too_many.size(); ++i)
+    too_many[i] = "V" + std::to_string(i);
+  REQUIRE_THROWS_AS(spec_from_truth("0x1", too_many), std::invalid_argument);
 }
 
 TEST_CASE("switch-level exact marks an undriven gate as floating") {

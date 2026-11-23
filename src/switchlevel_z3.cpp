@@ -1,5 +1,6 @@
 #include "dcstudy/z3_solvers.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -128,6 +129,29 @@ SwitchSolution z3_solve_switch(const SwitchProblem& p) {
     solver.add(!(r0[v] && r1[v]));
   }
 
+  // Nets that only ever drive a gate (never a channel terminal) and are not
+  // inputs or supplies: their stored charge is a free variable.  A setting of
+  // those gates that makes the network inconsistent -- both rails on one net --
+  // is a real short.  It is *pruned* by the constraint above, so it has to be
+  // detected explicitly; otherwise a floating gate that can turn on both the
+  // pull-up and the pull-down would look like a clean driver.
+  std::vector<std::size_t> floating_gates;
+  {
+    std::vector<char> drives_gate(N, 0), on_channel(N, 0);
+    for (const auto& d : p.devices) {
+      drives_gate[ni.get(d.gate)] = 1;
+      on_channel[ni.get(d.drain)] = 1;
+      on_channel[ni.get(d.source)] = 1;
+    }
+    for (std::size_t v = 0; v < N; ++v) {
+      if (!drives_gate[v] || on_channel[v]) continue;
+      if (v == vdd || v == vss) continue;
+      if (std::find(input_idx.begin(), input_idx.end(), v) != input_idx.end())
+        continue;
+      floating_gates.push_back(v);
+    }
+  }
+
   SwitchSolution out;
   out.rows.reserve(p.rows.size());
   for (std::uint32_t minterm : p.rows) {
@@ -138,6 +162,21 @@ SwitchSolution z3_solve_switch(const SwitchProblem& p) {
     }
     SwitchSolutionRow row;
     row.values.assign(out_idx.size(), Logic::Float);
+    // Enumerate the stored charge on floating gates (bounded) and look for a
+    // setting that shorts the network.
+    bool gate_short = false;
+    if (floating_gates.size() <= 4) {
+      const std::size_t combos = std::size_t{1} << floating_gates.size();
+      for (std::size_t mask = 0; mask < combos && !gate_short; ++mask) {
+        solver.push();
+        for (std::size_t i = 0; i < floating_gates.size(); ++i)
+          solver.add(((mask >> i) & 1) ? val[floating_gates[i]]
+                                       : !val[floating_gates[i]]);
+        if (checked(solver) != z3::sat) gate_short = true;
+        solver.pop();
+      }
+    }
+    if (gate_short) row.conflict = true;
     if (checked(solver) != z3::sat) {
       row.values.assign(out_idx.size(), Logic::Race);
       row.conflict = true;
@@ -147,6 +186,10 @@ SwitchSolution z3_solve_switch(const SwitchProblem& p) {
       continue;
     }
     for (std::size_t oi = 0; oi < out_idx.size(); ++oi) {
+      if (gate_short) {
+        row.values[oi] = Logic::Race;
+        continue;
+      }
       solver.push();
       solver.add(!val[out_idx[oi]]);
       solver.add(r0[out_idx[oi]]);

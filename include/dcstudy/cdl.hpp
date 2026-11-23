@@ -23,6 +23,9 @@ struct Subckt {
   std::string name;
   std::vector<std::string> ports;
   std::map<std::string, PinDir> pin_dir;
+  // Port aliases (`*.ALIAS alias canon`): a net that is exposed under two
+  // names, e.g. two outputs defined by the same expression.
+  std::map<std::string, std::string> aliases;
   std::vector<Device> devices;
   std::string eqn;
 

@@ -36,6 +36,23 @@ command -v jq >/dev/null || fail "jq is required for integration tests"
 rc=0
 "$BIN" bool info --tt 0x10000000000000000 --vars A,B --json >/dev/null 2>&1 || rc=$?
 [ "$rc" = "2" ] || fail "over-wide hex accepted"
+# 64 variables must hit the arity check before 1 << n is evaluated.
+vars=$(seq -s, -f 'V%g' 0 63)
+rc=0
+"$BIN" bool info --tt 0x1 --vars "$vars" --json >/dev/null 2>&1 || rc=$?
+[ "$rc" = "2" ] || fail "64-variable truth table accepted"
+
+# A floating gate that can turn on both the pull-up and the pull-down must be
+# reported as contention, not as the one value the surviving states imply.
+cat > "$TMP/race.cdl" <<'CDL'
+.SUBCKT RACE Y A VDD VSS
+*.PININFO Y:O A:I VDD:P VSS:G
+M1 Y A VDD VDD PMOS
+M2 Y F VSS VSS NMOS
+M3 x A VSS VSS NMOS
+.ENDS
+CDL
+[ "$("$BIN" cdl solve --cdl "$TMP/race.cdl" --cell RACE --inputs A --exact --json | jq -r .truth.Y)" = "XZ" ] || fail "floating gate race"
 pass "boolean functions + math worker"
 
 # A memory cap must turn a runaway search into a clean error.  n=6 Dedekind
@@ -123,6 +140,14 @@ pass "symmetry quotient"
 # Fan-in counts distinct input signals, not the longest product term:
 # ~(A|B|C) is a 3-input NOR and must not pass --max-fanin 2 single-stage.
 [ "$("$BIN" design min --expr '~(A|B|C)' --vars A,B,C --static-cmos --max-fanin 2 --json | jq -r '.designs[0].cost')" = "10" ] || fail "NOR3 fan-in 2"
+# --verify static without --static-cmos has no gate to prove; it must not
+# return an unverified design with ok:true.
+rc=0
+"$BIN" design min --expr 'A^B' --verify static --json >/dev/null 2>&1 || rc=$?
+[ "$rc" = "2" ] || fail "--verify static without --static-cmos"
+rc=0
+"$BIN" pipeline --funcs 'nand2=~(A&B)' --verify static >/dev/null 2>&1 || rc=$?
+[ "$rc" = "2" ] || fail "pipeline --verify static"
 pass "static CMOS constraint"
 
 # General multi-output synthesis: the 3-to-8 decoder is only a spec file.
@@ -179,10 +204,15 @@ JSON
 {"name":"alias","inputs":["A","B"],"outputs":[
  {"name":"Y0","expr":"~(A&B)"},{"name":"Y1","expr":"~(A&B)"}]}
 JSON
-  "$BIN" multi synth --spec "$TMP/alias.json" --json > "$TMP/alias.out" || fail "aliased outputs"
+  "$BIN" multi synth --spec "$TMP/alias.json" --out "$TMP/alias-out" --json > "$TMP/alias.out" || fail "aliased outputs"
   [ "$(jq -r .verified "$TMP/alias.out")" = "true" ] || fail "aliased verify"
   [ "$(jq -r '.truths.Y0' "$TMP/alias.out")" = "1110" ] || fail "aliased Y0"
   [ "$(jq -r '.truths.Y1' "$TMP/alias.out")" = "1110" ] || fail "aliased Y1"
+  # The exported CDL must keep both ports and read back with both aliases.
+  "$BIN" cdl list --cdl "$TMP/alias-out/flattened.cdl" --json > "$TMP/alias.lst" || fail "alias cdl list"
+  [ "$(jq -r '.cells[0].outputs | length' "$TMP/alias.lst")" = "2" ] || fail "alias ports"
+  "$BIN" cdl solve --cdl "$TMP/alias-out/flattened.cdl" --cell MULTI_STAGE_STATIC_CMOS --inputs A,B --json > "$TMP/alias.solve" || fail "alias cdl solve"
+  [ "$(jq -r '.truth.Y1' "$TMP/alias.solve")" = "1110" ] || fail "alias readback"
   [ "$(jq -r '[.graph.nets[] | select(startswith("wire:"))] | length' "$TMP/demux4.static")" = "0" ] || fail "demux still has wire connectors"
   "$BIN" multi path --spec "$ROOT/specs/decoder38.json" --max-cost 54 --json     > "$TMP/decoder38.static" || fail "3-8 dual-rail path"
   [ "$(jq -r .total "$TMP/decoder38.static")" = "44" ] || fail "3-8 dual-rail 44T"

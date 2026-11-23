@@ -130,6 +130,12 @@ CdlLibrary CdlLibrary::load(const std::string& path) {
       if (cur) cur->eqn = trimmed.substr(5);
       return;
     }
+    if (trimmed.rfind("*.ALIAS", 0) == 0) {
+      if (!cur) return;
+      auto toks = split_ws(trimmed.substr(7));
+      if (toks.size() >= 2) cur->aliases[toks[0]] = toks[1];
+      return;
+    }
     if (trimmed[0] == '*') return;  // ordinary comment
 
     auto toks = split_ws(trimmed);

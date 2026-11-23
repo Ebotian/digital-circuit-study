@@ -118,6 +118,8 @@ std::string cdl_from_subckt(const Subckt& c) {
     out += " " + p + ":" + d;
   }
   out += "\n";
+  for (const auto& [alias, canon] : c.aliases)
+    out += "*.ALIAS " + alias + " " + canon + "\n";
   for (const auto& dev : c.devices) {
     const std::string bulk = dev.pmos ? "VDD" : "VSS";
     out += dev.name + " " + dev.drain + " " + dev.gate + " " + dev.source +
@@ -297,9 +299,11 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
       flat.pin_dir[v] = PinDir::Input;
     }
     for (std::size_t k = 0; k < out_names.size(); ++k) {
-      if (alias_of[k] >= 0) continue;  // same net as its canonical output
       flat.ports.push_back(out_names[k]);
       flat.pin_dir[out_names[k]] = PinDir::Output;
+      if (alias_of[k] >= 0)
+        flat.aliases[out_names[k]] =
+            out_names[static_cast<std::size_t>(alias_of[k])];
     }
     flat.ports.push_back("VDD");
     flat.pin_dir["VDD"] = PinDir::Power;
@@ -338,12 +342,7 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
       if (d.pmos) ++out.pfet;
       else ++out.nfet;
     }
-    std::string alias_notes;
-    for (std::size_t k = 0; k < out_names.size(); ++k)
-      if (alias_of[k] >= 0)
-        alias_notes += "*.ALIAS " + out_names[k] + " " +
-                       out_names[static_cast<std::size_t>(alias_of[k])] + "\n";
-    out.cdl = alias_notes + cdl_from_subckt(flat);
+    out.cdl = cdl_from_subckt(flat);
     out.verilog = read_file(net_v);
     out.json = read_file(net_json);
 

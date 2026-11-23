@@ -323,6 +323,10 @@ FuncSpec spec_from_truth(const std::string& text,
                          [](unsigned char c) { return std::isspace(c); }),
           s.end());
   if (s.empty()) throw std::invalid_argument("empty truth table");
+  // Check the width before computing 1 << n: a caller could pass a huge --vars
+  // list, and the shift (and the Bits allocation) would be undefined.
+  if (vars.size() > kMaxArity)
+    throw std::invalid_argument("too many variables (max 12)");
   std::size_t n;
   Bits bits;
   if (s.size() > 2 && (s[0] == '0') && (s[1] == 'x' || s[1] == 'X')) {

@@ -1333,6 +1333,11 @@ int cmd_design(const std::string& sub, int argc, char** argv) {
   const std::size_t limit = static_cast<std::size_t>(limit_raw);
   const VerifyMode vmode =
       parse_verify(a, static_mode ? VerifyMode::Static : VerifyMode::Yosys);
+  // --verify static is a switch-level proof of the single-stage static gate;
+  // without --static-cmos there is no such gate, and silently returning an
+  // unverified design would be a false green.
+  if (!static_mode && vmode == VerifyMode::Static)
+    throw CliError("--verify static requires --static-cmos");
   if (static_mode) return cmd_design_static(a, spec, opt, vmode, json);
 
   const auto result = synthesize_min(spec.vars, target_of(spec), opt, limit,
@@ -2065,6 +2070,11 @@ int cmd_pipeline(int argc, char** argv) {
   if (opt.max_cost < 1 || opt.max_cost > 32) throw CliError("--max-cost out of range");
   if (opt.max_chain < 1 || opt.max_chain > 8) throw CliError("--max-chain out of range");
   const VerifyMode vmode = parse_verify(a, VerifyMode::Both);
+  // "static" is the switch-level proof of a single-stage static gate and only
+  // applies to `design min --static-cmos`; elsewhere it would verify nothing.
+  if (vmode == VerifyMode::Static)
+    throw CliError(
+        "--verify static is only available for design min --static-cmos");
   const auto funcs = split_csv(a.need("funcs"));
   if (funcs.empty()) throw CliError("empty --funcs");
 

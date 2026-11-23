@@ -235,15 +235,25 @@ SwitchAnalysis analyze_switch(const Subckt& cell,
   const std::size_t vdd_i = ni.get(vdd);
   const std::size_t vss_i = ni.get(vss);
 
+  // A port may be declared as an alias of another net (two outputs defined
+  // by the same expression).  Resolve it to the canonical net; the reported
+  // inputs/outputs keep the requested names.
+  const auto net_of = [&](const std::string& p) -> const std::string& {
+    auto it = cell.aliases.find(p);
+    return it == cell.aliases.end() ? p : it->second;
+  };
+
   std::vector<std::size_t> input_idx;
   for (const auto& p : inputs) {
-    if (!ni.has(p)) throw std::invalid_argument("unknown input port: " + p);
-    input_idx.push_back(ni.get(p));
+    if (!ni.has(net_of(p)))
+      throw std::invalid_argument("unknown input port: " + p);
+    input_idx.push_back(ni.get(net_of(p)));
   }
   std::vector<std::size_t> out_idx;
   for (const auto& p : outputs) {
-    if (!ni.has(p)) throw std::invalid_argument("unknown output port: " + p);
-    out_idx.push_back(ni.get(p));
+    if (!ni.has(net_of(p)))
+      throw std::invalid_argument("unknown output port: " + p);
+    out_idx.push_back(ni.get(net_of(p)));
   }
 
   const std::uint32_t rows = std::uint32_t{1} << inputs.size();
@@ -269,7 +279,8 @@ SwitchAnalysis analyze_switch(const Subckt& cell,
     base.vdd = vdd;
     base.vss = vss;
     base.inputs = inputs;
-    base.outputs = outputs;
+    base.outputs.clear();
+    for (const auto& p : outputs) base.outputs.push_back(net_of(p));
     base.rows = minterms;
 
     // Split the independent (row, output) checks across Z3 workers.  A single
@@ -320,7 +331,7 @@ SwitchAnalysis analyze_switch(const Subckt& cell,
       p.outputs.clear();
       p.rows.clear();
       for (std::size_t j = out_parts[oi].first; j < out_parts[oi].second; ++j)
-        p.outputs.push_back(outputs[j]);
+        p.outputs.push_back(base.outputs[j]);
       for (std::size_t j = row_parts[ri].first; j < row_parts[ri].second; ++j)
         p.rows.push_back(minterms[j]);
       sols[ti] = decode_switch_solution(z3_call(encode_switch_problem(p)));
