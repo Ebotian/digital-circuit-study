@@ -80,8 +80,8 @@ bool static_cell(const std::string& type) {
   static const char* prefixes[] = {
       "INV_", "BUF_", "NAND2_", "NAND3_", "NAND4_", "NOR2_", "NOR3_",
       "NOR4_", "AND2_", "AND3_", "AND4_", "OR2_", "OR3_", "OR4_",
-      "AOI21_", "AOI22_", "AOI211_", "AOI222_", "OAI21_", "OAI22_",
-      "OAI211_", "OAI222_"};
+      "AOI21_", "AOI22_", "AOI211_", "AOI221_", "AOI222_", "OAI21_",
+      "OAI22_", "OAI211_", "OAI221_", "OAI222_", "OAI33_"};
   for (const char* p : prefixes)
     if (type.rfind(p, 0) == 0) return true;
   return false;
@@ -183,22 +183,26 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
     os << "endmodule\n";
   }
 
+  // The CDL is the single source of truth for cell fan-in: pin directions
+  // come from *.PININFO.  A hand-written dont_use table drifted from the
+  // library and let AOI211/OAI211 (4 inputs, 8T) through --max-fanin 2.
+  const CdlLibrary library = CdlLibrary::load(cdl);
+
   std::string dont_use =
       "-dont_use XOR2_X1 -dont_use XOR2_X2 -dont_use XOR2_X4 "
       "-dont_use XNOR2_X1 -dont_use XNOR2_X2 -dont_use XNOR2_X4 "
       "-dont_use MUX2_X1 -dont_use MUX2_X2 -dont_use MUX2_X4 "
       "-dont_use TBUF_X1 -dont_use TBUF_X2 -dont_use TBUF_X4 "
       "-dont_use HA_X1 -dont_use FA_X1";
-  if (max_fanin > 0 && max_fanin <= 2) {
-    for (const char* c : {
-             "NAND3_X1", "NAND3_X2", "NAND3_X4", "NAND4_X1", "NAND4_X2",
-             "NAND4_X4", "NOR3_X1", "NOR3_X2", "NOR3_X4", "NOR4_X1",
-             "NOR4_X2", "NOR4_X4", "AND3_X1", "AND3_X2", "AND3_X4",
-             "AND4_X1", "AND4_X2", "AND4_X4", "OR3_X1", "OR3_X2", "OR3_X4",
-             "OR4_X1", "OR4_X2", "OR4_X4", "AOI21_X1", "AOI21_X2",
-             "AOI21_X4", "AOI22_X1", "AOI22_X2", "AOI22_X4", "OAI21_X1",
-             "OAI21_X2", "OAI21_X4", "OAI22_X1", "OAI22_X2", "OAI22_X4"})
-      dont_use += std::string(" -dont_use ") + c;
+  if (max_fanin > 0) {
+    // Every library cell over the limit is blocked, not only the static-cell
+    // families: ABC will otherwise pick e.g. OAI221_X1 and the fan-in
+    // contract is broken no matter what the post-check below says.
+    for (const auto& cell : library.cells()) {
+      const int inputs = static_cast<int>(cell.inputs().size());
+      if (inputs > max_fanin)
+        dont_use += " -dont_use " + cell.name;
+    }
   }
   const std::string script =
       "read_verilog -sv rtl.v; synth -top top; abc -liberty " + lib + " " +
@@ -257,7 +261,6 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
       return out;
     }
 
-    const CdlLibrary library = CdlLibrary::load(cdl);
     Subckt flat;
     flat.name = "MULTI_STAGE_STATIC_CMOS";
     for (const auto& v : vars) {
@@ -277,6 +280,13 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
     for (std::size_t ci = 0; ci < out.cells.size(); ++ci) {
       const auto& gi = out.cells[ci];
       const Subckt& cell = library.cell(gi.type);
+      const int cell_inputs = static_cast<int>(cell.inputs().size());
+      if (max_fanin > 0 && cell_inputs > max_fanin) {
+        out.reason = "mapped cell " + gi.type + " has " +
+                     std::to_string(cell_inputs) + " inputs, over " +
+                     "--max-fanin " + std::to_string(max_fanin);
+        return out;
+      }
       out.total += static_cast<int>(cell.transistor_count());
       auto mapnet = [&](const std::string& n) -> std::string {
         if (n == "VDD" || n == "VSS") return n;

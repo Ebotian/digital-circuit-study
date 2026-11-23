@@ -157,6 +157,26 @@ JSON
   [ -f "$TMP/decoder38/scheme-0.svg" ] || fail "decoder schematic"
   pass "multi-output circuit (decoder as spec)"
 
+  # Shipped spec: 16-hex seven-segment display (A is MSB).  The fan-in
+  # contract is enforced by the tool itself -- a mapped cell with more inputs
+  # than --max-fanin is a hard error -- so a passing run pins it.
+  "$BIN" multi synth --spec "$ROOT/specs/hex7seg.json" --max-fanin 2 --json \
+    > "$TMP/hex7seg.fanin2" || fail "hex7seg --max-fanin 2"
+  [ "$(jq -r .verified "$TMP/hex7seg.fanin2")" = "true" ] || fail "hex7seg 2-input verify"
+  [ "$(jq -r .cells "$TMP/hex7seg.fanin2")" = "44" ] || fail "hex7seg 2-input cell count"
+  [ "$(jq -r .total "$TMP/hex7seg.fanin2")" = "192" ] || fail "hex7seg 2-input 192T"
+  [ "$(jq -r '.truths.seg_a' "$TMP/hex7seg.fanin2")" = "1011011111101011" ] || fail "hex7seg seg_a truth"
+  "$BIN" multi synth --spec "$ROOT/specs/hex7seg.json" --json \
+    > "$TMP/hex7seg.default" || fail "hex7seg default fan-in"
+  [ "$(jq -r .verified "$TMP/hex7seg.default")" = "true" ] || fail "hex7seg default verify"
+  [ "$(jq -r .total "$TMP/hex7seg.default")" = "162" ] || fail "hex7seg default 162T"
+  "$BIN" multi exact --spec "$ROOT/specs/hex7seg.json" --json \
+    > "$TMP/hex7seg.exact" || fail "hex7seg exact"
+  [ "$(jq -r .optimal "$TMP/hex7seg.exact")" = "180" ] || fail "hex7seg exact 180T"
+  [ "$(jq -r .proof "$TMP/hex7seg.exact")" = "true" ] || fail "hex7seg optimality proof"
+  [ "$(jq -r .verified "$TMP/hex7seg.exact")" = "true" ] || fail "hex7seg exact verify"
+  pass "hex7seg spec (2-input / default / exact)"
+
 # Multi-output path variables with shared edges.
 cat > "$TMP/halfadder.json" <<'JSON'
 {

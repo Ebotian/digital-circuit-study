@@ -224,7 +224,7 @@ optimum: 6T  designs=...
 
 - 单级判据：`¬f` 单调递增；PDN 是 NMOS 串并联，PUN 是它的 De Morgan 对偶
 - 多级：Yosys/ABC 映射到静态单元白名单（NAND/NOR/AND/OR/AOI/OAI/INV/BUF），禁止 XOR/XNOR/MUX/TG 单元；静态模式默认预算 `--max-cost 32`
-- `--max-fanin 2` 可强制只用 2 输入标准单元（例如 NAND3 → AND2+NAND2 = 10T；不加约束则单级 NAND3 = 6T）
+- `--max-fanin N` 可强制只用 ≤N 输入标准单元（例如 NAND3 → AND2+NAND2 = 10T；不加约束则单级 NAND3 = 6T）。禁用清单直接从 CDL 的 `*.PININFO` 生成，映射后还会逐单元复核输入数，超限直接报错而不是悄悄放过
 - 每个器件 gate-only；`--no-tg` 不能替代 `--static-cmos`
 - `--verify static` 对生成的多级网表做 **CDL flatten → Z3 switch-level** 全输入证明
 - `--emit` 单级写 `static-cmos.json/cdl`；多级写 `gate-level.v`、`netlist.json`、`flattened.cdl`
@@ -330,9 +330,13 @@ optimal: 54T
 4 位输入 `A,B,C,D`(A 为 MSB),7 个高有效段输出 `seg_a..seg_g`。显示字形为 `0-9,A,b,C,d,E,F`。
 
 ```bash
-# 静态多级标准单元:36 个 2 输入静态单元,174T,逐输出 switch-level PASS
+# 静态多级标准单元:44 个 2 输入单元,192T,逐输出 switch-level PASS
 ./build/dcstudy multi synth --spec specs/hex7seg.json \
   --out /tmp/hex7seg-static --max-fanin 2 --png --json
+
+# 不限制 fan-in:31 个单元,162T(用到 AOI21/OAI221/NAND4 等复杂门)
+./build/dcstudy multi synth --spec specs/hex7seg.json \
+  --out /tmp/hex7seg-default --json
 
 # 单级复杂 CMOS(定制门模型):共享 4 个输入反相器,180T,模型内 proof
 ./build/dcstudy multi exact --spec specs/hex7seg.json \
@@ -343,10 +347,11 @@ optimal: 54T
 
 | 实现 | 模型 | 晶体管 | 验证 |
 |---|---|---|---|
-| 静态标准单元 | Yosys/ABC + Nangate45 静态单元 | **174T**(87N + 87P) | 逐输出 switch-level PASS |
+| 静态标准单元(`--max-fanin 2`) | Yosys/ABC + Nangate45,全部 ≤2 输入 | **192T**(96N + 96P) | 逐输出 switch-level PASS |
+| 静态标准单元(库默认 fan-in) | 同上,允许 AOI/OAI 复杂门 | **162T**(81N + 81P) | 逐输出 switch-level PASS |
 | 定制单级复杂 CMOS | 每输出一个 PDN/PUN,共享输入反相器 | **180T**(90N + 90P) | 模型内 proof + PASS |
 
-“定制”在这里指**定制复杂门**,不是 pass-transistor 全定制。无三态的 `multi path` 现在会先走 PUN/PDN 双轨路径搜索;对这个七段 spec,双轨搜索目前仍未在 45 秒预算内完成,静态 180T 仍是可用的无三态实现。对 1-to-4 分路器和 3-to-8 译码器,双轨搜索已经给出 14T / 26T 的无三态网络。
+“定制”在这里指**定制复杂门**,不是 pass-transistor 全定制。三种结果放在一起看:标准单元多级映射(162T)比“每个输出压成单个复杂门”的 180T 更省晶体管,说明单级复杂门模型是保守模型,价值在于它是**可证明最优**的;`--max-fanin 2` 的 192T 则是把单元库限制到 2 输入后的代价。无三态的 `multi path` 现在会先走 PUN/PDN 双轨路径搜索;对这个七段 spec,双轨搜索目前仍未在 45 秒预算内完成,上面三个静态结果都是可用的无三态实现。对 1-to-4 分路器和 3-to-8 译码器,双轨搜索已经给出 14T / 26T 的无三态网络。
 
 #### 三态输出：`--tri-state`
 
