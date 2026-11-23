@@ -163,21 +163,26 @@ std::vector<std::vector<ChainElem>> all_chains(const Env& e, int max_chain,
                           }),
               atoms.end());
 
+  // A series stack conducts the same way in any order, so enumerate each
+  // multiset of atoms once (non-decreasing atom index) instead of every
+  // permutation.  For n=4 this cuts 1,082,401 chains to 58,905; the search
+  // still covers every distinct series network, just not its reorderings.
   int cost = 0;
-  auto rec = [&](auto&& self) -> void {
+  auto rec = [&](auto&& self, std::size_t from) -> void {
     out.push_back(cur);
     if (static_cast<int>(cur.size()) >= max_chain) return;
-    for (const auto& [k, lit] : atoms) {
+    for (std::size_t i = from; i < atoms.size(); ++i) {
+      const auto& [k, lit] = atoms[i];
       const int c = switch_cost(k);
       if (cost + c > max_cost) continue;
       cur.push_back(ChainElem{k, lit, c});
       cost += c;
-      self(self);
+      self(self, i);
       cost -= c;
       cur.pop_back();
     }
   };
-  rec(rec);
+  rec(rec, 0);
   return out;
 }
 
@@ -185,6 +190,14 @@ std::vector<std::vector<ChainElem>> all_chains(const Env& e, int max_chain,
 
 int switch_cost(SwKind k) {
   return (k == SwKind::TGL || k == SwKind::TGH) ? 2 : 1;
+}
+
+bool chain_is_prefix(const std::vector<ChainElem>& a,
+                     const std::vector<ChainElem>& b) {
+  if (a.size() > b.size()) return false;
+  for (std::size_t i = 0; i < a.size(); ++i)
+    if (a[i].kind != b[i].kind || a[i].lit != b[i].lit) return false;
+  return true;
 }
 
 const char* switch_name(SwKind k) {
@@ -290,17 +303,37 @@ std::vector<Branch> usable_branches(const std::vector<std::string>& vars,
   if (target.size() != rows)
     throw std::invalid_argument("target width does not match variables");
   const auto all = build_branches(vars, opt);
-  std::map<std::string, Branch> best;
+  // Keep a bounded Pareto set per (behaviour, required inverters) key instead
+  // of only the cheapest branch: a costlier branch can share more prefixes
+  // with the other outputs.  "Slack" bounds how far above the local minimum
+  // a branch may sit; dominance drops branches whose edges are a superset of
+  // a cheaper branch, which cannot help once union cost is counted.
+  constexpr int kBranchSlack = 0;  // equal-cost alternatives only: see proof scope
+  std::map<std::string, std::vector<const Branch*>> groups;
   for (const auto& b : all) {
     if (!b.usable(target)) continue;
-    const std::string key = behavior_key(b.behavior, b.req_mask);
-    auto it = best.find(key);
-    if (it == best.end() || b.cost < it->second.cost)
-      best[key] = b;
+    groups[behavior_key(b.behavior, b.req_mask)].push_back(&b);
   }
   std::vector<Branch> out;
-  out.reserve(best.size());
-  for (auto& [_, b] : best) out.push_back(std::move(b));
+  for (auto& [_, group] : groups) {
+    std::sort(group.begin(), group.end(), [](const Branch* a, const Branch* b) {
+      if (a->cost != b->cost) return a->cost < b->cost;
+      return a->chain.size() < b->chain.size();
+    });
+    const int floor = group.front()->cost;
+    std::vector<const Branch*> keep;
+    for (const Branch* b : group) {
+      if (b->cost > floor + kBranchSlack) continue;
+      bool dominated = false;
+      for (const Branch* a : keep)
+        if (a->cost <= b->cost && chain_is_prefix(a->chain, b->chain)) {
+          dominated = true;
+          break;
+        }
+      if (!dominated) keep.push_back(b);
+    }
+    for (const Branch* b : keep) out.push_back(*b);
+  }
   std::sort(out.begin(), out.end(), [](const Branch& a, const Branch& b) {
     if (a.cost != b.cost) return a.cost < b.cost;
     if (a.source != b.source) return a.source < b.source;

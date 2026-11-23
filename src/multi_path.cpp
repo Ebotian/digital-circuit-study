@@ -327,45 +327,65 @@ MultiPathSynthesisResult synthesize_dual_rail_multi(
     RailSolution r;
     std::map<std::string, int> edge_ids;
     for (std::size_t o = 0; o < funcs.size(); ++o) {
-      // Keep one cheapest representation for each (behavior, required
-      // inverters) pair.  This mirrors usable_branches() but is done against
-      // a fixed inverter set and one rail target.
-      std::map<std::string, const Branch*> uniq;
+      // Bounded Pareto set per (behavior, required inverters) key: a
+      // costlier branch may share more prefixes with the other outputs, so
+      // keeping only the locally cheapest one is not sound.  This mirrors
+      // usable_branches(), against a fixed inverter set and one rail target.
+      constexpr int kBranchSlack = 0;  // equal-cost alternatives only: see proof scope
+      std::map<std::string, std::vector<const Branch*>> groups;
       const auto& target = rail_targets[o];
       for (const auto& b : universe) {
         if (b.source != source) continue;
         if ((b.req_mask & ~inverter_mask) != 0) continue;
         if (!b.usable(target)) continue;
-        const std::string key = branch_key(b);
-        auto it = uniq.find(key);
-        if (it == uniq.end() || b.cost < it->second->cost) uniq[key] = &b;
+        groups[branch_key(b)].push_back(&b);
       }
-      for (const auto& [_, b] : uniq) {
-        AllPath ap{*b, static_cast<int>(o)};
-        r.all.push_back(ap);
-        PathInfo p;
-        p.path = static_cast<int>(r.all.size() - 1);
-        p.output = static_cast<int>(o);
-        for (std::size_t j = 0; j < b->chain.size(); ++j) {
-          const std::string key = edge_key(b->source, b->chain, j);
-          auto it = edge_ids.find(key);
-          int id;
-          if (it == edge_ids.end()) {
-            id = static_cast<int>(r.edges.size());
-            edge_ids.emplace(key, id);
-            r.edges.push_back(EdgeInfo{switch_cost(b->chain[j].kind),
-                                       b->chain[j].kind, b->chain[j].lit});
-            r.keys.push_back(key);
-          } else {
-            id = it->second;
-          }
-          p.edges.push_back(id);
+      for (auto& [_, group] : groups) {
+        std::vector<const Branch*> keep;
+        std::sort(group.begin(), group.end(),
+                  [](const Branch* a, const Branch* b) {
+                    if (a->cost != b->cost) return a->cost < b->cost;
+                    return a->chain.size() < b->chain.size();
+                  });
+        const int floor = group.front()->cost;
+        for (const Branch* b : group) {
+          if (b->cost > floor + kBranchSlack) continue;
+          bool dominated = false;
+          for (const Branch* a : keep)
+            if (a->source == b->source && a->cost <= b->cost &&
+                chain_is_prefix(a->chain, b->chain)) {
+              dominated = true;
+              break;
+            }
+          if (!dominated) keep.push_back(b);
         }
-        r.paths.push_back(std::move(p));
+        for (const Branch* b : keep) {
+          AllPath ap{*b, static_cast<int>(o)};
+          r.all.push_back(ap);
+          PathInfo p;
+          p.path = static_cast<int>(r.all.size() - 1);
+          p.output = static_cast<int>(o);
+          for (std::size_t j = 0; j < b->chain.size(); ++j) {
+            const std::string key = edge_key(b->source, b->chain, j);
+            auto it = edge_ids.find(key);
+            int id;
+            if (it == edge_ids.end()) {
+              id = static_cast<int>(r.edges.size());
+              edge_ids.emplace(key, id);
+              r.edges.push_back(EdgeInfo{switch_cost(b->chain[j].kind),
+                                         b->chain[j].kind, b->chain[j].lit});
+              r.keys.push_back(key);
+            } else {
+              id = it->second;
+            }
+            p.edges.push_back(id);
+          }
+          r.paths.push_back(std::move(p));
+        }
       }
     }
     if (r.paths.empty()) return r;
-    if (r.paths.size() > 2048) return r;
+    if (r.paths.size() > 8192) return r;
 
     Search search(r.all, r.paths, r.edges, rail_targets, opt.max_cost);
     search.seed_greedy();

@@ -55,4 +55,10 @@ std::vector<Branch> usable_branches(const std::vector<std::string>& vars,
 int switch_cost(SwKind k);
 const char* switch_name(SwKind k);
 
+// True when chain a is a prefix of chain b, i.e. every edge of a is also an
+// edge of b.  Used to keep only candidates that are not strict edge-set
+// supersets of a cheaper branch with the same behaviour.
+bool chain_is_prefix(const std::vector<ChainElem>& a,
+                     const std::vector<ChainElem>& b);
+
 }  // namespace dcstudy
