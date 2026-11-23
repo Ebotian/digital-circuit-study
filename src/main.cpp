@@ -382,8 +382,8 @@ Options:
   --max-fanin N  static CMOS cell fan-in limit (e.g. 2); 0 = library default
   --heavy        allow the n=6 Dedekind count (about 40 s and 10 GB)
   --mem-limit    memory cap in MiB for dcstudy and every child it spawns.
-                 Default: MemAvailable - 2048, so ~2 GiB stays free for the
-                 rest of the system. DCSTUDY_MEM_LIMIT_MB sets the same cap;
+                 Default: all of MemAvailable except 2 GiB, which is the only
+                 thing kept free. DCSTUDY_MEM_LIMIT_MB sets the same cap;
                  0 = hard rlimit
 
 Exit codes: 0 success, 1 verification/feasibility failure, 2 usage/runtime error.
@@ -393,6 +393,10 @@ Exit codes: 0 success, 1 verification/feasibility failure, 2 usage/runtime error
 // Freed before reporting an allocation failure, so the error path does not
 // have to allocate while the cap is already reached.
 char* g_oom_reserve = nullptr;
+
+// True when the cap came from --mem-limit / DCSTUDY_MEM_LIMIT_MB rather than
+// from the machine, so errors can name the knob that was actually used.
+bool g_mem_limit_from_flag = false;
 
 // Install the memory cap before any command runs: --mem-limit wins, then
 // DCSTUDY_MEM_LIMIT_MB, then whatever the machine can spare (MemAvailable
@@ -418,6 +422,7 @@ void configure_mem_limit(int argc, char** argv) {
     }
   }
   unsigned long mb = 0;
+  g_mem_limit_from_flag = explicit_limit;
   if (explicit_limit) {
     try {
       mb = parse_mem_limit_mb(text);
@@ -425,15 +430,19 @@ void configure_mem_limit(int argc, char** argv) {
       throw CliError(e.what());
     }
   } else {
-    mb = default_mem_limit_mb();
-    if (mb < 1024)
-      std::cerr << "warning: only " << available_memory_mb()
-                << " MB available, so the memory cap defaults to " << mb
-                << " MB; pass --mem-limit to choose another value\n";
+    const unsigned long available = available_memory_mb();
+    mb = mem_limit_from_available(available);
+    if (available == 0)
+      std::cerr << "warning: cannot read /proc/meminfo; running without a "
+                   "memory cap\n";
+    else if (available <= kMemReserveMb)
+      std::cerr << "warning: only " << available
+                << " MB available, under the 2 GiB reserve; refusing to "
+                   "allocate past 1 MB\n";
   }
   const unsigned long installed = apply_mem_limit(mb);
   if (mb != 0 && installed != 0 && installed < mb)
-    std::cerr << "warning: --mem-limit " << mb << " MB clamped to " << installed
+    std::cerr << "warning: memory cap " << mb << " MB clamped to " << installed
               << " MB by the hard rlimit\n";
 }
 
@@ -2168,8 +2177,9 @@ int main(int argc, char** argv) {
     const unsigned long mb = current_mem_limit_mb();
     std::string why = "out of memory";
     if (mb != 0)
-      why = "memory limit reached (" + std::to_string(mb) +
-            " MB, --mem-limit); raise it or shrink the search";
+      why = "memory limit reached (" + std::to_string(mb) + " MB, " +
+            (g_mem_limit_from_flag ? "--mem-limit" : "default cap") +
+            "); raise the limit or shrink the search";
     emit_error(want_json, why, 2);
     return 2;
   } catch (const CliError& e) {

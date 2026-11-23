@@ -32,9 +32,10 @@ inline constexpr unsigned long kMemReserveMb = 2048;
 unsigned long available_memory_mb();
 
 // Default cap for a machine with this much memory available: everything past
-// a 2 GiB reserve.  When less than 4 GiB is left the reserve shrinks to half
-// of it, so the tool still gets usable room right before the machine is full.
-// 0 (unknown) falls back to 4 GiB.
+// a 2 GiB reserve, and nothing else -- the process may use the rest.  When the
+// available memory is already at or below the reserve there is nothing to hand
+// out, so the cap is 1 MiB and the command fails instead of eating it.
+// 0 (unknown) means "no cap".
 unsigned long mem_limit_from_available(unsigned long available_mb);
 
 // default_mem_limit_mb() == mem_limit_from_available(available_memory_mb()).

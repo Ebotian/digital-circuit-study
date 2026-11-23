@@ -3,7 +3,6 @@
 #include <sys/resource.h>
 #include <unistd.h>
 
-#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -63,9 +62,9 @@ unsigned long available_memory_mb() {
 }
 
 unsigned long mem_limit_from_available(unsigned long available_mb) {
-  if (available_mb == 0) return 4096;  // cannot see the machine: old default
-  const unsigned long reserve = std::min(kMemReserveMb, available_mb / 2);
-  return available_mb - reserve;
+  if (available_mb == 0) return 0;  // cannot see the machine: no cap
+  if (available_mb <= kMemReserveMb) return 1;  // nothing past the reserve
+  return available_mb - kMemReserveMb;
 }
 
 unsigned long default_mem_limit_mb() {

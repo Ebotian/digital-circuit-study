@@ -108,7 +108,8 @@ worker 仍然是“一次请求一个进程”,所以并行是进程级的;GPU �
 `dcstudy` 启动时给**整个进程树**装一个 `RLIMIT_AS`:yosys、`dcstudy-z3`、Node 渲染 worker 都继承同一个 rlimit,所以一条命令就覆盖所有外部工具。
 
 - `--mem-limit MB`(或 `DCSTUDY_MEM_LIMIT_MB=MB`)显式设定上限;`0` 表示只受硬 rlimit 约束(通常是无限)。
-- 默认值不是常数:`MemAvailable - 2048`,即给系统留 2 GiB。可用内存不足 4 GiB 时预留量退化为可用的一半(仍然总比饿死自己好),探测不到 `/proc/meminfo` 时回退 4096。30 GiB 空闲的机器上默认上限约 21 GB,所以日常命令不会因为默认值被误杀。
+- 默认值一次性算好、取到最大:`MemAvailable - 2048`。唯一的约束就是**结束时还给系统留 2 GiB**,剩下的随便用,没有别的保守余量。30 GiB 空闲的机器上默认上限约 21 GB。
+- 可用内存已经不足 2 GiB 时,cap 定为 1 MB 并告警:命令会立刻失败,而不是把最后那 2 GiB 也吃掉。读不到 `/proc/meminfo` 时告警一次、不加 cap。
 - 超限时分配直接失败,CLI 输出 `memory limit reached (N MB, --mem-limit)`、退出码 2,而不是等内核 OOM killer 开枪(那会把整机拖进 swap)。
 - `--heavy`(n=6 Dedekind,约 10 GB)不再单独放宽上限:可用内存低于约 12 GiB 时它会撞上默认 cap 并干净失败,此时用 `--mem-limit` 显式指定或换台机器。
 - 管的是**虚拟地址空间**而不是 RSS;Node/V8 自己预留约 1.3 GB 地址空间,所以渲染 worker 的上限不要低于 2 GB(默认值足够)。

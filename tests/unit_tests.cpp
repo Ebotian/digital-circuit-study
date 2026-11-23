@@ -48,18 +48,18 @@ TEST_CASE("memory limit values parse strictly") {
   }
 }
 
-TEST_CASE("default memory cap leaves 2 GiB for the system") {
-  // Unknown machine: fall back to a fixed 4 GiB rather than no cap at all.
-  REQUIRE(mem_limit_from_available(0) == 4096);
-  // Plenty free: everything past a 2 GiB reserve is fair game.
+TEST_CASE("default memory cap keeps exactly 2 GiB free") {
+  // Unknown machine: no cap (nothing to subtract the reserve from).
+  REQUIRE(mem_limit_from_available(0) == 0);
+  // Everything past the 2 GiB reserve is fair game, and nothing more.
   REQUIRE(mem_limit_from_available(30000) == 27952);
   REQUIRE(mem_limit_from_available(4096) == 2048);
-  // Tight machine: the reserve shrinks to half instead of starving the tool.
-  REQUIRE(mem_limit_from_available(3000) == 1500);
-  REQUIRE(mem_limit_from_available(100) == 50);
-  // The host can be inspected and a cap is always produced.
+  REQUIRE(mem_limit_from_available(3000) == 952);
+  // At or below the reserve there is nothing to hand out: fail, do not eat it.
+  REQUIRE(mem_limit_from_available(2048) == 1);
+  REQUIRE(mem_limit_from_available(100) == 1);
+  // The host can be inspected on Linux.
   REQUIRE(available_memory_mb() > 0);
-  REQUIRE(default_mem_limit_mb() > 0);
 }
 
 TEST_CASE("parallel_for covers every index") {
