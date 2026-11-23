@@ -1,7 +1,11 @@
 #include "dcstudy/limits.hpp"
 
 #include <sys/resource.h>
+#include <unistd.h>
 
+#include <algorithm>
+#include <fstream>
+#include <sstream>
 #include <stdexcept>
 
 namespace dcstudy {
@@ -35,6 +39,37 @@ unsigned long current_mem_limit_mb() {
   if (getrlimit(RLIMIT_AS, &rl) != 0) return 0;
   if (rl.rlim_cur == RLIM_INFINITY) return 0;
   return static_cast<unsigned long>(rl.rlim_cur / kBytesPerMb);
+}
+
+unsigned long available_memory_mb() {
+  // MemAvailable is the kernel's own estimate of what a new workload can get
+  // without swapping; it already counts reclaimable page cache.
+  std::ifstream in("/proc/meminfo");
+  std::string line;
+  while (std::getline(in, line)) {
+    std::istringstream is(line);
+    std::string key;
+    unsigned long kb = 0;
+    is >> key >> kb;
+    if (key == "MemAvailable:") return kb / 1024;  // kB -> MiB
+  }
+  // Fallback for kernels without MemAvailable: count free pages only.
+  const long pages = sysconf(_SC_AVPHYS_PAGES);
+  const long page_size = sysconf(_SC_PAGESIZE);
+  if (pages > 0 && page_size > 0)
+    return static_cast<unsigned long>(pages) *
+           static_cast<unsigned long>(page_size) / kBytesPerMb;
+  return 0;
+}
+
+unsigned long mem_limit_from_available(unsigned long available_mb) {
+  if (available_mb == 0) return 4096;  // cannot see the machine: old default
+  const unsigned long reserve = std::min(kMemReserveMb, available_mb / 2);
+  return available_mb - reserve;
+}
+
+unsigned long default_mem_limit_mb() {
+  return mem_limit_from_available(available_memory_mb());
 }
 
 unsigned long apply_mem_limit(unsigned long mb) {

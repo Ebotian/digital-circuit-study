@@ -381,34 +381,29 @@ Options:
   --spec         JSON circuit spec: {"inputs":[...],"outputs":[{"name":...,"expr":...}]}
   --max-fanin N  static CMOS cell fan-in limit (e.g. 2); 0 = library default
   --heavy        allow the n=6 Dedekind count (about 40 s and 10 GB)
-  --mem-limit    memory cap in MiB for dcstudy and every child it spawns
-                 (default 4096; 0 = hard rlimit). DCSTUDY_MEM_LIMIT_MB sets
-                 the same cap; --heavy raises the default to 12288
+  --mem-limit    memory cap in MiB for dcstudy and every child it spawns.
+                 Default: MemAvailable - 2048, so ~2 GiB stays free for the
+                 rest of the system. DCSTUDY_MEM_LIMIT_MB sets the same cap;
+                 0 = hard rlimit
 
 Exit codes: 0 success, 1 verification/feasibility failure, 2 usage/runtime error.
 )";
 }
-
-constexpr unsigned long kDefaultMemLimitMb = 4096;
-// n=6 Dedekind count needs roughly 10 GB, so --heavy lifts the default cap.
-constexpr unsigned long kHeavyMemLimitMb = 12288;
 
 // Freed before reporting an allocation failure, so the error path does not
 // have to allocate while the cap is already reached.
 char* g_oom_reserve = nullptr;
 
 // Install the memory cap before any command runs: --mem-limit wins, then
-// DCSTUDY_MEM_LIMIT_MB, then the default (raised for --heavy).  Children
-// inherit RLIMIT_AS, so this bounds the whole process tree.
+// DCSTUDY_MEM_LIMIT_MB, then whatever the machine can spare (MemAvailable
+// minus a 2 GiB reserve).  Children inherit RLIMIT_AS, so this bounds the
+// whole process tree.
 void configure_mem_limit(int argc, char** argv) {
   bool explicit_limit = false;
-  bool heavy = false;
   std::string text;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
-    if (arg == "--heavy") {
-      heavy = true;
-    } else if (arg == "--mem-limit" && i + 1 < argc) {
+    if (arg == "--mem-limit" && i + 1 < argc) {
       text = argv[++i];
       explicit_limit = true;
     } else if (arg.rfind("--mem-limit=", 0) == 0) {
@@ -422,15 +417,19 @@ void configure_mem_limit(int argc, char** argv) {
       explicit_limit = true;
     }
   }
-  unsigned long mb = kDefaultMemLimitMb;
+  unsigned long mb = 0;
   if (explicit_limit) {
     try {
       mb = parse_mem_limit_mb(text);
     } catch (const std::invalid_argument& e) {
       throw CliError(e.what());
     }
-  } else if (heavy) {
-    mb = kHeavyMemLimitMb;
+  } else {
+    mb = default_mem_limit_mb();
+    if (mb < 1024)
+      std::cerr << "warning: only " << available_memory_mb()
+                << " MB available, so the memory cap defaults to " << mb
+                << " MB; pass --mem-limit to choose another value\n";
   }
   const unsigned long installed = apply_mem_limit(mb);
   if (mb != 0 && installed != 0 && installed < mb)
@@ -2177,7 +2176,14 @@ int main(int argc, char** argv) {
     emit_error(want_json, e.what(), e.code);
     return e.code;
   } catch (const std::exception& e) {
-    emit_error(want_json, e.what(), 2);
+    std::string msg = e.what();
+    // A capped child (Z3, yosys, node) reports its own "out of memory"; name
+    // the cap so the fix is obvious from the error alone.
+    if (const unsigned long cap = current_mem_limit_mb();
+        cap != 0 && msg.find("out of memory") != std::string::npos)
+      msg += " (the process tree is capped at " + std::to_string(cap) +
+             " MB; raise --mem-limit)";
+    emit_error(want_json, msg, 2);
     return 2;
   }
 }

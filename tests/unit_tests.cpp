@@ -48,6 +48,20 @@ TEST_CASE("memory limit values parse strictly") {
   }
 }
 
+TEST_CASE("default memory cap leaves 2 GiB for the system") {
+  // Unknown machine: fall back to a fixed 4 GiB rather than no cap at all.
+  REQUIRE(mem_limit_from_available(0) == 4096);
+  // Plenty free: everything past a 2 GiB reserve is fair game.
+  REQUIRE(mem_limit_from_available(30000) == 27952);
+  REQUIRE(mem_limit_from_available(4096) == 2048);
+  // Tight machine: the reserve shrinks to half instead of starving the tool.
+  REQUIRE(mem_limit_from_available(3000) == 1500);
+  REQUIRE(mem_limit_from_available(100) == 50);
+  // The host can be inspected and a cap is always produced.
+  REQUIRE(available_memory_mb() > 0);
+  REQUIRE(default_mem_limit_mb() > 0);
+}
+
 TEST_CASE("parallel_for covers every index") {
   std::vector<int> seen(37, 0);
   parallel_for(seen.size(), 4, [&](std::size_t i) { seen[i] = 1; });

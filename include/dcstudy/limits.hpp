@@ -24,4 +24,20 @@ unsigned long apply_mem_limit(unsigned long mb);
 // Soft RLIMIT_AS currently in force, in MiB (0 = unlimited).
 unsigned long current_mem_limit_mb();
 
+// Headroom the default cap leaves for the rest of the system, in MiB.
+inline constexpr unsigned long kMemReserveMb = 2048;
+
+// Memory a new workload can still get without swapping, from MemAvailable,
+// in MiB.  0 when it cannot be determined.
+unsigned long available_memory_mb();
+
+// Default cap for a machine with this much memory available: everything past
+// a 2 GiB reserve.  When less than 4 GiB is left the reserve shrinks to half
+// of it, so the tool still gets usable room right before the machine is full.
+// 0 (unknown) falls back to 4 GiB.
+unsigned long mem_limit_from_available(unsigned long available_mb);
+
+// default_mem_limit_mb() == mem_limit_from_available(available_memory_mb()).
+unsigned long default_mem_limit_mb();
+
 }  // namespace dcstudy
