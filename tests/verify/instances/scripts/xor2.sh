@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Instance: XOR2, the "not directly realizable" case: no single complementary
 # gate without input inverters, yet the automatic design still finds one.
-. "$(dirname "$0")/../lib.sh"
-S="$(dirname "$0")/xor2.json"
+. "$(dirname "$0")/../../lib.sh"
+S="$(dirname "$0")/../specs/xor2.json"
 [ "$("$BIN" bool info --expr 'A^B' --json | jq -r .realizable)" = "false" ] \
   || fail "xor2 should not be directly realizable"
 E=$("$BIN" multi exact --spec "$S" --json)

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Instance: 16-to-4 priority encoder = 4 x pe42 + glue, proven structurally
 # against a reference module (no 64K-row truth table).
-. "$(dirname "$0")/../lib.sh"
-D="$(cd "$(dirname "$0")" && pwd)/rtl"
+. "$(dirname "$0")/../../lib.sh"
+D="$(cd "$(dirname "$0")/.." && pwd)/rtl"
 J=$("$BIN" multi synth --rtl "$D/top16.v" --atoms "$D/pe42.v" \
     --ref "$D/gold16.v" --json)
 [ "$(jq -r .verified <<<"$J")" = "true" ] || fail "prio16 verify"

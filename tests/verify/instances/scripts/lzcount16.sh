@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Instance: 16-bit leading/trailing zero/one count, built from four 16-4
 # priority encoders (pe16), proven structurally against a behavioural golden.
-. "$(dirname "$0")/../lib.sh"
-D="$(dirname "$0")/rtl"
+. "$(dirname "$0")/../../lib.sh"
+D="$(dirname "$0")/../rtl"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 cat "$D/pe42.v" "$D/pe16.v" > "$tmp/atoms.v"

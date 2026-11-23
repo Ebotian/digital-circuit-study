@@ -2,8 +2,8 @@
 # Instance: 4-bit hex to 7-segment decoder.
 #   default synth: 31 cells / 162T; --max-fanin 2: 44 cells / 192T;
 #   exact (single-stage, exhaustive): 180T.
-. "$(dirname "$0")/../lib.sh"
-S="$(dirname "$0")/hex7seg.json"
+. "$(dirname "$0")/../../lib.sh"
+S="$(dirname "$0")/../specs/hex7seg.json"
 J=$("$BIN" multi synth --spec "$S" --json)
 [ "$(jq -r .verified <<<"$J")" = "true" ] || fail "hex7seg synth verify"
 [ "$(jq -r .total <<<"$J")" = "162" ] || fail "hex7seg synth cost"

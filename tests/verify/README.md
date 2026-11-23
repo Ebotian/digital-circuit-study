@@ -14,17 +14,11 @@
 tests/verify/
   lib.sh                # BIN/fail/pass/need
   run.sh                # instances | formal | optional | all
-  instances/            # 实例验证（已知答案），spec 与 RTL 夹具都在这里
-    decoder38.sh        # 3-8 译码器：54T
-    encoder42.sh        # 4-2 编码器（any）：exact 8T / synth 8T / path 7T
-    hex7seg.sh          # 4-7 段十六进制数码管：31 cells/162T，exact 180T
-    prio42.sh           # 4-2 优先编码器：16T
-    nor2.sh             # NOR2：可直接综合（单级互补门）4T
-    xor2.sh / xnor2.sh  # XOR/XNOR：不可直接综合，自动设计仍给出 12T/14T/12T
-    prio16.sh           # 16-4 优先编码器：4x pe42 + 胶合 = 172T，结构 miter
-    lzcount16.sh        # 前导/尾随 0/1 计数：4x pe16 + 胶合 = 866T，结构 miter + 仿真
-    *.json              # 各实例的 spec：decoder38/encoder42/hex7seg/pe42/nor2/xor2/xnor2
-    rtl/                # 该实例的 RTL 夹具（pe42/top16/gold16）
+  instances/            # 实例验证（已知答案）
+    run.sh              # 驱动：依次跑 scripts/ 下的用例 + 动态仿真
+    specs/              # 各实例的 spec：decoder38/encoder42/hex7seg/pe42/nor2/xor2/xnor2
+    scripts/            # 各实例断言：decoder38.sh ... prio16.sh/lzcount16.sh
+    rtl/                # RTL 夹具：pe42/pe16/top16/gold16/lzcount16/gold_lzcount16/tb_lzcount16
     simulation/verilator-xor6/  # 同一实例层级、不同验证层：开关级 XOR6 动态仿真
   formal/
     core.sh             # 单元/性质测试（ctest）
@@ -64,4 +58,4 @@ make verify                     # 只跑实例验证
 ```
 
 新增实例：在 `instances/` 放一个 `<name>.sh`，断言 `verified` 与 `total`，
-并加入 `instances/run.sh` 的列表；RTL 夹具放 `instances/rtl/`。
+并把名字加进 `instances/run.sh` 的 `for` 列表；spec 放 `instances/specs/`，RTL 夹具放 `instances/rtl/`。

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Instance: XNOR2, same non-realizable case as XOR2.
-. "$(dirname "$0")/../lib.sh"
-S="$(dirname "$0")/xnor2.json"
+. "$(dirname "$0")/../../lib.sh"
+S="$(dirname "$0")/../specs/xnor2.json"
 [ "$("$BIN" bool info --expr '~(A^B)' --json | jq -r .realizable)" = "false" ] \
   || fail "xnor2 should not be directly realizable"
 E=$("$BIN" multi exact --spec "$S" --json)
