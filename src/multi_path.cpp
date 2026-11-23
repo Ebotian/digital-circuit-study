@@ -565,37 +565,33 @@ MultiPathSynthesisResult synthesize_dual_rail_multi(
 }  // namespace
 
 MultiPathSynthesisResult synthesize_path_variables_multi(
-    const std::vector<BoolFunc>& funcs, const std::vector<std::string>& names,
-    const std::vector<std::string>& vars, const SpaceOptions& opt,
-    bool tri_state, const std::vector<Bits>& any) {
+    const MultiProblem& p, const SpaceOptions& opt, bool tri_state) {
   MultiPathSynthesisResult out;
-  out.outputs = names;
-  if (funcs.empty() || funcs.size() != names.size() || vars.empty() ||
-      vars.size() > 4) {
+  out.outputs = p.names;
+  if (p.size() == 0 || p.vars.empty() || p.vars.size() > 4) {
     out.reason = "multi path synthesis supports 1..4 inputs and matching outputs";
     return out;
   }
-  bool has_any = false;
-  for (const auto& mask : any)
-    if (!mask.none()) has_any = true;
-  if (has_any && tri_state) {
+  if (p.has_dont_cares() && tri_state) {
     out.reason = "don't-care masks are not supported with --tri-state";
     return out;
   }
-  // The path search needs a total function: pick the minimum-SOP extension on
-  // don't-care rows (any extension is valid, this one keeps paths short).
-  std::vector<BoolFunc> work = funcs;
-  for (std::size_t k = 0; k < work.size(); ++k)
-    if (any.size() == funcs.size() && !any[k].none())
-      work[k] = complete_with_min_sop(funcs[k], any[k]);
+  // The path search needs a total function: pick the cheapest static-gate
+  // extension on don't-care rows (any extension is valid).
+  std::vector<BoolFunc> work;
+  work.reserve(p.size());
+  for (std::size_t k = 0; k < p.size(); ++k)
+    work.push_back(p.any(k).none() ? p.outputs[k].func : p.completed(k));
+  const auto& names = p.names;
+  const auto& vars = p.vars;
   if (!tri_state) return synthesize_dual_rail_multi(work, names, vars, opt);
   std::vector<std::vector<int>> targets;
   std::vector<AllPath> all;
-  for (std::size_t o = 0; o < funcs.size(); ++o) {
+  for (std::size_t o = 0; o < work.size(); ++o) {
     std::vector<int> target;
-    for (std::uint32_t m = 0; m < funcs[o].num_minterms(); ++m)
-      target.push_back(tri_state ? (funcs[o].value(m) ? 1 : -1)
-                                 : (funcs[o].value(m) ? 1 : 0));
+    for (std::uint32_t m = 0; m < work[o].num_minterms(); ++m)
+      target.push_back(tri_state ? (work[o].value(m) ? 1 : -1)
+                                 : (work[o].value(m) ? 1 : 0));
     targets.push_back(target);
     const auto branches = usable_branches(vars, target, opt);
     for (const auto& b : branches) {

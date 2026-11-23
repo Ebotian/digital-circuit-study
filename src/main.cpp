@@ -22,6 +22,7 @@
 #include "dcstudy/limits.hpp"
 #include "dcstudy/math_client.hpp"
 #include "dcstudy/multi_path.hpp"
+#include "dcstudy/partial.hpp"
 #include "dcstudy/multistage.hpp"
 #include "dcstudy/path_search.hpp"
 #include "dcstudy/render_client.hpp"
@@ -1452,22 +1453,13 @@ int cmd_verify(const std::string& sub, int argc, char** argv) {
   return r.ok ? 0 : 1;
 }
 
-struct MultiSpec {
-  std::string title;
-  std::vector<std::string> vars;
-  std::vector<std::string> names;
-  std::vector<BoolFunc> funcs;
-  // Per-output don't-care mask: bit m set => row m may be either value.
-  std::vector<Bits> any;
-};
-
-MultiSpec load_multi_spec(const std::string& path) {
+MultiProblem load_multi_spec(const std::string& path) {
   std::ifstream in(path);
   if (!in) throw CliError("cannot read spec: " + path);
   std::ostringstream os;
   os << in.rdbuf();
   const Json root = Json::parse(os.str());
-  MultiSpec s;
+  MultiProblem s;
   s.title = root.contains("name") ? root.at("name").as_string() : fs::path(path).stem().string();
   const Json& vars = root.at("inputs");
   if (!vars.is_array() || vars.array().empty())
@@ -1510,33 +1502,31 @@ MultiSpec load_multi_spec(const std::string& path) {
     if (std::find(s.vars.begin(), s.vars.end(), name) != s.vars.end())
       throw CliError("output collides with input: " + name);
     s.names.push_back(name);
-    s.funcs.push_back(spec_from_expr(expr, s.vars).func);
-    s.any.push_back(std::move(any_mask));
+    s.outputs.push_back({spec_from_expr(expr, s.vars).func,
+                         std::move(any_mask)});
   }
   return s;
 }
 
 // Echo the don't-care rows of a spec into a result object.
-void add_any_json(Json& j, const MultiSpec& spec) {
-  if (spec.any.empty()) return;
+void add_any_json(Json& j, const MultiProblem& spec) {
   Json any = Json::Object{};
   bool found = false;
-  for (std::size_t i = 0; i < spec.any.size(); ++i) {
-    if (spec.any[i].none()) continue;
-    any[spec.names[i]] = spec.any[i].to_binary_string();
+  for (std::size_t i = 0; i < spec.size(); ++i) {
+    if (spec.outputs[i].any.none()) continue;
+    any[spec.names[i]] = spec.outputs[i].any.to_binary_string();
     found = true;
   }
   if (found) j["any"] = std::move(any);
 }
 
-int cmd_multi_template(const Args& a, const MultiSpec& spec) {
+int cmd_multi_template(const Args& a, const MultiProblem& spec) {
   SpaceOptions opt;
   opt.max_cost = 32;
   opt.max_chain = 4;
   opt.allow_tg = !a.is("no-tg");
   const MultiPathSynthesisResult seed =
-      synthesize_path_variables_multi(spec.funcs, spec.names, spec.vars, opt,
-                                      false, spec.any);
+      synthesize_path_variables_multi(spec, opt, false);
   if (!seed.ok || !seed.verified) {
     if (a.is("json")) {
       Json j;
@@ -1548,7 +1538,9 @@ int cmd_multi_template(const Args& a, const MultiSpec& spec) {
     return 1;
   }
   std::vector<std::vector<int>> targets;
-  for (const auto& f : spec.funcs) {
+  for (std::size_t k = 0; k < spec.size(); ++k) {
+    const BoolFunc f =
+        spec.any(k).none() ? spec.outputs[k].func : spec.completed(k);
     std::vector<int> t;
     for (std::uint32_t m = 0; m < f.num_minterms(); ++m)
       t.push_back(f.value(m) ? 1 : 0);
@@ -1588,20 +1580,18 @@ int cmd_multi_template(const Args& a, const MultiSpec& spec) {
   return 0;
 }
 
-int cmd_multi_path(const Args& a, const MultiSpec& spec) {
+int cmd_multi_path(const Args& a, const MultiProblem& spec) {
   SpaceOptions opt;
   opt.max_cost = std::stoi(a.get("max-cost", "64"));
   opt.max_chain = std::stoi(a.get("max-chain", "4"));
   opt.allow_tg = !a.is("no-tg");
   const MultiPathSynthesisResult r =
-      synthesize_path_variables_multi(spec.funcs, spec.names, spec.vars, opt,
-                                      a.is("tri-state"), spec.any);
+      synthesize_path_variables_multi(spec, opt, a.is("tri-state"));
   const bool json = a.is("json");
   std::string fallback_note;
   if ((!r.ok || !r.verified) && !a.is("tri-state")) {
     const StaticExactResult s =
-        synthesize_static_exact_multi(spec.funcs, spec.names, spec.vars,
-                                      spec.any);
+        synthesize_static_exact_multi(spec);
     if (s.ok && s.verified && s.total > opt.max_cost)
       fallback_note = " (static fallback needs " + std::to_string(s.total) +
                       "T, over --max-cost " + std::to_string(opt.max_cost) + ")";
@@ -1710,10 +1700,8 @@ int cmd_multi_path(const Args& a, const MultiSpec& spec) {
   return 0;
 }
 
-int cmd_multi_exact(const Args& a, const MultiSpec& spec) {
-  const StaticExactResult r =
-      synthesize_static_exact_multi(spec.funcs, spec.names, spec.vars,
-                                    spec.any);
+int cmd_multi_exact(const Args& a, const MultiProblem& spec) {
+  const StaticExactResult r = synthesize_static_exact_multi(spec);
   const bool json = a.is("json");
   if (!r.ok || !r.verified) {
     if (json) {
@@ -1809,25 +1797,24 @@ int cmd_multi_exact(const Args& a, const MultiSpec& spec) {
 int cmd_multi(const std::string& sub, int argc, char** argv) {
   const Args a = parse_args(argc, argv, 3);
   if (sub == "exact") {
-    const MultiSpec spec = load_multi_spec(a.need("spec"));
+    const MultiProblem spec = load_multi_spec(a.need("spec"));
     return cmd_multi_exact(a, spec);
   }
   if (sub == "path") {
-    const MultiSpec spec = load_multi_spec(a.need("spec"));
+    const MultiProblem spec = load_multi_spec(a.need("spec"));
     return cmd_multi_path(a, spec);
   }
   if (sub == "template") {
-    const MultiSpec spec = load_multi_spec(a.need("spec"));
+    const MultiProblem spec = load_multi_spec(a.need("spec"));
     return cmd_multi_template(a, spec);
   }
   if (sub != "synth") throw CliError("unknown multi subcommand: " + sub);
-  const MultiSpec spec = load_multi_spec(a.need("spec"));
+  const MultiProblem spec = load_multi_spec(a.need("spec"));
   const int max_fanin = std::stoi(a.get("max-fanin", "0"));
   if (max_fanin != 0 && (max_fanin < 2 || max_fanin > 4))
     throw CliError("--max-fanin must be 0 or 2..4");
   const MultiStageMultiDesign m =
-      synthesize_multistage_static_multi(spec.funcs, spec.names, spec.vars,
-                                         max_fanin, spec.any);
+      synthesize_multistage_static_multi(spec, max_fanin);
   const bool json = a.is("json");
   if (!m.ok || !m.verified) {
     if (json) {

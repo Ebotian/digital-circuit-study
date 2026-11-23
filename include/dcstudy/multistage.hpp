@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "dcstudy/boolfunc.hpp"
+#include "dcstudy/partial.hpp"
 
 namespace dcstudy {
 
@@ -51,12 +52,9 @@ std::string default_liberty_path();
 MultiStageDesign synthesize_multistage_static(const BoolFunc& f,
                                                const std::vector<std::string>& vars,
                                                int max_fanin = 0);
-// `any` is an optional per-output don't-care mask (1 = the row may be
-// either value); such functions are completed with a minimum-literal SOP
+// Don't-care rows are completed with the cheapest static-gate extension
 // before mapping, and verification accepts any 0/1 on those rows.
 MultiStageMultiDesign synthesize_multistage_static_multi(
-    const std::vector<BoolFunc>& funcs, const std::vector<std::string>& out_names,
-    const std::vector<std::string>& vars, int max_fanin = 0,
-    const std::vector<Bits>& any = {});
+    const MultiProblem& problem, int max_fanin = 0);
 
 }  // namespace dcstudy

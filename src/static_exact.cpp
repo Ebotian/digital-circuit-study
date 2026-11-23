@@ -183,26 +183,46 @@ bool truth_satisfies(const std::string& truth, const std::string& target,
   return true;
 }
 
-BoolFunc complete_with_min_sop(const BoolFunc& f, const Bits& any) {
+BoolFunc complete_with_cheapest_gate(const BoolFunc& f, const Bits& any) {
   if (any.none()) return f;
   const std::size_t n = f.arity();
   if (any.size() != f.bits().size())
     throw std::invalid_argument("don't-care mask width does not match function");
-  const Bits onset = f.bits() & ~any;
-  Sop sop;
-  const std::uint64_t all_literals = (std::uint64_t{1} << n) - 1;
-  if (!exact_min_dnf_literals(onset, n, all_literals, sop, &any))
-    throw std::invalid_argument("don't-care completion found no cover");
-  Bits bits(f.bits().size());
-  for (const auto& term : sop.terms) bits |= term.cover;
-  return BoolFunc(n, std::move(bits));
+  // The gate's PDN has to pull low on every care row where f is 0; rows in
+  // `any` may be covered too.  Try every inverter set and keep the cheapest
+  // (2T per literal, 2T per shared inverter) -- the extension is exactly the
+  // gate's complement, so choosing the cover *is* choosing the X values.
+  const Bits onset = ~f.bits() & ~any;
+  const std::uint64_t masks = std::uint64_t{1} << n;
+  int best_cost = std::numeric_limits<int>::max();
+  Bits best;
+  for (std::uint64_t mask = 0; mask < masks; ++mask) {
+    Sop sop;
+    if (!exact_min_dnf_literals(onset, n, mask, sop, &any)) continue;
+    const int cost =
+        2 * sop.literals +
+        2 * static_cast<int>(__builtin_popcountll(mask));
+    if (cost >= best_cost) continue;
+    Bits pdn(f.bits().size());
+    for (const auto& term : sop.terms) pdn |= term.cover;
+    best = ~pdn;
+    best_cost = cost;
+  }
+  if (best.empty()) return f;
+  // A constant extension cannot be mapped to a standard cell without tie
+  // cells; fall back to the given expression, which is still a valid one.
+  if (best.count() == 0 || best.count() == best.size()) return f;
+  return BoolFunc(n, std::move(best));
 }
 
-StaticExactResult synthesize_static_exact_multi(
-    const std::vector<BoolFunc>& funcs, const std::vector<std::string>& names,
-    const std::vector<std::string>& vars, const std::vector<Bits>& any) {
+StaticExactResult synthesize_static_exact_multi(const MultiProblem& p) {
   StaticExactResult out;
-  out.outputs = names;
+  out.outputs = p.names;
+  const auto& names = p.names;
+  const auto& vars = p.vars;
+  std::vector<BoolFunc> funcs;
+  funcs.reserve(p.size());
+  for (const auto& o : p.outputs) funcs.push_back(o.func);
   if (funcs.empty() || funcs.size() != names.size()) {
     out.reason = "one output name per function is required";
     return out;
@@ -219,11 +239,7 @@ StaticExactResult synthesize_static_exact_multi(
     }
   }
 
-  // Empty mask used when the caller passed no don't-care sets.
-  const Bits no_dc = Bits::zeros(funcs.empty() ? 0 : funcs.front().bits().size());
-  const auto dc_of = [&](std::size_t k) -> const Bits& {
-    return any.size() == funcs.size() ? any[k] : no_dc;
-  };
+  const auto dc_of = [&](std::size_t k) -> const Bits& { return p.any(k); };
 
   int best_total = std::numeric_limits<int>::max();
   int best_gate_cost = 0;
@@ -442,9 +458,7 @@ StaticExactResult synthesize_static_exact_multi(
     for (const auto& row : a.rows)
       truth.push_back(logic_symbol(row.values[0]));
     out.truths[k] = std::move(truth);
-    output_ok[k] =
-        truth_satisfies(out.truths[k], funcs[k].truth_string(), dc_of(k)) ? 1
-                                                                         : 0;
+    output_ok[k] = p.satisfies(k, out.truths[k]) ? 1 : 0;
   });
   out.verified = std::all_of(output_ok.begin(), output_ok.end(),
                              [](bool v) { return v; });

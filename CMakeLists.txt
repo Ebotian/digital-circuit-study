@@ -25,6 +25,7 @@ add_library(dcstudy_core STATIC
   src/cmos.cpp
   src/driver_profile.cpp
   src/limits.cpp
+  src/partial.cpp
   src/static_exact.cpp
   src/template_synth.cpp
   src/designspace.cpp

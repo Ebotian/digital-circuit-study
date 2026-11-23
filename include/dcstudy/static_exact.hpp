@@ -18,6 +18,7 @@
 #include "dcstudy/boolfunc.hpp"
 #include "dcstudy/cdl.hpp"
 #include "dcstudy/cmos.hpp"
+#include "dcstudy/partial.hpp"
 
 namespace dcstudy {
 
@@ -58,14 +59,13 @@ bool exact_min_dnf_literals(const Bits& onset, std::size_t n,
 bool truth_satisfies(const std::string& truth, const std::string& target,
                      const Bits& any);
 
-// Complete a partial function: don't-care rows get values chosen by the
-// minimum-literal SOP cover (all input literals available), so downstream
-// synthesis starts from a compact total extension.
-BoolFunc complete_with_min_sop(const BoolFunc& f, const Bits& any);
+// Complete a partial function by choosing the don't-care rows that minimise
+// a single-stage static gate: for every inverter set take the exact minimum
+// DNF of ~f (over must-low rows plus don't-cares) and keep the cheapest
+// polarity/literal choice.  This is a free optimisation of the X rows, not
+// just a literal-count heuristic.
+BoolFunc complete_with_cheapest_gate(const BoolFunc& f, const Bits& any);
 
-StaticExactResult synthesize_static_exact_multi(
-    const std::vector<BoolFunc>& funcs, const std::vector<std::string>& names,
-    const std::vector<std::string>& vars,
-    const std::vector<Bits>& any = {});
+StaticExactResult synthesize_static_exact_multi(const MultiProblem& problem);
 
 }  // namespace dcstudy

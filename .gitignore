@@ -15,3 +15,6 @@ __pycache__/
 # build artifacts
 build/
 build-asan/
+
+# ABC 交互历史(yosys abc 会写)
+abc.history

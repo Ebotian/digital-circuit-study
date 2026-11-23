@@ -264,8 +264,11 @@ TEST_CASE("don't-care rows drive exact synthesis and verification") {
   Bits any(16);
   for (std::size_t m = 0; m < 16; ++m)
     if (m != 1 && m != 2 && m != 4 && m != 8) any.set(m);
-  const auto r = synthesize_static_exact_multi(
-      {y0.func, y1.func}, {"Y0", "Y1"}, vars, {any, any});
+  MultiProblem p;
+  p.vars = vars;
+  p.names = {"Y0", "Y1"};
+  p.outputs = {{y0.func, any}, {y1.func, any}};
+  const auto r = synthesize_static_exact_multi(p);
   REQUIRE(r.ok);
   REQUIRE(r.verified);
   // Don't-cares let the PDNs become A0|A2 and A0|A1: 4T + 4T, no inverters.
@@ -274,8 +277,9 @@ TEST_CASE("don't-care rows drive exact synthesis and verification") {
   REQUIRE(truth_satisfies(r.truths[0], y0.func.truth_string(), any));
   REQUIRE(truth_satisfies(r.truths[1], y1.func.truth_string(), any));
   // Same expressions without don't-cares need inverters and cost more.
-  const auto total =
-      synthesize_static_exact_multi({y0.func, y1.func}, {"Y0", "Y1"}, vars);
+  MultiProblem plain = p;
+  plain.outputs = {{y0.func, Bits::zeros(16)}, {y1.func, Bits::zeros(16)}};
+  const auto total = synthesize_static_exact_multi(plain);
   REQUIRE(total.total > r.total);
   // A Z/X on a don't-care row is not a valid extension of a static network.
   REQUIRE_FALSE(truth_satisfies("ZZZZZZZZZZZZZZZZ",

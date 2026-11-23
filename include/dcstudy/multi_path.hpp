@@ -9,6 +9,7 @@
 #include "dcstudy/boolfunc.hpp"
 #include "dcstudy/designspace.hpp"
 #include "dcstudy/driver_profile.hpp"
+#include "dcstudy/partial.hpp"
 
 namespace dcstudy {
 
@@ -29,12 +30,11 @@ struct MultiPathSynthesisResult {
   SwitchGraph graph;
 };
 
-// `any` is an optional per-output don't-care mask; partial functions are
-// completed with a minimum-literal SOP before the search (tri-state mode has
-// no 0/1 extension semantics and rejects don't-cares).
+// Don't-care rows are completed with the cheapest static-gate extension
+// before the search (tri-state has no 0/1 extension semantics and rejects
+// don't-cares).
 MultiPathSynthesisResult synthesize_path_variables_multi(
-    const std::vector<BoolFunc>& funcs, const std::vector<std::string>& names,
-    const std::vector<std::string>& vars, const SpaceOptions& opt,
-    bool tri_state = false, const std::vector<Bits>& any = {});
+    const MultiProblem& problem, const SpaceOptions& opt,
+    bool tri_state = false);
 
 }  // namespace dcstudy

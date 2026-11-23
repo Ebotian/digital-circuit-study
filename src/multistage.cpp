@@ -144,11 +144,14 @@ std::string default_liberty_path() {
 namespace {
 
 MultiStageMultiDesign synthesize_multistage_static_multi_impl(
-    const std::vector<BoolFunc>& funcs, const std::vector<std::string>& out_names,
-    const std::vector<std::string>& vars, int max_fanin,
-    const std::vector<Bits>& any) {
+    const MultiProblem& p, int max_fanin) {
   MultiStageMultiDesign out;
-  out.outputs = out_names;
+  out.outputs = p.names;
+  const auto& out_names = p.names;
+  const auto& vars = p.vars;
+  std::vector<BoolFunc> funcs;
+  funcs.reserve(p.size());
+  for (const auto& o : p.outputs) funcs.push_back(o.func);
   if (funcs.empty() || funcs.size() != out_names.size()) {
     out.reason = "multi-stage synthesis needs one name per output";
     return out;
@@ -158,14 +161,10 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
     return out;
   }
   // Complete partial functions first: the mapper needs a total function, and
-  // the minimum-literal SOP extension keeps the mapped logic small.
-  const Bits no_dc = Bits::zeros(funcs.front().bits().size());
-  const auto dc_of = [&](std::size_t k) -> const Bits& {
-    return any.size() == funcs.size() ? any[k] : no_dc;
-  };
+  // the cheapest static-gate extension keeps the mapped logic small.
   std::vector<BoolFunc> work = funcs;
   for (std::size_t k = 0; k < work.size(); ++k)
-    if (!dc_of(k).none()) work[k] = complete_with_min_sop(funcs[k], dc_of(k));
+    if (!p.any(k).none()) work[k] = p.completed(k);
   const std::string lib = default_liberty_path();
   const std::string cdl = default_cdl_path();
   if (!fs::exists(lib)) {
@@ -373,18 +372,12 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
       for (const auto& row : a.rows)
         truth.push_back(logic_symbol(row.values[0]));
       out.truths[k] = std::move(truth);
-      output_ok[k] =
-          truth_satisfies(out.truths[k], funcs[k].truth_string(), dc_of(k))
-              ? 1
-              : 0;
+      output_ok[k] = p.satisfies(k, out.truths[k]) ? 1 : 0;
     });
     for (std::size_t k = 0; k < out_names.size(); ++k) {
       if (alias_of[k] < 0) continue;
       out.truths[k] = out.truths[static_cast<std::size_t>(alias_of[k])];
-      output_ok[k] =
-          truth_satisfies(out.truths[k], funcs[k].truth_string(), dc_of(k))
-              ? 1
-              : 0;
+      output_ok[k] = p.satisfies(k, out.truths[k]) ? 1 : 0;
     }
     out.verified = std::all_of(output_ok.begin(), output_ok.end(),
                                [](char v) { return v != 0; });
@@ -400,17 +393,17 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
 }  // namespace
 
 MultiStageMultiDesign synthesize_multistage_static_multi(
-    const std::vector<BoolFunc>& funcs, const std::vector<std::string>& out_names,
-    const std::vector<std::string>& vars, int max_fanin,
-    const std::vector<Bits>& any) {
-  return synthesize_multistage_static_multi_impl(funcs, out_names, vars,
-                                                 max_fanin, any);
+    const MultiProblem& problem, int max_fanin) {
+  return synthesize_multistage_static_multi_impl(problem, max_fanin);
 }
 
 MultiStageDesign synthesize_multistage_static(
     const BoolFunc& f, const std::vector<std::string>& vars, int max_fanin) {
-  MultiStageMultiDesign m =
-      synthesize_multistage_static_multi_impl({f}, {"Y"}, vars, max_fanin, {});
+  MultiProblem p;
+  p.names = {"Y"};
+  p.vars = vars;
+  p.outputs.push_back({f, Bits::zeros(f.bits().size())});
+  MultiStageMultiDesign m = synthesize_multistage_static_multi_impl(p, max_fanin);
   MultiStageDesign out;
   out.ok = m.ok;
   out.reason = m.reason;
