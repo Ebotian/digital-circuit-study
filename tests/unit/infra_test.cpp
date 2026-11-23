@@ -56,8 +56,7 @@ TEST_CASE("batched driver profile matches single-design analysis", "[infra]") {
   REQUIRE(r.feasible);
   REQUIRE_FALSE(r.designs.empty());
   std::vector<std::vector<int>> targets(r.designs.size(), target_of(s));
-  const auto batch =
-      analyze_designs_drivers_batch(r.designs, s.vars, targets);
+  const auto batch = analyze_designs_drivers_batch(r.designs, s.vars, targets);
   const auto batch_matrix =
       analyze_designs_drivers_batch(r.designs, s.vars, targets, true);
   setenv("DCSTUDY_DRIVER_GRAPHBLAS", "1", 1);

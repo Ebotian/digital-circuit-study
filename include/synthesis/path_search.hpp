@@ -26,13 +26,14 @@ struct PathSynthesisResult {
   int total = 0;
   int edge_cost = 0;
   int inverter_cost = 0;
-  std::vector<int> selected;  // branch ids
+  std::vector<int> selected; // branch ids
   SwitchGraph graph;
   std::vector<std::string> truths;
 };
 
-PathSynthesisResult synthesize_path_variables(
-    const BoolFunc& f, const std::vector<std::string>& vars,
-    const SpaceOptions& opt, bool tri_state = false);
+PathSynthesisResult
+synthesize_path_variables(const BoolFunc &f,
+                          const std::vector<std::string> &vars,
+                          const SpaceOptions &opt, bool tri_state = false);
 
-}  // namespace dcstudy
+} // namespace dcstudy

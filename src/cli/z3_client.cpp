@@ -10,7 +10,7 @@ std::string z3_helper_path() {
   return find_worker(WorkerLocator{"DCSTUDY_Z3_HELPER", "dcstudy-z3"});
 }
 
-Json z3_call(const Json& request, int timeout_seconds) {
+Json z3_call(const Json &request, int timeout_seconds) {
   const std::string helper = z3_helper_path();
   if (helper.empty())
     throw std::runtime_error(
@@ -19,4 +19,4 @@ Json z3_call(const Json& request, int timeout_seconds) {
   return call_worker(helper, request, timeout_seconds);
 }
 
-}  // namespace dcstudy
+} // namespace dcstudy

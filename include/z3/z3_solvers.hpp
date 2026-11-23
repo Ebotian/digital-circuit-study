@@ -5,7 +5,7 @@
 
 namespace dcstudy {
 
-SynthSolution z3_solve_synth(const SynthProblem& p);
-SwitchSolution z3_solve_switch(const SwitchProblem& p);
+SynthSolution z3_solve_synth(const SynthProblem &p);
+SwitchSolution z3_solve_switch(const SwitchProblem &p);
 
-}  // namespace dcstudy
+} // namespace dcstudy

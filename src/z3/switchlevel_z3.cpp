@@ -14,28 +14,32 @@ namespace {
 struct NetIndex {
   std::vector<std::string> names;
   std::unordered_map<std::string, std::size_t> index;
-  std::size_t add(const std::string& n) {
+  std::size_t add(const std::string &n) {
     auto it = index.find(n);
-    if (it != index.end()) return it->second;
+    if (it != index.end())
+      return it->second;
     const std::size_t id = names.size();
     names.push_back(n);
     index.emplace(n, id);
     return id;
   }
-  std::size_t get(const std::string& n) const {
+  std::size_t get(const std::string &n) const {
     auto it = index.find(n);
-    if (it == index.end()) throw std::runtime_error("unknown net: " + n);
+    if (it == index.end())
+      throw std::runtime_error("unknown net: " + n);
     return it->second;
   }
 };
 
-NetIndex build_index(const SwitchProblem& p) {
+NetIndex build_index(const SwitchProblem &p) {
   NetIndex ni;
   ni.add(p.vdd);
   ni.add(p.vss);
-  for (const auto& s : p.inputs) ni.add(s);
-  for (const auto& s : p.outputs) ni.add(s);
-  for (const auto& d : p.devices) {
+  for (const auto &s : p.inputs)
+    ni.add(s);
+  for (const auto &s : p.outputs)
+    ni.add(s);
+  for (const auto &d : p.devices) {
     ni.add(d.drain);
     ni.add(d.gate);
     ni.add(d.source);
@@ -43,21 +47,23 @@ NetIndex build_index(const SwitchProblem& p) {
   return ni;
 }
 
-z3::expr or_all(z3::context& ctx, const std::vector<z3::expr>& v) {
+z3::expr or_all(z3::context &ctx, const std::vector<z3::expr> &v) {
   z3::expr acc = ctx.bool_val(false);
-  for (const auto& e : v) acc = acc || e;
+  for (const auto &e : v)
+    acc = acc || e;
   return acc;
 }
 
-z3::check_result checked(z3::solver& s) {
+z3::check_result checked(z3::solver &s) {
   const auto r = s.check();
-  if (r == z3::unknown) throw std::runtime_error("Z3 returned unknown");
+  if (r == z3::unknown)
+    throw std::runtime_error("Z3 returned unknown");
   return r;
 }
 
-}  // namespace
+} // namespace
 
-SwitchSolution z3_solve_switch(const SwitchProblem& p) {
+SwitchSolution z3_solve_switch(const SwitchProblem &p) {
   if (p.inputs.empty() || p.outputs.empty() || p.rows.empty())
     throw std::runtime_error("switch: empty problem");
   const NetIndex ni = build_index(p);
@@ -65,9 +71,11 @@ SwitchSolution z3_solve_switch(const SwitchProblem& p) {
   const std::size_t vdd = ni.get(p.vdd);
   const std::size_t vss = ni.get(p.vss);
   std::vector<std::size_t> input_idx;
-  for (const auto& s : p.inputs) input_idx.push_back(ni.get(s));
+  for (const auto &s : p.inputs)
+    input_idx.push_back(ni.get(s));
   std::vector<std::size_t> out_idx;
-  for (const auto& s : p.outputs) out_idx.push_back(ni.get(s));
+  for (const auto &s : p.outputs)
+    out_idx.push_back(ni.get(s));
 
   z3::context ctx;
   z3::solver solver(ctx);
@@ -80,7 +88,7 @@ SwitchSolution z3_solve_switch(const SwitchProblem& p) {
 
   std::vector<z3::expr> on;
   on.reserve(p.devices.size());
-  for (const auto& d : p.devices) {
+  for (const auto &d : p.devices) {
     const auto di = ni.get(d.drain);
     const auto gi = ni.get(d.gate);
     const auto si = ni.get(d.source);
@@ -98,7 +106,8 @@ SwitchSolution z3_solve_switch(const SwitchProblem& p) {
       for (std::size_t k = 0; k < p.devices.size(); ++k) {
         const auto di = ni.get(p.devices[k].drain);
         const auto si = ni.get(p.devices[k].source);
-        if ((di == u && si == v) || (di == v && si == u)) terms.push_back(on[k]);
+        if ((di == u && si == v) || (di == v && si == u))
+          terms.push_back(on[k]);
       }
       edge[u][v] = or_all(ctx, terms);
     }
@@ -141,8 +150,10 @@ SwitchSolution z3_solve_switch(const SwitchProblem& p) {
         row_index < p.forced0.size() &&
         !(p.forced0[row_index].empty() && p.forced1[row_index].empty());
     if (have_forcing) {
-      for (const auto& n : p.forced0[row_index]) solver.add(!val[ni.get(n)]);
-      for (const auto& n : p.forced1[row_index]) solver.add(val[ni.get(n)]);
+      for (const auto &n : p.forced0[row_index])
+        solver.add(!val[ni.get(n)]);
+      for (const auto &n : p.forced1[row_index])
+        solver.add(val[ni.get(n)]);
       for (std::size_t v = 0; v < N; ++v) {
         solver.add(z3::implies(r0[v] && !r1[v], !val[v]));
         solver.add(z3::implies(r1[v] && !r0[v], val[v]));
@@ -213,4 +224,4 @@ SwitchSolution z3_solve_switch(const SwitchProblem& p) {
   return out;
 }
 
-}  // namespace dcstudy
+} // namespace dcstudy

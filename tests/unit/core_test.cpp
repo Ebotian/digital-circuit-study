@@ -46,15 +46,17 @@ TEST_CASE("default memory cap keeps exactly 2 GiB free", "[core]") {
 TEST_CASE("parallel_for covers every index", "[core]") {
   std::vector<int> seen(37, 0);
   parallel_for(seen.size(), 4, [&](std::size_t i) { seen[i] = 1; });
-  for (int v : seen) REQUIRE(v == 1);
+  for (int v : seen)
+    REQUIRE(v == 1);
 }
 
 TEST_CASE("parallel_for propagates a task exception", "[core]") {
-  REQUIRE_THROWS_AS(
-      parallel_for(16, 4, [](std::size_t i) {
-        if (i == 7) throw std::runtime_error("task failed");
-      }),
-      std::runtime_error);
+  REQUIRE_THROWS_AS(parallel_for(16, 4,
+                                 [](std::size_t i) {
+                                   if (i == 7)
+                                     throw std::runtime_error("task failed");
+                                 }),
+                    std::runtime_error);
 }
 
 TEST_CASE("truth tables use big-endian minterms", "[core]") {
@@ -105,7 +107,7 @@ TEST_CASE("exact SOP of NAND2 and unrealisable XOR", "[core]") {
   const CmosDesign dx = synthesize_cmos(x.func, x.vars);
   REQUIRE_FALSE(dx.realizable);
 
-  for (const char* e : {"~(A&B)", "~(A|B)"}) {
+  for (const char *e : {"~(A&B)", "~(A|B)"}) {
     const FuncSpec s = spec_from_expr(e);
     const CmosDesign ds = synthesize_cmos(s.func, s.vars);
     REQUIRE(ds.realizable);
@@ -113,24 +115,29 @@ TEST_CASE("exact SOP of NAND2 and unrealisable XOR", "[core]") {
     const Subckt cell = build_static_cmos_subckt(ds, s.vars);
     const auto sw = analyze_switch(cell, s.vars, {"Y"}, true);
     std::string truth;
-    for (const auto& row : sw.rows) truth.push_back(logic_symbol(row.values[0]));
+    for (const auto &row : sw.rows)
+      truth.push_back(logic_symbol(row.values[0]));
     REQUIRE(truth == s.func.truth_string());
   }
 }
 
-TEST_CASE("exact SOP covers the onset for every realisable n<=3 function", "[core]") {
+TEST_CASE("exact SOP covers the onset for every realisable n<=3 function",
+          "[core]") {
   for (std::size_t n = 1; n <= 3; ++n) {
     const std::size_t rows = std::size_t{1} << n;
     for (std::uint32_t code = 0; code < (std::uint32_t{1} << rows); ++code) {
       Bits bits(rows);
       for (std::uint32_t m = 0; m < rows; ++m)
-        if ((code >> m) & 1U) bits.set(m);
+        if ((code >> m) & 1U)
+          bits.set(m);
       const BoolFunc f(n, bits);
       const BoolFunc pd = ~f;
-      if (!pd.is_monotone()) continue;
+      if (!pd.is_monotone())
+        continue;
       const Sop sop = exact_min_sop(pd.bits(), n);
       Bits cover(rows);
-      for (const auto& c : sop.terms) cover |= c.cover;
+      for (const auto &c : sop.terms)
+        cover |= c.cover;
       REQUIRE(cover == pd.bits());
     }
   }
@@ -142,8 +149,8 @@ TEST_CASE("design space rejects single-phase transmission gates", "[core]") {
   opt.max_chain = 2;
   const auto target = target_of(spec_from_expr("A&B"));
   const auto branches = usable_branches({"A", "B"}, target, opt);
-  for (const auto& b : branches) {
-    for (const auto& el : b.chain) {
+  for (const auto &b : branches) {
+    for (const auto &el : b.chain) {
       if (el.kind == SwKind::TGL || el.kind == SwKind::TGH) {
         REQUIRE((b.req_mask != 0));
       }

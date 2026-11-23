@@ -31,12 +31,12 @@ struct Branch {
   std::string source;
   std::vector<ChainElem> chain;
   int cost = 0;
-  std::uint32_t req_mask = 0;  // bit i => inverter for variable i is needed
+  std::uint32_t req_mask = 0; // bit i => inverter for variable i is needed
   std::vector<Behavior> behavior;
 
   bool covers_strong(std::size_t minterm, int target) const;
-  bool usable(const std::vector<int>& target) const;
-  std::string topo(const std::vector<std::string>& vars) const;
+  bool usable(const std::vector<int> &target) const;
+  std::string topo(const std::vector<std::string> &vars) const;
 };
 
 struct SpaceOptions {
@@ -45,20 +45,20 @@ struct SpaceOptions {
   bool allow_tg = true;
 };
 
-std::vector<Branch> build_branches(const std::vector<std::string>& vars,
-                                   const SpaceOptions& opt);
+std::vector<Branch> build_branches(const std::vector<std::string> &vars,
+                                   const SpaceOptions &opt);
 
-std::vector<Branch> usable_branches(const std::vector<std::string>& vars,
-                                    const std::vector<int>& target,
-                                    const SpaceOptions& opt);
+std::vector<Branch> usable_branches(const std::vector<std::string> &vars,
+                                    const std::vector<int> &target,
+                                    const SpaceOptions &opt);
 
 int switch_cost(SwKind k);
-const char* switch_name(SwKind k);
+const char *switch_name(SwKind k);
 
 // True when chain a is a prefix of chain b, i.e. every edge of a is also an
 // edge of b.  Used to keep only candidates that are not strict edge-set
 // supersets of a cheaper branch with the same behaviour.
-bool chain_is_prefix(const std::vector<ChainElem>& a,
-                     const std::vector<ChainElem>& b);
+bool chain_is_prefix(const std::vector<ChainElem> &a,
+                     const std::vector<ChainElem> &b);
 
-}  // namespace dcstudy
+} // namespace dcstudy

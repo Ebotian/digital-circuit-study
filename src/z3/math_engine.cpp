@@ -27,12 +27,14 @@ void init_graphblas() {
   (void)once;
 }
 
-}  // namespace
+} // namespace
 
-std::vector<std::vector<int>> graphblas_closure(
-    int n, const std::vector<std::pair<int, int>>& edges) {
-  if (n < 0) throw std::invalid_argument("closure: negative n");
-  if (n == 0) return {};
+std::vector<std::vector<int>>
+graphblas_closure(int n, const std::vector<std::pair<int, int>> &edges) {
+  if (n < 0)
+    throw std::invalid_argument("closure: negative n");
+  if (n == 0)
+    return {};
   init_graphblas();
 
   GrB_Matrix A = nullptr;
@@ -55,8 +57,8 @@ std::vector<std::vector<int>> graphblas_closure(
     // R = R OR C, without destroying R while it is an input.
     GrB_Matrix R2 = nullptr;
     check(GrB_Matrix_new(&R2, GrB_BOOL, n, n));
-    check(GrB_Matrix_eWiseAdd_BinaryOp(R2, nullptr, nullptr, GxB_LOR_BOOL,
-                                       R, C, nullptr));
+    check(GrB_Matrix_eWiseAdd_BinaryOp(R2, nullptr, nullptr, GxB_LOR_BOOL, R, C,
+                                       nullptr));
     GrB_Matrix_free(&R);
     R = R2;
     GrB_Matrix_free(&P);
@@ -74,9 +76,11 @@ std::vector<std::vector<int>> graphblas_closure(
                                         &nvals, R));
   std::vector<std::vector<int>> out(n);
   for (std::size_t i = 0; i < nvals; ++i)
-    if (vals.get()[i]) out[static_cast<std::size_t>(rows[i])].push_back(
-        static_cast<int>(cols[i]));
-  for (auto& row : out) std::sort(row.begin(), row.end());
+    if (vals.get()[i])
+      out[static_cast<std::size_t>(rows[i])].push_back(
+          static_cast<int>(cols[i]));
+  for (auto &row : out)
+    std::sort(row.begin(), row.end());
 
   GrB_Matrix_free(&A);
   GrB_Matrix_free(&R);
@@ -85,8 +89,9 @@ std::vector<std::vector<int>> graphblas_closure(
   return out;
 }
 
-Gf2Result gf2_analysis(const std::vector<std::vector<int>>& rows, int ncols) {
-  if (ncols < 0) throw std::invalid_argument("gf2: negative ncols");
+Gf2Result gf2_analysis(const std::vector<std::vector<int>> &rows, int ncols) {
+  if (ncols < 0)
+    throw std::invalid_argument("gf2: negative ncols");
   const int nrows = static_cast<int>(rows.size());
   nmod_mat_t A, X;
   nmod_mat_init(A, nrows, ncols, 2);
@@ -112,4 +117,4 @@ Gf2Result gf2_analysis(const std::vector<std::vector<int>>& rows, int ncols) {
   return r;
 }
 
-}  // namespace dcstudy
+} // namespace dcstudy

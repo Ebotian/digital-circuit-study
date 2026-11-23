@@ -22,11 +22,12 @@ struct BddSwitchDesign {
   std::vector<std::string> truths;
 };
 
-BddSwitchDesign synthesize_bdd_switch(const BoolFunc& f,
-                                      const std::vector<std::string>& vars);
+BddSwitchDesign synthesize_bdd_switch(const BoolFunc &f,
+                                      const std::vector<std::string> &vars);
 
 // Search all input orders (n <= 4) and return the smallest verified BDD DAG.
-BddSwitchDesign synthesize_bdd_switch_best(const BoolFunc& f,
-                                           const std::vector<std::string>& vars);
+BddSwitchDesign
+synthesize_bdd_switch_best(const BoolFunc &f,
+                           const std::vector<std::string> &vars);
 
-}  // namespace dcstudy
+} // namespace dcstudy

@@ -20,7 +20,7 @@ struct EdgeChoice {
 struct TemplateEdge {
   int from = 0;
   int to = 0;
-  SwKind kind = SwKind::TGH;   // fallback if choices is empty
+  SwKind kind = SwKind::TGH; // fallback if choices is empty
   std::string lit;
   bool strong = false;
   int cost = 0;
@@ -44,14 +44,14 @@ struct TemplateResult {
   int edge_cost = 0;
   int inverter_cost = 0;
   std::vector<int> selected_edges;
-  std::vector<int> selected_choices;  // -1 if an edge is not selected
+  std::vector<int> selected_choices; // -1 if an edge is not selected
   SwitchGraph graph;
 };
 
-NetworkTemplate template_from_graph(const SwitchGraph& g, int inverter_cost);
+NetworkTemplate template_from_graph(const SwitchGraph &g, int inverter_cost);
 
-TemplateResult optimize_template(const NetworkTemplate& t,
-                                 const std::vector<std::string>& vars,
-                                 const std::vector<std::vector<int>>& targets);
+TemplateResult optimize_template(const NetworkTemplate &t,
+                                 const std::vector<std::string> &vars,
+                                 const std::vector<std::vector<int>> &targets);
 
-}  // namespace dcstudy
+} // namespace dcstudy

@@ -15,7 +15,7 @@ namespace dcstudy {
 
 struct GateInstance {
   std::string type;
-  std::map<std::string, std::string> ports;  // signal ports only
+  std::map<std::string, std::string> ports; // signal ports only
 };
 
 struct MultiStageDesign {
@@ -44,19 +44,19 @@ struct MultiStageMultiDesign {
   std::string verilog;
   std::string json;
   std::string cdl;
-  std::string rtl;  // behavioural module fed to the mapper (reusable as atom)
-  std::vector<std::string> truths;  // parallel to outputs
+  std::string rtl; // behavioural module fed to the mapper (reusable as atom)
+  std::vector<std::string> truths; // parallel to outputs
   bool verified = false;
 };
 
 std::string default_liberty_path();
-MultiStageDesign synthesize_multistage_static(const BoolFunc& f,
-                                               const std::vector<std::string>& vars,
-                                               int max_fanin = 0);
+MultiStageDesign synthesize_multistage_static(
+    const BoolFunc &f, const std::vector<std::string> &vars, int max_fanin = 0);
 // Don't-care rows are completed with the cheapest static-gate extension
 // before mapping, and verification accepts any 0/1 on those rows.
-MultiStageMultiDesign synthesize_multistage_static_multi(
-    const MultiProblem& problem, int max_fanin = 0);
+MultiStageMultiDesign
+synthesize_multistage_static_multi(const MultiProblem &problem,
+                                   int max_fanin = 0);
 
 // A hierarchical RTL design that instantiates user atoms (e.g. a 4-2
 // priority encoder).  Atoms are read as blackboxes for mapping, measured
@@ -64,8 +64,8 @@ MultiStageMultiDesign synthesize_multistage_static_multi(
 struct RtlAtomUse {
   std::string module;
   int instances = 0;
-  int transistors = 0;  // mapped cost of one instance
-  std::string parameters;  // rendered instance parameters, empty = defaults
+  int transistors = 0;    // mapped cost of one instance
+  std::string parameters; // rendered instance parameters, empty = defaults
 };
 
 struct RtlSynthResult {
@@ -84,11 +84,10 @@ struct RtlSynthResult {
 // Structural mode: when ref_path is non-empty, the mapped design is proven
 // against the reference module instead of a truth-table spec (spec may be
 // empty; ports come from the mapped netlist, no 2^n table is built).
-RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
-                                    const std::string& atoms_path,
-                                    const MultiProblem& spec,
-                                    const std::string& ref_path = "",
+RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
+                                    const std::string &atoms_path,
+                                    const MultiProblem &spec,
+                                    const std::string &ref_path = "",
                                     int max_fanin = 0);
 
-
-}  // namespace dcstudy
+} // namespace dcstudy

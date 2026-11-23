@@ -10,12 +10,12 @@ TEST_CASE("CDL aliases keep both output ports", "[cdl]") {
                {"Y0", PinDir::Output}, {"Y1", PinDir::Output},
                {"VDD", PinDir::Power}, {"VSS", PinDir::Ground}};
   c.aliases = {{"Y1", "Y0"}};
-  auto n = [](const std::string& name, const std::string& d,
-              const std::string& g, const std::string& s) {
+  auto n = [](const std::string &name, const std::string &d,
+              const std::string &g, const std::string &s) {
     return Device{name, d, g, s, "NMOS", false};
   };
-  auto p = [](const std::string& name, const std::string& d,
-              const std::string& g, const std::string& s) {
+  auto p = [](const std::string &name, const std::string &d,
+              const std::string &g, const std::string &s) {
     return Device{name, d, g, s, "PMOS", true};
   };
   c.devices = {n("N1", "Y0", "A", "net"), n("N2", "net", "B", "VSS"),
@@ -23,7 +23,7 @@ TEST_CASE("CDL aliases keep both output ports", "[cdl]") {
   const auto r = analyze_switch(c, {"A", "B"}, {"Y0", "Y1"}, true);
   REQUIRE(r.rows.size() == 4);
   std::string t0, t1;
-  for (const auto& row : r.rows) {
+  for (const auto &row : r.rows) {
     t0.push_back(logic_symbol(row.values[0]));
     t1.push_back(logic_symbol(row.values[1]));
   }
@@ -42,7 +42,7 @@ M1 Y A VDD VDD PMOS_VTL W=1 L=1
 .ENDS
 )";
   const auto lib = CdlLibrary::load(path.string());
-  const auto& c = lib.cell("INV");
+  const auto &c = lib.cell("INV");
   REQUIRE(c.transistor_count() == 2);
   REQUIRE(c.inputs() == std::vector<std::string>{"A"});
   REQUIRE(c.outputs() == std::vector<std::string>{"Y"});

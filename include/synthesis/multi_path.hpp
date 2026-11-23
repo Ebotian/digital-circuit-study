@@ -33,8 +33,9 @@ struct MultiPathSynthesisResult {
 // Don't-care rows are completed with the cheapest static-gate extension
 // before the search (tri-state has no 0/1 extension semantics and rejects
 // don't-cares).
-MultiPathSynthesisResult synthesize_path_variables_multi(
-    const MultiProblem& problem, const SpaceOptions& opt,
-    bool tri_state = false);
+MultiPathSynthesisResult
+synthesize_path_variables_multi(const MultiProblem &problem,
+                                const SpaceOptions &opt,
+                                bool tri_state = false);
 
-}  // namespace dcstudy
+} // namespace dcstudy

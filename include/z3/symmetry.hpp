@@ -12,7 +12,7 @@
 
 namespace dcstudy {
 
-std::vector<std::vector<std::size_t>> bliss_automorphisms(
-    std::size_t n, const std::string& truth);
+std::vector<std::vector<std::size_t>>
+bliss_automorphisms(std::size_t n, const std::string &truth);
 
-}  // namespace dcstudy
+} // namespace dcstudy

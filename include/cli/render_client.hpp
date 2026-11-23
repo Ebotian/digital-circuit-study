@@ -8,6 +8,6 @@
 namespace dcstudy {
 
 std::string render_helper_path();
-Json render_call(const Json& request, int timeout_seconds = 120);
+Json render_call(const Json &request, int timeout_seconds = 120);
 
-}  // namespace dcstudy
+} // namespace dcstudy

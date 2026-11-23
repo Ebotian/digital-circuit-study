@@ -18,10 +18,10 @@ enum class Logic { Zero, One, Float, Race };
 
 struct SwitchRow {
   std::vector<int> inputs;
-  std::vector<Logic> values;        // one entry per requested output
+  std::vector<Logic> values; // one entry per requested output
   std::vector<std::string> floating_gates;
-  bool conflict = false;            // both supplies forced in one component
-  bool unsat = false;               // no consistent assignment at all
+  bool conflict = false; // both supplies forced in one component
+  bool unsat = false;    // no consistent assignment at all
 };
 
 struct SwitchAnalysis {
@@ -31,7 +31,7 @@ struct SwitchAnalysis {
   std::vector<SwitchRow> rows;
   bool exact = false;
   bool assumptions_ok = true;
-  std::string mode;  // "fixpoint" or "z3"
+  std::string mode; // "fixpoint" or "z3"
 };
 
 // Build the cone of influence feeding one output: all devices on paths from
@@ -39,21 +39,18 @@ struct SwitchAnalysis {
 // output exposed as a port.  Static multi-output gates are independent, so
 // each cone can be checked separately instead of asking Z3 to reason about
 // every output at once.
-Subckt switch_output_cone(const Subckt& cell,
-                          const std::vector<std::string>& inputs,
-                          const std::string& output,
-                          const std::string& vdd = "VDD",
-                          const std::string& vss = "VSS");
+Subckt switch_output_cone(const Subckt &cell,
+                          const std::vector<std::string> &inputs,
+                          const std::string &output,
+                          const std::string &vdd = "VDD",
+                          const std::string &vss = "VSS");
 
-SwitchAnalysis analyze_switch(const Subckt& cell,
-                              const std::vector<std::string>& inputs,
-                              const std::vector<std::string>& outputs,
-                              bool exact = false,
-                              const std::string& vdd = "VDD",
-                              const std::string& vss = "VSS",
-                              bool graphblas = false,
-                              int jobs = 0);
+SwitchAnalysis
+analyze_switch(const Subckt &cell, const std::vector<std::string> &inputs,
+               const std::vector<std::string> &outputs, bool exact = false,
+               const std::string &vdd = "VDD", const std::string &vss = "VSS",
+               bool graphblas = false, int jobs = 0);
 
 char logic_symbol(Logic v);
 
-}  // namespace dcstudy
+} // namespace dcstudy

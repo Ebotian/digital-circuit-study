@@ -36,9 +36,9 @@ struct StaticExactResult {
   int inverter_cost = 0;
   int nfet = 0;
   int pfet = 0;
-  std::uint64_t inverted_mask = 0;  // bit i -> input i complemented
+  std::uint64_t inverted_mask = 0; // bit i -> input i complemented
   std::vector<std::string> outputs;
-  std::vector<Sop> pdn;             // parallel PDN terms for each output
+  std::vector<Sop> pdn; // parallel PDN terms for each output
   std::vector<std::string> truths;
   Subckt netlist;
   std::string cdl;
@@ -49,23 +49,23 @@ struct StaticExactResult {
 // Rows in `dc` may be covered by cubes but do not have to be (don't-care
 // set), so the cover only has to contain `onset`.
 // Returns false when no cover exists with those literals.
-bool exact_min_dnf_literals(const Bits& onset, std::size_t n,
-                            std::uint64_t neg_allowed, Sop& out,
-                            const Bits* dc = nullptr);
+bool exact_min_dnf_literals(const Bits &onset, std::size_t n,
+                            std::uint64_t neg_allowed, Sop &out,
+                            const Bits *dc = nullptr);
 
 // True when a switch-level truth string ('0'/'1'/'Z'/'X') satisfies the target
 // truth table, ignoring rows marked in `any`.  Don't-care rows still have to
 // be driven to 0 or 1 by a static network (Z/X is not an extension).
-bool truth_satisfies(const std::string& truth, const std::string& target,
-                     const Bits& any);
+bool truth_satisfies(const std::string &truth, const std::string &target,
+                     const Bits &any);
 
 // Complete a partial function by choosing the don't-care rows that minimise
 // a single-stage static gate: for every inverter set take the exact minimum
 // DNF of ~f (over must-low rows plus don't-cares) and keep the cheapest
 // polarity/literal choice.  This is a free optimisation of the X rows, not
 // just a literal-count heuristic.
-BoolFunc complete_with_cheapest_gate(const BoolFunc& f, const Bits& any);
+BoolFunc complete_with_cheapest_gate(const BoolFunc &f, const Bits &any);
 
-StaticExactResult synthesize_static_exact_multi(const MultiProblem& problem);
+StaticExactResult synthesize_static_exact_multi(const MultiProblem &problem);
 
-}  // namespace dcstudy
+} // namespace dcstudy

@@ -13,7 +13,7 @@ namespace dcstudy {
 
 // Parse a --mem-limit value in MiB.  Accepts a plain non-negative decimal
 // integer only; throws std::invalid_argument otherwise.
-unsigned long parse_mem_limit_mb(const std::string& text);
+unsigned long parse_mem_limit_mb(const std::string &text);
 
 // Install mb MiB as the soft RLIMIT_AS.  0 means "the current hard limit"
 // (normally unlimited).  Requests above the hard limit are clamped, never
@@ -41,4 +41,4 @@ unsigned long mem_limit_from_available(unsigned long available_mb);
 // default_mem_limit_mb() == mem_limit_from_available(available_memory_mb()).
 unsigned long default_mem_limit_mb();
 
-}  // namespace dcstudy
+} // namespace dcstudy

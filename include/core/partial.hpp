@@ -17,8 +17,8 @@
 namespace dcstudy {
 
 struct PartialOutput {
-  BoolFunc func;  // values on care rows; arbitrary on don't-care rows
-  Bits any;       // 1 = this row may be either value (size = 2^n)
+  BoolFunc func; // values on care rows; arbitrary on don't-care rows
+  Bits any;      // 1 = this row may be either value (size = 2^n)
 };
 
 struct MultiProblem {
@@ -31,7 +31,7 @@ struct MultiProblem {
   std::size_t rows() const {
     return vars.empty() ? 0 : (std::size_t{1} << vars.size());
   }
-  const Bits& any(std::size_t k) const { return outputs[k].any; }
+  const Bits &any(std::size_t k) const { return outputs[k].any; }
   bool has_dont_cares() const;
 
   // Cheapest total extension for static mapping: the don't-care rows are
@@ -40,7 +40,7 @@ struct MultiProblem {
 
   // True when a switch-level truth string satisfies output k: every care row
   // must match, every don't-care row may be either value but must be driven.
-  bool satisfies(std::size_t k, const std::string& truth) const;
+  bool satisfies(std::size_t k, const std::string &truth) const;
 };
 
-}  // namespace dcstudy
+} // namespace dcstudy

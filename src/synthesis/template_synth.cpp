@@ -11,11 +11,11 @@
 namespace dcstudy {
 namespace {
 
-int choice_count(const TemplateEdge& e) {
+int choice_count(const TemplateEdge &e) {
   return e.choices.empty() ? 1 : static_cast<int>(e.choices.size());
 }
 
-EdgeChoice choice_at(const TemplateEdge& e, int i) {
+EdgeChoice choice_at(const TemplateEdge &e, int i) {
   if (e.choices.empty()) {
     EdgeChoice c;
     c.kind = e.kind;
@@ -27,16 +27,17 @@ EdgeChoice choice_at(const TemplateEdge& e, int i) {
   return e.choices[static_cast<std::size_t>(i)];
 }
 
-SwitchGraph graph_of(const NetworkTemplate& t, const std::vector<char>& chosen,
-                     const std::vector<int>& choice) {
+SwitchGraph graph_of(const NetworkTemplate &t, const std::vector<char> &chosen,
+                     const std::vector<int> &choice) {
   SwitchGraph g;
   g.nets = t.nets;
   g.source_ids = t.source_ids;
   g.outputs = t.outputs;
   g.output = t.outputs.empty() ? 0 : t.outputs[0];
   for (std::size_t i = 0; i < t.edges.size(); ++i) {
-    if (!chosen[i]) continue;
-    const auto& te = t.edges[i];
+    if (!chosen[i])
+      continue;
+    const auto &te = t.edges[i];
     const EdgeChoice c = choice_at(te, choice.empty() ? 0 : choice[i]);
     SwitchGraphEdge e;
     e.from = te.from;
@@ -50,23 +51,26 @@ SwitchGraph graph_of(const NetworkTemplate& t, const std::vector<char>& chosen,
   return g;
 }
 
-bool verify_graph(const NetworkTemplate& t, const std::vector<char>& chosen,
-                  const std::vector<int>& choice,
-                  const std::vector<std::string>& vars,
-                  const std::vector<std::vector<int>>& targets) {
+bool verify_graph(const NetworkTemplate &t, const std::vector<char> &chosen,
+                  const std::vector<int> &choice,
+                  const std::vector<std::string> &vars,
+                  const std::vector<std::vector<int>> &targets) {
   const SwitchGraph g = graph_of(t, chosen, choice);
-  if (g.source_ids.empty() || g.outputs.empty()) return false;
+  if (g.source_ids.empty() || g.outputs.empty())
+    return false;
   const auto profiles = analyze_switch_graph_outputs(g, vars, targets);
-  if (profiles.size() != targets.size()) return false;
-  for (const auto& p : profiles)
-    if (!p.valid) return false;
+  if (profiles.size() != targets.size())
+    return false;
+  for (const auto &p : profiles)
+    if (!p.valid)
+      return false;
   return true;
 }
 
 struct Search {
-  const NetworkTemplate& t;
-  const std::vector<std::string>& vars;
-  const std::vector<std::vector<int>>& targets;
+  const NetworkTemplate &t;
+  const std::vector<std::string> &vars;
+  const std::vector<std::vector<int>> &targets;
   std::vector<char> chosen;
   std::vector<int> choice;
   int best = std::numeric_limits<int>::max();
@@ -74,14 +78,15 @@ struct Search {
   std::vector<int> best_choice;
   std::size_t visited = 0;
 
-  Search(const NetworkTemplate& tt, const std::vector<std::string>& v,
-         const std::vector<std::vector<int>>& tg)
+  Search(const NetworkTemplate &tt, const std::vector<std::string> &v,
+         const std::vector<std::vector<int>> &tg)
       : t(tt), vars(v), targets(tg), chosen(tt.edges.size(), 0),
         choice(tt.edges.size(), -1) {}
 
   void dfs(std::size_t i, int cost) {
     ++visited;
-    if (cost >= best) return;
+    if (cost >= best)
+      return;
     if (i == t.edges.size()) {
       if (verify_graph(t, chosen, choice, vars, targets)) {
         best = cost;
@@ -104,16 +109,17 @@ struct Search {
   }
 };
 
-}  // namespace
+} // namespace
 
-NetworkTemplate template_from_graph(const SwitchGraph& g, int inverter_cost) {
+NetworkTemplate template_from_graph(const SwitchGraph &g, int inverter_cost) {
   NetworkTemplate t;
   t.nets = g.nets;
   t.source_ids = g.source_ids;
   t.outputs = g.outputs;
-  if (t.outputs.empty() && !g.nets.empty()) t.outputs.push_back(g.output);
+  if (t.outputs.empty() && !g.nets.empty())
+    t.outputs.push_back(g.output);
   t.inverter_cost = inverter_cost;
-  for (const auto& e : g.edges) {
+  for (const auto &e : g.edges) {
     TemplateEdge te;
     te.from = e.from;
     te.to = e.to;
@@ -132,9 +138,9 @@ NetworkTemplate template_from_graph(const SwitchGraph& g, int inverter_cost) {
   return t;
 }
 
-TemplateResult optimize_template(const NetworkTemplate& t,
-                                 const std::vector<std::string>& vars,
-                                 const std::vector<std::vector<int>>& targets) {
+TemplateResult optimize_template(const NetworkTemplate &t,
+                                 const std::vector<std::string> &vars,
+                                 const std::vector<std::vector<int>> &targets) {
   TemplateResult out;
   out.inverter_cost = t.inverter_cost;
   if (t.edges.empty() || t.source_ids.empty() || t.outputs.empty()) {
@@ -145,7 +151,7 @@ TemplateResult optimize_template(const NetworkTemplate& t,
     out.reason = "no target outputs";
     return out;
   }
-  for (const auto& target : targets)
+  for (const auto &target : targets)
     if (target.size() != (std::size_t{1} << vars.size())) {
       out.reason = "target width mismatch";
       return out;
@@ -154,7 +160,8 @@ TemplateResult optimize_template(const NetworkTemplate& t,
   std::vector<char> all(t.edges.size(), 1);
   std::vector<int> all_choice(t.edges.size(), 0);
   int all_cost = t.inverter_cost;
-  for (const auto& e : t.edges) all_cost += choice_at(e, 0).cost;
+  for (const auto &e : t.edges)
+    all_cost += choice_at(e, 0).cost;
   if (!verify_graph(t, all, all_choice, vars, targets)) {
     out.reason = "template has no valid full-edge solution";
     return out;
@@ -165,7 +172,7 @@ TemplateResult optimize_template(const NetworkTemplate& t,
   int best_cost = all_cost;
   bool proof = true;
   std::size_t combinations = 1;
-  for (const auto& e : t.edges)
+  for (const auto &e : t.edges)
     combinations *= static_cast<std::size_t>(choice_count(e) + 1);
   if (t.edges.size() <= 20 && combinations <= 2'000'000) {
     Search s(t, vars, targets);
@@ -182,7 +189,8 @@ TemplateResult optimize_template(const NetworkTemplate& t,
     while (changed) {
       changed = false;
       for (std::size_t i = 0; i < t.edges.size(); ++i) {
-        if (!best[i]) continue;
+        if (!best[i])
+          continue;
         best[i] = 0;
         if (verify_graph(t, best, best_choice, vars, targets)) {
           changed = true;
@@ -212,4 +220,4 @@ TemplateResult optimize_template(const NetworkTemplate& t,
   return out;
 }
 
-}  // namespace dcstudy
+} // namespace dcstudy

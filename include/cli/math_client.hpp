@@ -13,9 +13,9 @@ struct MathGf2 {
   std::vector<std::vector<int>> nullspace;
 };
 
-std::vector<std::vector<int>> graph_closure(
-    int n, const std::vector<std::pair<int, int>>& edges);
+std::vector<std::vector<int>>
+graph_closure(int n, const std::vector<std::pair<int, int>> &edges);
 
-MathGf2 gf2_analysis(const std::vector<std::vector<int>>& rows, int ncols);
+MathGf2 gf2_analysis(const std::vector<std::vector<int>> &rows, int ncols);
 
-}  // namespace dcstudy
+} // namespace dcstudy

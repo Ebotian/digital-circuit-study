@@ -11,9 +11,12 @@
 
 namespace dcstudy {
 
-std::string emit_dut(const Design& design, const std::vector<std::string>& vars);
-std::string emit_ref(const BoolFunc& target, const std::vector<std::string>& vars);
-std::string emit_miter(const std::vector<std::string>& vars);
-std::string emit_tb(const BoolFunc& target, const std::vector<std::string>& vars);
+std::string emit_dut(const Design &design,
+                     const std::vector<std::string> &vars);
+std::string emit_ref(const BoolFunc &target,
+                     const std::vector<std::string> &vars);
+std::string emit_miter(const std::vector<std::string> &vars);
+std::string emit_tb(const BoolFunc &target,
+                    const std::vector<std::string> &vars);
 
-}  // namespace dcstudy
+} // namespace dcstudy

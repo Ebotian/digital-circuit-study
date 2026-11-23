@@ -12,21 +12,24 @@
 namespace dcstudy {
 namespace {
 
-z3::expr sum_expr(z3::context& ctx, const std::vector<z3::expr>& terms) {
+z3::expr sum_expr(z3::context &ctx, const std::vector<z3::expr> &terms) {
   z3::expr acc = ctx.int_val(0);
-  for (const auto& t : terms) acc = acc + t;
+  for (const auto &t : terms)
+    acc = acc + t;
   return acc;
 }
 
-z3::check_result checked(z3::solver& s) {
+z3::check_result checked(z3::solver &s) {
   const auto r = s.check();
-  if (r == z3::unknown) throw std::runtime_error("Z3 returned unknown");
+  if (r == z3::unknown)
+    throw std::runtime_error("Z3 returned unknown");
   return r;
 }
 
-z3::check_result checked(z3::optimize& o) {
+z3::check_result checked(z3::optimize &o) {
   const auto r = o.check();
-  if (r == z3::unknown) throw std::runtime_error("Z3 returned unknown");
+  if (r == z3::unknown)
+    throw std::runtime_error("Z3 returned unknown");
   return r;
 }
 
@@ -34,11 +37,12 @@ z3::check_result checked(z3::optimize& o) {
 // the same source are one driver (notably the two halves of a TG), while two
 // different sources are a structural conflict even if they happen to carry
 // the same value.
-std::vector<z3::expr> driver_constraints(
-    z3::context& ctx, const SynthProblem& p,
-    const std::vector<z3::expr>& x) {
+std::vector<z3::expr> driver_constraints(z3::context &ctx,
+                                         const SynthProblem &p,
+                                         const std::vector<z3::expr> &x) {
   std::vector<z3::expr> out;
-  if (p.conducts.empty()) return out;
+  if (p.conducts.empty())
+    return out;
   if (p.conducts.size() != static_cast<std::size_t>(p.n_rows))
     throw std::runtime_error("synth: conducts size mismatch");
   if (p.groups.size() != x.size())
@@ -49,13 +53,14 @@ std::vector<z3::expr> driver_constraints(
       if (id < 0 || static_cast<std::size_t>(id) >= x.size())
         throw std::runtime_error("synth: conducts index out of range");
       const int g = p.groups[static_cast<std::size_t>(id)];
-      if (g < 0) throw std::runtime_error("synth: branch has no source group");
+      if (g < 0)
+        throw std::runtime_error("synth: branch has no source group");
       by_group[g].push_back(id);
     }
     std::vector<z3::expr> ys;
-    for (const auto& [g, ids] : by_group) {
-      z3::expr y = ctx.int_const(("y_" + std::to_string(m) + "_" +
-                                  std::to_string(g)).c_str());
+    for (const auto &[g, ids] : by_group) {
+      z3::expr y = ctx.int_const(
+          ("y_" + std::to_string(m) + "_" + std::to_string(g)).c_str());
       out.push_back(y >= 0);
       out.push_back(y <= 1);
       std::vector<z3::expr> terms;
@@ -73,9 +78,9 @@ std::vector<z3::expr> driver_constraints(
   return out;
 }
 
-}  // namespace
+} // namespace
 
-SynthSolution z3_solve_synth(const SynthProblem& p) {
+SynthSolution z3_solve_synth(const SynthProblem &p) {
   const std::size_t nb = p.costs.size();
   if (p.req.size() != nb ||
       p.covers.size() != static_cast<std::size_t>(p.n_rows))
@@ -110,11 +115,11 @@ SynthSolution z3_solve_synth(const SynthProblem& p) {
   for (std::size_t j = 0; j < inv_bits.size(); ++j)
     inv.push_back(ctx.int_const(("inv_" + std::to_string(j)).c_str()));
 
-  for (auto& v : x) {
+  for (auto &v : x) {
     optz.add(v >= 0);
     optz.add(v <= 1);
   }
-  for (auto& v : inv) {
+  for (auto &v : inv) {
     optz.add(v >= 0);
     optz.add(v <= 1);
   }
@@ -133,7 +138,8 @@ SynthSolution z3_solve_synth(const SynthProblem& p) {
     }
     optz.add(sum_expr(ctx, terms) >= 1);
   }
-  for (const auto& c : driver_constraints(ctx, p, x)) optz.add(c);
+  for (const auto &c : driver_constraints(ctx, p, x))
+    optz.add(c);
 
   for (std::size_t i = 0; i < nb; ++i) {
     for (std::size_t j = 0; j < inv_bits.size(); ++j)
@@ -143,7 +149,8 @@ SynthSolution z3_solve_synth(const SynthProblem& p) {
   for (std::size_t j = 0; j < inv_bits.size(); ++j) {
     std::vector<z3::expr> terms;
     for (std::size_t i = 0; i < nb; ++i)
-      if (p.req[i] & (std::uint32_t{1} << inv_bits[j])) terms.push_back(x[i]);
+      if (p.req[i] & (std::uint32_t{1} << inv_bits[j]))
+        terms.push_back(x[i]);
     optz.add(inv[j] <= sum_expr(ctx, terms));
   }
 
@@ -164,33 +171,38 @@ SynthSolution z3_solve_synth(const SynthProblem& p) {
   out.optimum = static_cast<int>(model.eval(cost, true).get_numeral_int64());
 
   z3::solver s(ctx);
-  for (auto& v : x) {
+  for (auto &v : x) {
     s.add(v >= 0);
     s.add(v <= 1);
   }
-  for (auto& v : inv) {
+  for (auto &v : inv) {
     s.add(v >= 0);
     s.add(v <= 1);
   }
   for (int m = 0; m < p.n_rows; ++m) {
     std::vector<z3::expr> terms;
-    for (int id : p.covers[m]) terms.push_back(x[static_cast<std::size_t>(id)]);
+    for (int id : p.covers[m])
+      terms.push_back(x[static_cast<std::size_t>(id)]);
     s.add(sum_expr(ctx, terms) >= 1);
   }
-  for (const auto& c : driver_constraints(ctx, p, x)) s.add(c);
+  for (const auto &c : driver_constraints(ctx, p, x))
+    s.add(c);
   for (std::size_t i = 0; i < nb; ++i)
     for (std::size_t j = 0; j < inv_bits.size(); ++j)
-      if (p.req[i] & (std::uint32_t{1} << inv_bits[j])) s.add(x[i] <= inv[j]);
+      if (p.req[i] & (std::uint32_t{1} << inv_bits[j]))
+        s.add(x[i] <= inv[j]);
   for (std::size_t j = 0; j < inv_bits.size(); ++j) {
     std::vector<z3::expr> terms;
     for (std::size_t i = 0; i < nb; ++i)
-      if (p.req[i] & (std::uint32_t{1} << inv_bits[j])) terms.push_back(x[i]);
+      if (p.req[i] & (std::uint32_t{1} << inv_bits[j]))
+        terms.push_back(x[i]);
     s.add(inv[j] <= sum_expr(ctx, terms));
   }
   s.add(cost <= out.optimum);
 
   while (static_cast<int>(out.designs.size()) < p.limit) {
-    if (checked(s) != z3::sat) break;
+    if (checked(s) != z3::sat)
+      break;
     const z3::model m = s.get_model();
     std::vector<int> selected;
     std::vector<z3::expr> block;
@@ -203,13 +215,15 @@ SynthSolution z3_solve_synth(const SynthProblem& p) {
         throw std::runtime_error("synth: non-integral branch variable");
       }
     }
-    if (selected.empty()) break;
+    if (selected.empty())
+      break;
     out.designs.push_back(selected);
 
     auto block_set = [&](std::vector<int> set) {
       std::sort(set.begin(), set.end());
       set.erase(std::unique(set.begin(), set.end()), set.end());
-      if (set.empty()) return;
+      if (set.empty())
+        return;
       std::vector<z3::expr> terms;
       for (int id : set) {
         if (id < 0 || static_cast<std::size_t>(id) >= nb)
@@ -222,7 +236,7 @@ SynthSolution z3_solve_synth(const SynthProblem& p) {
     // Block the whole automorphism orbit.  This is symmetry breaking in the
     // solver, not an output filter: the next model is already a representative
     // of a different equivalence class.
-    for (const auto& sym : p.symmetries) {
+    for (const auto &sym : p.symmetries) {
       std::vector<int> image;
       image.reserve(selected.size());
       for (int id : selected) {
@@ -230,14 +244,16 @@ SynthSolution z3_solve_synth(const SynthProblem& p) {
           throw std::runtime_error("synth: bad symmetry permutation");
         image.push_back(sym[static_cast<std::size_t>(id)]);
       }
-      if (image == selected) continue;
+      if (image == selected)
+        continue;
       block_set(std::move(image));
     }
   }
 
   out.feasible = !out.designs.empty();
-  if (!out.feasible) out.message = "no design found";
+  if (!out.feasible)
+    out.message = "no design found";
   return out;
 }
 
-}  // namespace dcstudy
+} // namespace dcstudy

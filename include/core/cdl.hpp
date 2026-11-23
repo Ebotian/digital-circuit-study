@@ -32,24 +32,24 @@ struct Subckt {
   std::size_t transistor_count() const { return devices.size(); }
   std::vector<std::string> inputs() const;
   std::vector<std::string> outputs() const;
-  PinDir direction(const std::string& port) const;
+  PinDir direction(const std::string &port) const;
 };
 
 class CdlLibrary {
- public:
-  static CdlLibrary load(const std::string& path);
+public:
+  static CdlLibrary load(const std::string &path);
 
-  const std::vector<Subckt>& cells() const { return cells_; }
-  const Subckt& cell(const std::string& name) const;
-  bool has(const std::string& name) const;
+  const std::vector<Subckt> &cells() const { return cells_; }
+  const Subckt &cell(const std::string &name) const;
+  bool has(const std::string &name) const;
 
- private:
+private:
   std::vector<Subckt> cells_;
   std::unordered_map<std::string, std::size_t> index_;
   std::unordered_map<std::string, std::size_t> upper_index_;
 };
 
-std::string expand_home(const std::string& path);
+std::string expand_home(const std::string &path);
 std::string default_cdl_path();
 
-}  // namespace dcstudy
+} // namespace dcstudy

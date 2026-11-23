@@ -17,8 +17,8 @@ struct Design {
   int cost = 0;
   bool canonical = false;
 
-  std::string topologies(const std::vector<std::string>& vars) const;
-  std::string inverter_names(const std::vector<std::string>& vars) const;
+  std::string topologies(const std::vector<std::string> &vars) const;
+  std::string inverter_names(const std::vector<std::string> &vars) const;
 };
 
 struct SynthesisResult {
@@ -29,10 +29,10 @@ struct SynthesisResult {
   std::string message;
 };
 
-SynthesisResult synthesize_min(const std::vector<std::string>& vars,
-                               const std::vector<int>& target,
-                               const SpaceOptions& opt,
+SynthesisResult synthesize_min(const std::vector<std::string> &vars,
+                               const std::vector<int> &target,
+                               const SpaceOptions &opt,
                                std::size_t max_solutions = 64,
                                bool canonical = false);
 
-}  // namespace dcstudy
+} // namespace dcstudy

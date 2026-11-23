@@ -16,12 +16,12 @@ struct ToolResult {
   std::string workdir;
 };
 
-ToolResult prove_yosys(const std::string& dut_source, const BoolFunc& target,
-                        const std::vector<std::string>& vars, bool keep = false);
+ToolResult prove_yosys(const std::string &dut_source, const BoolFunc &target,
+                       const std::vector<std::string> &vars, bool keep = false);
 
-ToolResult simulate_verilator(const std::string& dut_source,
-                              const BoolFunc& target,
-                              const std::vector<std::string>& vars,
+ToolResult simulate_verilator(const std::string &dut_source,
+                              const BoolFunc &target,
+                              const std::vector<std::string> &vars,
                               bool keep = false);
 
-}  // namespace dcstudy
+} // namespace dcstudy

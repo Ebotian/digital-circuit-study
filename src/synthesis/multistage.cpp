@@ -22,54 +22,61 @@
 #include "core/cdl.hpp"
 #include "core/json.hpp"
 #include "core/parallel.hpp"
-#include "synthesis/static_exact.hpp"
-#include "switch/switchlevel.hpp"
 #include "core/verify.hpp"
+#include "switch/switchlevel.hpp"
+#include "synthesis/static_exact.hpp"
 
 namespace dcstudy {
 namespace {
 
 namespace fs = std::filesystem;
 
-std::string shell_quote(const std::string& s) {
+std::string shell_quote(const std::string &s) {
   std::string out = "'";
   for (char c : s) {
-    if (c == '\'') out += "'\\''";
-    else out += c;
+    if (c == '\'')
+      out += "'\\''";
+    else
+      out += c;
   }
   out += "'";
   return out;
 }
 
-void write_text(const fs::path& p, const std::string& s) {
+void write_text(const fs::path &p, const std::string &s) {
   std::ofstream out(p);
-  if (!out) throw std::runtime_error("cannot write " + p.string());
+  if (!out)
+    throw std::runtime_error("cannot write " + p.string());
   out << s;
 }
 
-std::string read_file(const fs::path& p) {
+std::string read_file(const fs::path &p) {
   std::ifstream in(p);
   std::ostringstream os;
   os << in.rdbuf();
   return os.str();
 }
 
-std::string tail(const std::string& s, std::size_t max_lines = 30) {
+std::string tail(const std::string &s, std::size_t max_lines = 30) {
   std::vector<std::string> lines;
   std::istringstream is(s);
   std::string line;
-  while (std::getline(is, line)) lines.push_back(line);
-  const std::size_t start = lines.size() > max_lines ? lines.size() - max_lines : 0;
+  while (std::getline(is, line))
+    lines.push_back(line);
+  const std::size_t start =
+      lines.size() > max_lines ? lines.size() - max_lines : 0;
   std::string out;
-  for (std::size_t i = start; i < lines.size(); ++i) out += lines[i] + "\n";
+  for (std::size_t i = start; i < lines.size(); ++i)
+    out += lines[i] + "\n";
   return out;
 }
 
 class TempDir {
- public:
+public:
   TempDir() : keep_(false) {
     static std::atomic<int> counter{0};
-    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto stamp =
+        std::chrono::steady_clock::now().time_since_epoch().count();
     path_ = fs::temp_directory_path() /
             ("dcstudy-multi-" + std::to_string(::getpid()) + "-" +
              std::to_string(stamp) + "-" + std::to_string(counter++));
@@ -81,21 +88,22 @@ class TempDir {
       fs::remove_all(path_, ec);
     }
   }
-  const fs::path& path() const { return path_; }
+  const fs::path &path() const { return path_; }
 
- private:
+private:
   fs::path path_;
   bool keep_;
 };
 
-bool static_cell(const std::string& type) {
-  static const char* prefixes[] = {
-      "INV_", "BUF_", "NAND2_", "NAND3_", "NAND4_", "NOR2_", "NOR3_",
-      "NOR4_", "AND2_", "AND3_", "AND4_", "OR2_", "OR3_", "OR4_",
-      "AOI21_", "AOI22_", "AOI211_", "AOI221_", "AOI222_", "OAI21_",
-      "OAI22_", "OAI211_", "OAI221_", "OAI222_", "OAI33_"};
-  for (const char* p : prefixes)
-    if (type.rfind(p, 0) == 0) return true;
+bool static_cell(const std::string &type) {
+  static const char *prefixes[] = {
+      "INV_",    "BUF_",    "NAND2_",  "NAND3_",  "NAND4_",  "NOR2_",  "NOR3_",
+      "NOR4_",   "AND2_",   "AND3_",   "AND4_",   "OR2_",    "OR3_",   "OR4_",
+      "AOI21_",  "AOI22_",  "AOI211_", "AOI221_", "AOI222_", "OAI21_", "OAI22_",
+      "OAI211_", "OAI221_", "OAI222_", "OAI33_"};
+  for (const char *p : prefixes)
+    if (type.rfind(p, 0) == 0)
+      return true;
   return false;
 }
 
@@ -108,40 +116,54 @@ std::string base_dont_use() {
          "-dont_use HA_X1 -dont_use FA_X1";
 }
 
-std::string bit_net(const Json& bit,
-                    const std::map<std::int64_t, std::string>& names) {
+std::string bit_net(const Json &bit,
+                    const std::map<std::int64_t, std::string> &names) {
   if (bit.is_string()) {
     const std::string s = bit.as_string();
-    if (s == "0") return "VSS";
-    if (s == "1") return "VDD";
+    if (s == "0")
+      return "VSS";
+    if (s == "1")
+      return "VDD";
     throw std::runtime_error("multi-stage: unsupported constant bit " + s);
   }
-  if (!bit.is_number()) throw std::runtime_error("multi-stage: bad net bit");
+  if (!bit.is_number())
+    throw std::runtime_error("multi-stage: bad net bit");
   const auto id = bit.as_int();
   auto it = names.find(id);
-  if (it == names.end()) throw std::runtime_error("multi-stage: net bit without name");
+  if (it == names.end())
+    throw std::runtime_error("multi-stage: net bit without name");
   return it->second;
 }
 
-std::string cdl_from_subckt(const Subckt& c) {
+std::string cdl_from_subckt(const Subckt &c) {
   std::string out = ".SUBCKT " + c.name;
-  for (const auto& p : c.ports) out += " " + p;
+  for (const auto &p : c.ports)
+    out += " " + p;
   out += "\n*.PININFO";
-  for (const auto& p : c.ports) {
+  for (const auto &p : c.ports) {
     char d = 'B';
     switch (c.direction(p)) {
-      case PinDir::Input: d = 'I'; break;
-      case PinDir::Output: d = 'O'; break;
-      case PinDir::Power: d = 'P'; break;
-      case PinDir::Ground: d = 'G'; break;
-      default: break;
+    case PinDir::Input:
+      d = 'I';
+      break;
+    case PinDir::Output:
+      d = 'O';
+      break;
+    case PinDir::Power:
+      d = 'P';
+      break;
+    case PinDir::Ground:
+      d = 'G';
+      break;
+    default:
+      break;
     }
     out += " " + p + ":" + d;
   }
   out += "\n";
-  for (const auto& [alias, canon] : c.aliases)
+  for (const auto &[alias, canon] : c.aliases)
     out += "*.ALIAS " + alias + " " + canon + "\n";
-  for (const auto& dev : c.devices) {
+  for (const auto &dev : c.devices) {
     const std::string bulk = dev.pmos ? "VDD" : "VSS";
     out += dev.name + " " + dev.drain + " " + dev.gate + " " + dev.source +
            " " + bulk + " " + dev.model + "\n";
@@ -149,34 +171,36 @@ std::string cdl_from_subckt(const Subckt& c) {
   // Two ports on one net cannot be written in a transistor netlist, so tie
   // them with a 0 V source: SPICE simulators then see the alias connected
   // (the *.ALIAS line above is what this repo's own parser uses).
-  for (const auto& [alias, canon] : c.aliases)
+  for (const auto &[alias, canon] : c.aliases)
     out += "V__alias_" + alias + " " + alias + " " + canon + " 0\n";
   out += ".ENDS\n";
   return out;
 }
 
-}  // namespace
+} // namespace
 
 std::string default_liberty_path() {
-  if (const char* p = std::getenv("NANGATE45_LIB"); p && *p) return expand_home(p);
-  if (const char* p = std::getenv("PDK_ROOT"); p && *p)
+  if (const char *p = std::getenv("NANGATE45_LIB"); p && *p)
+    return expand_home(p);
+  if (const char *p = std::getenv("PDK_ROOT"); p && *p)
     return expand_home(std::string(p) + "/nangate45/lib/Nangate45_typ.lib");
-  if (const char* h = std::getenv("HOME"); h && *h)
+  if (const char *h = std::getenv("HOME"); h && *h)
     return std::string(h) + "/yosys-sta/pdk/nangate45/lib/Nangate45_typ.lib";
   return "nangate45/lib/Nangate45_typ.lib";
 }
 
 namespace {
 
-MultiStageMultiDesign synthesize_multistage_static_multi_impl(
-    const MultiProblem& p, int max_fanin) {
+MultiStageMultiDesign
+synthesize_multistage_static_multi_impl(const MultiProblem &p, int max_fanin) {
   MultiStageMultiDesign out;
   out.outputs = p.names;
-  const auto& out_names = p.names;
-  const auto& vars = p.vars;
+  const auto &out_names = p.names;
+  const auto &vars = p.vars;
   std::vector<BoolFunc> funcs;
   funcs.reserve(p.size());
-  for (const auto& o : p.outputs) funcs.push_back(o.func);
+  for (const auto &o : p.outputs)
+    funcs.push_back(o.func);
   if (funcs.empty() || funcs.size() != out_names.size()) {
     out.reason = "multi-stage synthesis needs one name per output";
     return out;
@@ -189,7 +213,8 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
   // the cheapest static-gate extension keeps the mapped logic small.
   std::vector<BoolFunc> work = funcs;
   for (std::size_t k = 0; k < work.size(); ++k)
-    if (!p.any(k).none()) work[k] = p.completed(k);
+    if (!p.any(k).none())
+      work[k] = p.completed(k);
   const std::string lib = default_liberty_path();
   const std::string cdl = default_cdl_path();
   if (!fs::exists(lib)) {
@@ -209,10 +234,12 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
   {
     std::ofstream os(rtl);
     os << "module top(";
-    for (const auto& v : vars) os << "input logic " << v << ", ";
+    for (const auto &v : vars)
+      os << "input logic " << v << ", ";
     for (std::size_t i = 0; i < out_names.size(); ++i) {
       os << "output logic " << out_names[i];
-      if (i + 1 < out_names.size()) os << ", ";
+      if (i + 1 < out_names.size())
+        os << ", ";
     }
     os << ");\n";
     for (std::size_t i = 0; i < work.size(); ++i)
@@ -230,7 +257,7 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
     // Every library cell over the limit is blocked, not only the static-cell
     // families: ABC will otherwise pick e.g. OAI221_X1 and the fan-in
     // contract is broken no matter what the post-check below says.
-    for (const auto& cell : library.cells()) {
+    for (const auto &cell : library.cells()) {
       const int inputs = static_cast<int>(cell.inputs().size());
       if (inputs > max_fanin)
         dont_use += " -dont_use " + cell.name;
@@ -238,16 +265,17 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
   }
   const std::string script =
       "read_verilog -sv rtl.v; synth -top top; abc -liberty " + lib + " " +
-      dont_use + "; opt_clean; write_json net.json; write_verilog -noattr net.v";
+      dont_use +
+      "; opt_clean; write_json net.json; write_verilog -noattr net.v";
   const std::string cmd = "cd " + shell_quote(dir.path().string()) +
-                          " && timeout 180 yosys -Q -p " +
-                          shell_quote(script) + " > " +
-                          shell_quote(log.string()) + " 2>&1";
+                          " && timeout 180 yosys -Q -p " + shell_quote(script) +
+                          " > " + shell_quote(log.string()) + " 2>&1";
   const int rc = std::system(cmd.c_str());
   const int code = (rc != -1 && WIFEXITED(rc)) ? WEXITSTATUS(rc) : -1;
   const std::string ylog = read_file(log);
   if (code != 0) {
-    out.reason = "yosys failed (exit " + std::to_string(code) + "): " + tail(ylog);
+    out.reason =
+        "yosys failed (exit " + std::to_string(code) + "): " + tail(ylog);
     return out;
   }
   if (!fs::exists(net_json) || !fs::exists(net_v)) {
@@ -257,40 +285,48 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
 
   try {
     const Json root = Json::parse(read_file(net_json));
-    const Json& top = root.at("modules").at("top");
-    const Json& netnames = top.at("netnames");
+    const Json &top = root.at("modules").at("top");
+    const Json &netnames = top.at("netnames");
     std::map<std::int64_t, std::string> bits;
-    for (const auto& [name, info] : netnames.object()) {
-      const bool hidden = info.contains("hide_name") && info.at("hide_name").as_int() != 0;
-      for (const auto& b : info.at("bits").array()) {
-        if (!b.is_number()) continue;
+    for (const auto &[name, info] : netnames.object()) {
+      const bool hidden =
+          info.contains("hide_name") && info.at("hide_name").as_int() != 0;
+      for (const auto &b : info.at("bits").array()) {
+        if (!b.is_number())
+          continue;
         const auto id = b.as_int();
         auto it = bits.find(id);
-        if (it == bits.end() || !hidden) bits[id] = name;
+        if (it == bits.end() || !hidden)
+          bits[id] = name;
       }
     }
 
     // Yosys may fold several output ports onto one bit (e.g. Y0 and Y1 both
     // ~(A&B)).  Keep the port->bit map: the first output names the shared
     // net, later ones become aliases instead of dangling unconnected.
-    const Json& ports = top.at("ports");
+    const Json &ports = top.at("ports");
     std::map<std::int64_t, std::string> input_of_bit;
-    for (const auto& v : vars) {
-      if (!ports.contains(v)) continue;
-      const auto& pb = ports.at(v).at("bits").array();
-      if (!pb.empty() && pb[0].is_number()) input_of_bit[pb[0].as_int()] = v;
+    for (const auto &v : vars) {
+      if (!ports.contains(v))
+        continue;
+      const auto &pb = ports.at(v).at("bits").array();
+      if (!pb.empty() && pb[0].is_number())
+        input_of_bit[pb[0].as_int()] = v;
     }
     std::map<std::int64_t, std::string> output_of_bit;
     std::vector<int> alias_of(out_names.size(), -1);
     for (std::size_t k = 0; k < out_names.size(); ++k) {
-      if (!ports.contains(out_names[k])) continue;
-      const auto& pb = ports.at(out_names[k]).at("bits").array();
-      if (pb.empty() || !pb[0].is_number()) continue;
+      if (!ports.contains(out_names[k]))
+        continue;
+      const auto &pb = ports.at(out_names[k]).at("bits").array();
+      if (pb.empty() || !pb[0].is_number())
+        continue;
       const auto id = pb[0].as_int();
       auto it = output_of_bit.find(id);
       if (it == output_of_bit.end()) {
         output_of_bit.emplace(id, out_names[k]);
-        if (!input_of_bit.count(id)) bits[id] = out_names[k];
+        if (!input_of_bit.count(id))
+          bits[id] = out_names[k];
       } else {
         const auto canon =
             std::find(out_names.begin(), out_names.end(), it->second) -
@@ -299,8 +335,8 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
       }
     }
 
-    const Json& cells = top.at("cells");
-    for (const auto& [inst, cj] : cells.object()) {
+    const Json &cells = top.at("cells");
+    for (const auto &[inst, cj] : cells.object()) {
       GateInstance gi;
       gi.type = cj.at("type").as_string();
       if (!static_cell(gi.type)) {
@@ -308,8 +344,8 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
                      " (choose a static standard-cell library)";
         return out;
       }
-      for (const auto& [port, bits_json] : cj.at("connections").object()) {
-        const auto& arr = bits_json.array();
+      for (const auto &[port, bits_json] : cj.at("connections").object()) {
+        const auto &arr = bits_json.array();
         if (arr.size() != 1)
           throw std::runtime_error("multi-stage: multi-bit cell port");
         gi.ports[port] = bit_net(arr[0], bits);
@@ -324,7 +360,7 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
 
     Subckt flat;
     flat.name = "MULTI_STAGE_STATIC_CMOS";
-    for (const auto& v : vars) {
+    for (const auto &v : vars) {
       flat.ports.push_back(v);
       flat.pin_dir[v] = PinDir::Input;
     }
@@ -342,8 +378,8 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
 
     int dev_id = 0;
     for (std::size_t ci = 0; ci < out.cells.size(); ++ci) {
-      const auto& gi = out.cells[ci];
-      const Subckt& cell = library.cell(gi.type);
+      const auto &gi = out.cells[ci];
+      const Subckt &cell = library.cell(gi.type);
       const int cell_inputs = static_cast<int>(cell.inputs().size());
       if (max_fanin > 0 && cell_inputs > max_fanin) {
         out.reason = "mapped cell " + gi.type + " has " +
@@ -352,13 +388,15 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
         return out;
       }
       out.total += static_cast<int>(cell.transistor_count());
-      auto mapnet = [&](const std::string& n) -> std::string {
-        if (n == "VDD" || n == "VSS") return n;
+      auto mapnet = [&](const std::string &n) -> std::string {
+        if (n == "VDD" || n == "VSS")
+          return n;
         auto it = gi.ports.find(n);
-        if (it != gi.ports.end()) return it->second;
+        if (it != gi.ports.end())
+          return it->second;
         return "u" + std::to_string(ci) + "_" + n;
       };
-      for (const auto& dev : cell.devices) {
+      for (const auto &dev : cell.devices) {
         Device d = dev;
         d.name = "M_" + std::to_string(dev_id++);
         d.drain = mapnet(dev.drain);
@@ -368,9 +406,11 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
       }
     }
 
-    for (const auto& d : flat.devices) {
-      if (d.pmos) ++out.pfet;
-      else ++out.nfet;
+    for (const auto &d : flat.devices) {
+      if (d.pmos)
+        ++out.pfet;
+      else
+        ++out.nfet;
     }
     out.cdl = cdl_from_subckt(flat);
     out.verilog = read_file(net_v);
@@ -383,48 +423,51 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
     out.truths.resize(out_names.size());
     std::vector<char> output_ok(out_names.size(), 0);
     parallel_for(out_names.size(), parallel_jobs(), [&](std::size_t k) {
-      if (alias_of[k] >= 0) return;  // copied from the canonical output
+      if (alias_of[k] >= 0)
+        return; // copied from the canonical output
       const Subckt one =
           switch_output_cone(flat, vars, out_names[k], "VDD", "VSS");
-      const SwitchAnalysis a =
-          analyze_switch(one, vars, {out_names[k]}, true, "VDD", "VSS", false,
-                         1);
+      const SwitchAnalysis a = analyze_switch(one, vars, {out_names[k]}, true,
+                                              "VDD", "VSS", false, 1);
       std::string truth;
-      for (const auto& row : a.rows)
+      for (const auto &row : a.rows)
         truth.push_back(logic_symbol(row.values[0]));
       out.truths[k] = std::move(truth);
       output_ok[k] = p.satisfies(k, out.truths[k]) ? 1 : 0;
     });
     for (std::size_t k = 0; k < out_names.size(); ++k) {
-      if (alias_of[k] < 0) continue;
+      if (alias_of[k] < 0)
+        continue;
       out.truths[k] = out.truths[static_cast<std::size_t>(alias_of[k])];
       output_ok[k] = p.satisfies(k, out.truths[k]) ? 1 : 0;
     }
     out.verified = std::all_of(output_ok.begin(), output_ok.end(),
                                [](char v) { return v != 0; });
     out.ok = true;
-    if (!out.verified) out.reason = "switch-level truth mismatch";
+    if (!out.verified)
+      out.reason = "switch-level truth mismatch";
     return out;
-  } catch (const std::exception& e) {
+  } catch (const std::exception &e) {
     out.reason = std::string("multi-stage parse failed: ") + e.what();
     return out;
   }
 }
 
-}  // namespace
+} // namespace
 
-MultiStageMultiDesign synthesize_multistage_static_multi(
-    const MultiProblem& problem, int max_fanin) {
+MultiStageMultiDesign
+synthesize_multistage_static_multi(const MultiProblem &problem, int max_fanin) {
   return synthesize_multistage_static_multi_impl(problem, max_fanin);
 }
 
 MultiStageDesign synthesize_multistage_static(
-    const BoolFunc& f, const std::vector<std::string>& vars, int max_fanin) {
+    const BoolFunc &f, const std::vector<std::string> &vars, int max_fanin) {
   MultiProblem p;
   p.names = {"Y"};
   p.vars = vars;
   p.outputs.push_back({f, Bits::zeros(f.bits().size())});
-  MultiStageMultiDesign m = synthesize_multistage_static_multi_impl(p, max_fanin);
+  MultiStageMultiDesign m =
+      synthesize_multistage_static_multi_impl(p, max_fanin);
   MultiStageDesign out;
   out.ok = m.ok;
   out.reason = m.reason;
@@ -447,9 +490,9 @@ struct PortSpec {
   int width = 0;
 };
 
-std::map<std::string, PortSpec> module_ports(const Json& module) {
+std::map<std::string, PortSpec> module_ports(const Json &module) {
   std::map<std::string, PortSpec> out;
-  for (const auto& [name, pj] : module.at("ports").object()) {
+  for (const auto &[name, pj] : module.at("ports").object()) {
     PortSpec p;
     p.dir = pj.at("direction").as_string();
     p.width = static_cast<int>(pj.at("bits").size());
@@ -460,37 +503,39 @@ std::map<std::string, PortSpec> module_ports(const Json& module) {
 
 // Reject name/direction/width mismatches before any miter is built: a silent
 // pad or truncation would prove only a subset of the RTL inputs.
-void require_same_ports(const std::map<std::string, PortSpec>& got,
-                        const std::map<std::string, PortSpec>& want,
-                        const std::string& what) {
-  for (const auto& [name, w] : want) {
+void require_same_ports(const std::map<std::string, PortSpec> &got,
+                        const std::map<std::string, PortSpec> &want,
+                        const std::string &what) {
+  for (const auto &[name, w] : want) {
     const auto it = got.find(name);
     if (it == got.end())
       throw std::runtime_error(what + ": missing port " + name);
     if (it->second.dir != w.dir || it->second.width != w.width)
-      throw std::runtime_error(what + ": port " + name + " is " + it->second.dir +
-                               "[" + std::to_string(it->second.width) +
-                               "], expected " + w.dir + "[" +
-                               std::to_string(w.width) + "]");
+      throw std::runtime_error(
+          what + ": port " + name + " is " + it->second.dir + "[" +
+          std::to_string(it->second.width) + "], expected " + w.dir + "[" +
+          std::to_string(w.width) + "]");
   }
-  for (const auto& [name, g] : got)
+  for (const auto &[name, g] : got)
     if (!want.count(name))
       throw std::runtime_error(what + ": unexpected port " + name);
 }
 
-std::string render_params(const Json& cell) {
-  if (!cell.contains("parameters")) return "";
+std::string render_params(const Json &cell) {
+  if (!cell.contains("parameters"))
+    return "";
   std::string out;
-  for (const auto& [k, v] : cell.at("parameters").object()) {
-    if (!out.empty()) out += ",";
+  for (const auto &[k, v] : cell.at("parameters").object()) {
+    if (!out.empty())
+      out += ",";
     out += k + "=" + (v.is_string() ? v.as_string() : v.dump());
   }
   return out;
 }
 
-std::string chparam_cmd(const std::string& module,
-                        const std::string& params) {
-  if (params.empty()) return "";
+std::string chparam_cmd(const std::string &module, const std::string &params) {
+  if (params.empty())
+    return "";
   std::string out;
   std::istringstream ss(params);
   std::string item;
@@ -498,18 +543,18 @@ std::string chparam_cmd(const std::string& module,
     const auto eq = item.find('=');
     if (eq == std::string::npos)
       throw std::runtime_error("bad atom parameter: " + item);
-    out += "; chparam -set " + item.substr(0, eq) + " " +
-           item.substr(eq + 1) + " " + module;
+    out += "; chparam -set " + item.substr(0, eq) + " " + item.substr(eq + 1) +
+           " " + module;
   }
   return out;
 }
 
-}  // namespace
+} // namespace
 
-RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
-                                    const std::string& atoms_path,
-                                    const MultiProblem& spec,
-                                    const std::string& ref_path,
+RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
+                                    const std::string &atoms_path,
+                                    const MultiProblem &spec,
+                                    const std::string &ref_path,
                                     int max_fanin) {
   RtlSynthResult out;
   out.outputs = spec.names;
@@ -538,22 +583,22 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
   const CdlLibrary library = CdlLibrary::load(cdl);
   std::string dont_use = base_dont_use();
   if (max_fanin > 0) {
-    for (const auto& cell : library.cells()) {
+    for (const auto &cell : library.cells()) {
       if (static_cast<int>(cell.inputs().size()) > max_fanin)
         dont_use += " -dont_use " + cell.name;
     }
   }
-  auto run_yosys = [&](const std::string& script,
-                       const std::string& log_name) -> std::string {
-    const std::string cmd = "cd " + shell_quote(dir.path().string()) +
-                            " && timeout 180 yosys -Q -p " +
-                            shell_quote(script) + " > " +
-                            shell_quote((dir.path() / log_name).string()) +
-                            " 2>&1";
+  auto run_yosys = [&](const std::string &script,
+                       const std::string &log_name) -> std::string {
+    const std::string cmd =
+        "cd " + shell_quote(dir.path().string()) +
+        " && timeout 180 yosys -Q -p " + shell_quote(script) + " > " +
+        shell_quote((dir.path() / log_name).string()) + " 2>&1";
     const int rc = std::system(cmd.c_str());
     const int code = (rc != -1 && WIFEXITED(rc)) ? WEXITSTATUS(rc) : -1;
     const std::string log = read_file(dir.path() / log_name);
-    if (code != 0) throw std::runtime_error("yosys failed: " + tail(log));
+    if (code != 0)
+      throw std::runtime_error("yosys failed: " + tail(log));
     return log;
   };
 
@@ -567,21 +612,20 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
     const Json root = Json::parse(read_file(dir.path() / "net.json"));
     if (!root.contains("modules") || !root.at("modules").contains("top"))
       throw std::runtime_error("mapped netlist has no top module");
-    const Json& cells = root.at("modules").at("top").at("cells");
+    const Json &cells = root.at("modules").at("top").at("cells");
     // Parameters are part of an atom's identity: two instances of the same
     // module with different overrides cost different amounts.
     std::map<std::string, RtlAtomUse> atom_uses;
     int cell_cost = 0;
-    for (const auto& [inst, cj] : cells.object()) {
+    for (const auto &[inst, cj] : cells.object()) {
       const std::string type = cj.at("type").as_string();
       if (library.has(type)) {
         if (!static_cell(type))
           throw std::runtime_error("mapped to non-static cell: " + type);
-        cell_cost +=
-            static_cast<int>(library.cell(type).transistor_count());
+        cell_cost += static_cast<int>(library.cell(type).transistor_count());
       } else {
         const std::string params = render_params(cj);
-        RtlAtomUse& use = atom_uses[type + "|" + params];
+        RtlAtomUse &use = atom_uses[type + "|" + params];
         use.module = type;
         use.parameters = params;
         ++use.instances;
@@ -594,38 +638,38 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
     {
       const std::string src = read_file(atoms_path);
       const std::regex re("\\bmodule\\s+([A-Za-z_]\\w*)");
-      for (std::sregex_iterator it(src.begin(), src.end(), re), end;
-           it != end; ++it)
+      for (std::sregex_iterator it(src.begin(), src.end(), re), end; it != end;
+           ++it)
         lib_modules.push_back((*it)[1].str());
     }
     std::map<std::string, int> atom_cost;
     std::set<std::string> measuring;
     int atom_index = 0;
-    std::function<int(const std::string&, const std::string&)> measure =
-        [&](const std::string& module, const std::string& params) -> int {
+    std::function<int(const std::string &, const std::string &)> measure =
+        [&](const std::string &module, const std::string &params) -> int {
       const std::string key = module + "|" + params;
       if (const auto it = atom_cost.find(key); it != atom_cost.end())
         return it->second;
       if (!measuring.insert(key).second)
         throw std::runtime_error("recursive atom " + module);
       std::string blackbox;
-      for (const auto& m : lib_modules)
-        if (m != module) blackbox += m + " ";
+      for (const auto &m : lib_modules)
+        if (m != module)
+          blackbox += m + " ";
       const std::string bb =
           blackbox.empty() ? std::string() : "; blackbox " + blackbox;
       const std::string json_name =
           "atom_" + std::to_string(atom_index++) + ".json";
-      run_yosys("read_verilog -sv atoms.v" + bb +
-                    chparam_cmd(module, params) + "; synth -top " + module +
-                    "; abc -liberty " + lib + " " + dont_use +
-                    "; opt_clean; write_json " + json_name,
+      run_yosys("read_verilog -sv atoms.v" + bb + chparam_cmd(module, params) +
+                    "; synth -top " + module + "; abc -liberty " + lib + " " +
+                    dont_use + "; opt_clean; write_json " + json_name,
                 "atom.log");
       const Json aroot = Json::parse(read_file(dir.path() / json_name));
       if (!aroot.contains("modules") || !aroot.at("modules").contains(module))
         throw std::runtime_error("atom " + module + " did not map");
-      const Json& acells = aroot.at("modules").at(module).at("cells");
+      const Json &acells = aroot.at("modules").at(module).at("cells");
       int cost = 0;
-      for (const auto& [inst, cj] : acells.object()) {
+      for (const auto &[inst, cj] : acells.object()) {
         const std::string type = cj.at("type").as_string();
         if (library.has(type)) {
           if (!static_cell(type))
@@ -633,7 +677,7 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
                                      " mapped to non-static cell: " + type);
           cost += static_cast<int>(library.cell(type).transistor_count());
         } else {
-          cost += measure(type, render_params(cj));  // nested atom
+          cost += measure(type, render_params(cj)); // nested atom
         }
       }
       measuring.erase(key);
@@ -641,12 +685,12 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
       return cost;
     };
 
-    for (const auto& [key, use] : atom_uses) {
+    for (const auto &[key, use] : atom_uses) {
       const int cost = measure(use.module, use.parameters);
       out.atoms.push_back({use.module, use.instances, cost, use.parameters});
     }
 
-    for (const auto& use : out.atoms)
+    for (const auto &use : out.atoms)
       out.atom_cost += use.instances * use.transistors;
     out.cell_cost = cell_cost;
     out.total = out.atom_cost + out.cell_cost;
@@ -669,15 +713,14 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
                 "proc; write_json ref.json",
                 "ref_ports.log");
       const Json rroot = Json::parse(read_file(dir.path() / "ref.json"));
-      if (!rroot.contains("modules") ||
-          !rroot.at("modules").contains(ref_mod))
+      if (!rroot.contains("modules") || !rroot.at("modules").contains(ref_mod))
         throw std::runtime_error("ref module not found: " + ref_mod);
       require_same_ports(module_ports(rroot.at("modules").at(ref_mod)),
                          module_ports(root.at("modules").at("top")), "ref");
-      const Json& ports = root.at("modules").at("top").at("ports");
+      const Json &ports = root.at("modules").at("top").at("ports");
       std::string header, wires, conns, cmps;
       int n_in = 0, n_out = 0;
-      for (const auto& [name, pj] : ports.object()) {
+      for (const auto &[name, pj] : ports.object()) {
         const std::string dir = pj.at("direction").as_string();
         const auto width = pj.at("bits").size();
         const std::string range =
@@ -690,7 +733,8 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
           wires += "  wire" + range + "t_" + name + ", r_" + name + ";\n";
           conns += "." + name + "(t_" + name + "), ";
           cmps += " | (t_" + name + " !== r_" + name + ")";
-          if (spec.names.empty()) out.outputs.push_back(name);
+          if (spec.names.empty())
+            out.outputs.push_back(name);
           ++n_out;
         }
       }
@@ -702,21 +746,21 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
       // Reference instance uses r_* outputs: rebuild the connection list for
       // it by replacing the output wires.
       std::string ref_conns;
-      for (const auto& [name, pj] : ports.object()) {
+      for (const auto &[name, pj] : ports.object()) {
         if (pj.at("direction").as_string() == "input")
           ref_conns += "." + name + "(" + name + "), ";
         else
           ref_conns += "." + name + "(r_" + name + "), ";
       }
-      std::string miter = "module miter(" + header +
-                          "output logic mismatch);\n" + wires +
-                          "  top u_top(" + conns + ");\n  " + ref_mod +
-                          " u_ref(" + ref_conns + ");\n  assign mismatch = 1'b0" +
-                          cmps + ";\nendmodule\n";
+      std::string miter =
+          "module miter(" + header + "output logic mismatch);\n" + wires +
+          "  top u_top(" + conns + ");\n  " + ref_mod + " u_ref(" + ref_conns +
+          ");\n  assign mismatch = 1'b0" + cmps + ";\nendmodule\n";
       write_text(dir.path() / "miter.v", miter);
       run_yosys("read_verilog -sv atoms.v; read_verilog -sv top.v; "
                 "read_verilog -sv ref.v; read_verilog -sv miter.v; "
-                "prep -top miter; flatten; delete t:$scopeinfo; opt -full; sat -verify -prove mismatch 0 miter",
+                "prep -top miter; flatten; delete t:$scopeinfo; opt -full; sat "
+                "-verify -prove mismatch 0 miter",
                 "ref.log");
       out.verified = true;
       out.ok = true;
@@ -724,8 +768,10 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
     }
     {
       std::map<std::string, PortSpec> want;
-      for (const auto& v : spec.vars) want[v] = {"input", 1};
-      for (const auto& n : spec.names) want[n] = {"output", 1};
+      for (const auto &v : spec.vars)
+        want[v] = {"input", 1};
+      for (const auto &n : spec.names)
+        want[n] = {"output", 1};
       require_same_ports(module_ports(root.at("modules").at("top")), want,
                          "spec");
     }
@@ -739,16 +785,19 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
       for (std::size_t i = 0; i < spec.vars.size(); ++i)
         wrapper += (i ? ", " : "") + std::string("input logic ") + spec.vars[i];
       wrapper += ", output logic Y, output logic ok);\n";
-      for (const auto& n : spec.names) wrapper += "  wire " + n + ";\n";
+      for (const auto &n : spec.names)
+        wrapper += "  wire " + n + ";\n";
       wrapper += "  top u_top(";
-      for (const auto& v : spec.vars) wrapper += "." + v + "(" + v + "), ";
-      for (const auto& n : spec.names) wrapper += "." + n + "(" + n + "), ";
+      for (const auto &v : spec.vars)
+        wrapper += "." + v + "(" + v + "), ";
+      for (const auto &n : spec.names)
+        wrapper += "." + n + "(" + n + "), ";
       wrapper.resize(wrapper.size() - 2);
       wrapper += ");\n  assign Y = " + spec.names[k] +
                  ";\n  assign ok = 1'b1;\nendmodule\n";
-      const ToolResult v = prove_yosys(
-          top_src + "\n" + atoms_src + "\n" + wrapper, spec.outputs[k].func,
-          spec.vars);
+      const ToolResult v =
+          prove_yosys(top_src + "\n" + atoms_src + "\n" + wrapper,
+                      spec.outputs[k].func, spec.vars);
       if (!v.ok) {
         out.reason = "output " + spec.names[k] +
                      " failed the miter: " + tail(v.output, 8);
@@ -758,10 +807,10 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
     out.verified = true;
     out.ok = true;
     return out;
-  } catch (const std::exception& e) {
+  } catch (const std::exception &e) {
     out.reason = std::string("rtl mapping failed: ") + e.what();
     return out;
   }
 }
 
-}  // namespace dcstudy
+} // namespace dcstudy
