@@ -1818,6 +1818,9 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
     throw CliError("multi synth needs --spec (or --rtl with --ref)");
   const MultiProblem spec =
       a.has("spec") ? load_multi_spec(a.get("spec")) : MultiProblem{};
+  const int max_fanin = std::stoi(a.get("max-fanin", "0"));
+  if (max_fanin != 0 && (max_fanin < 2 || max_fanin > 4))
+    throw CliError("--max-fanin must be 0 or 2..4");
   if (a.has("rtl")) {
     if (!a.has("atoms"))
       throw CliError("--rtl needs --atoms FILE (module library)");
@@ -1825,7 +1828,6 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
     //   dcstudy ... --emit-atom pe42 --json | dcstudy ... --atoms -
     std::string atoms_path = a.get("atoms");
     std::string temp_atoms;
-    std::string stdin_library;
     if (atoms_path == "-") {
       std::ostringstream in;
       in << std::cin.rdbuf();
@@ -1838,7 +1840,6 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
       if (lib.empty())
         throw CliError(
             "--atoms - expects a piped 'multi synth --emit-atom' result");
-      stdin_library = lib;
       static std::atomic<int> counter{0};
       temp_atoms = (fs::temp_directory_path() /
                     ("dcstudy-atom-" +
@@ -1851,7 +1852,15 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
       atoms_path = temp_atoms;
     }
     const RtlSynthResult r =
-        synthesize_rtl_atoms(a.get("rtl"), atoms_path, spec, a.get("ref"));
+        synthesize_rtl_atoms(a.get("rtl"), atoms_path, spec, a.get("ref"),
+                              max_fanin);
+    std::string atoms_src;
+    {
+      std::ifstream in(atoms_path);
+      std::ostringstream os;
+      os << in.rdbuf();
+      atoms_src = os.str();
+    }
     if (!temp_atoms.empty()) fs::remove(temp_atoms);
     const bool ok = r.ok && r.verified;
     const std::string out_dir = a.get("out");
@@ -1896,9 +1905,9 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
       if (!atom_src.empty()) {
         j["atom_name"] = atom_name;
         j["atom_verilog"] = atom_src;
-        j["atom_library"] = stdin_library.empty()
+        j["atom_library"] = atoms_src.empty()
                                 ? atom_src
-                                : stdin_library + "\n" + atom_src;
+                                : atoms_src + "\n" + atom_src;
         j["atom_transistors"] = r.total;
       }
       if (!ok) j["reason"] = r.reason;
@@ -1909,15 +1918,14 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
       std::cout << "multi synth (RTL + atoms): " << r.total << "T ("
                 << r.atom_cost << "T atoms + " << r.cell_cost << "T glue)\n";
       for (const auto& u : r.atoms)
-        std::cout << "  " << u.module << " x" << u.instances << "  "
-                  << u.transistors << "T each\n";
+        std::cout << "  " << u.module
+                  << (u.parameters.empty() ? "" : "(" + u.parameters + ")")
+                  << " x" << u.instances << "  " << u.transistors
+                  << "T each\n";
       std::cout << "  miter: PASS\n";
     }
     return ok ? 0 : 1;
   }
-  const int max_fanin = std::stoi(a.get("max-fanin", "0"));
-  if (max_fanin != 0 && (max_fanin < 2 || max_fanin > 4))
-    throw CliError("--max-fanin must be 0 or 2..4");
   const MultiStageMultiDesign m =
       synthesize_multistage_static_multi(spec, max_fanin);
   const bool json = a.is("json");

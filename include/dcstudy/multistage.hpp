@@ -65,6 +65,7 @@ struct RtlAtomUse {
   std::string module;
   int instances = 0;
   int transistors = 0;  // mapped cost of one instance
+  std::string parameters;  // rendered instance parameters, empty = defaults
 };
 
 struct RtlSynthResult {
@@ -86,7 +87,8 @@ struct RtlSynthResult {
 RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
                                     const std::string& atoms_path,
                                     const MultiProblem& spec,
-                                    const std::string& ref_path = "");
+                                    const std::string& ref_path = "",
+                                    int max_fanin = 0);
 
 
 }  // namespace dcstudy

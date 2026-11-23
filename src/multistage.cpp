@@ -460,12 +460,75 @@ int mapped_transistors(const Json& cells, const CdlLibrary& library,
   return total;
 }
 
+struct PortSpec {
+  std::string dir;
+  int width = 0;
+};
+
+std::map<std::string, PortSpec> module_ports(const Json& module) {
+  std::map<std::string, PortSpec> out;
+  for (const auto& [name, pj] : module.at("ports").object()) {
+    PortSpec p;
+    p.dir = pj.at("direction").as_string();
+    p.width = static_cast<int>(pj.at("bits").size());
+    out[name] = p;
+  }
+  return out;
+}
+
+// Reject name/direction/width mismatches before any miter is built: a silent
+// pad or truncation would prove only a subset of the RTL inputs.
+void require_same_ports(const std::map<std::string, PortSpec>& got,
+                        const std::map<std::string, PortSpec>& want,
+                        const std::string& what) {
+  for (const auto& [name, w] : want) {
+    const auto it = got.find(name);
+    if (it == got.end())
+      throw std::runtime_error(what + ": missing port " + name);
+    if (it->second.dir != w.dir || it->second.width != w.width)
+      throw std::runtime_error(what + ": port " + name + " is " + it->second.dir +
+                               "[" + std::to_string(it->second.width) +
+                               "], expected " + w.dir + "[" +
+                               std::to_string(w.width) + "]");
+  }
+  for (const auto& [name, g] : got)
+    if (!want.count(name))
+      throw std::runtime_error(what + ": unexpected port " + name);
+}
+
+std::string render_params(const Json& cell) {
+  if (!cell.contains("parameters")) return "";
+  std::string out;
+  for (const auto& [k, v] : cell.at("parameters").object()) {
+    if (!out.empty()) out += ",";
+    out += k + "=" + (v.is_string() ? v.as_string() : v.dump());
+  }
+  return out;
+}
+
+std::string chparam_cmd(const std::string& module,
+                        const std::string& params) {
+  if (params.empty()) return "";
+  std::string out;
+  std::istringstream ss(params);
+  std::string item;
+  while (std::getline(ss, item, ',')) {
+    const auto eq = item.find('=');
+    if (eq == std::string::npos)
+      throw std::runtime_error("bad atom parameter: " + item);
+    out += "; chparam -set " + item.substr(0, eq) + " " +
+           item.substr(eq + 1) + " " + module;
+  }
+  return out;
+}
+
 }  // namespace
 
 RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
                                     const std::string& atoms_path,
                                     const MultiProblem& spec,
-                                    const std::string& ref_path) {
+                                    const std::string& ref_path,
+                                    int max_fanin) {
   RtlSynthResult out;
   out.outputs = spec.names;
   const std::string lib = default_liberty_path();
@@ -490,7 +553,14 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
   TempDir dir;
   write_text(dir.path() / "top.v", read_file(rtl_path));
   write_text(dir.path() / "atoms.v", read_file(atoms_path));
-  const std::string dont_use = base_dont_use();
+  const CdlLibrary library = CdlLibrary::load(cdl);
+  std::string dont_use = base_dont_use();
+  if (max_fanin > 0) {
+    for (const auto& cell : library.cells()) {
+      if (static_cast<int>(cell.inputs().size()) > max_fanin)
+        dont_use += " -dont_use " + cell.name;
+    }
+  }
   auto run_yosys = [&](const std::string& script,
                        const std::string& log_name) -> std::string {
     const std::string cmd = "cd " + shell_quote(dir.path().string()) +
@@ -516,8 +586,9 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
     if (!root.contains("modules") || !root.at("modules").contains("top"))
       throw std::runtime_error("mapped netlist has no top module");
     const Json& cells = root.at("modules").at("top").at("cells");
-    const CdlLibrary library = CdlLibrary::load(cdl);
-    std::map<std::string, int> atom_instances;
+    // Parameters are part of an atom's identity: two instances of the same
+    // module with different overrides cost different amounts.
+    std::map<std::string, RtlAtomUse> atom_uses;
     int cell_cost = 0;
     for (const auto& [inst, cj] : cells.object()) {
       const std::string type = cj.at("type").as_string();
@@ -527,7 +598,11 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
         cell_cost +=
             static_cast<int>(library.cell(type).transistor_count());
       } else {
-        atom_instances[type]++;
+        const std::string params = render_params(cj);
+        RtlAtomUse& use = atom_uses[type + "|" + params];
+        use.module = type;
+        use.parameters = params;
+        ++use.instances;
       }
     }
 
@@ -543,21 +618,25 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
     }
     std::map<std::string, int> atom_cost;
     std::set<std::string> measuring;
-    std::function<int(const std::string&)> measure =
-        [&](const std::string& module) -> int {
-      if (const auto it = atom_cost.find(module); it != atom_cost.end())
+    int atom_index = 0;
+    std::function<int(const std::string&, const std::string&)> measure =
+        [&](const std::string& module, const std::string& params) -> int {
+      const std::string key = module + "|" + params;
+      if (const auto it = atom_cost.find(key); it != atom_cost.end())
         return it->second;
-      if (!measuring.insert(module).second)
+      if (!measuring.insert(key).second)
         throw std::runtime_error("recursive atom " + module);
       std::string blackbox;
       for (const auto& m : lib_modules)
         if (m != module) blackbox += m + " ";
       const std::string bb =
           blackbox.empty() ? std::string() : "; blackbox " + blackbox;
-      const std::string json_name = "atom_" + module + ".json";
+      const std::string json_name =
+          "atom_" + std::to_string(atom_index++) + ".json";
       run_yosys("read_verilog -sv atoms.v" + bb +
-                    "; synth -top " + module + "; abc -liberty " + lib +
-                    " " + dont_use + "; opt_clean; write_json " + json_name,
+                    chparam_cmd(module, params) + "; synth -top " + module +
+                    "; abc -liberty " + lib + " " + dont_use +
+                    "; opt_clean; write_json " + json_name,
                 "atom.log");
       const Json aroot = Json::parse(read_file(dir.path() / json_name));
       if (!aroot.contains("modules") || !aroot.at("modules").contains(module))
@@ -572,17 +651,17 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
                                      " mapped to non-static cell: " + type);
           cost += static_cast<int>(library.cell(type).transistor_count());
         } else {
-          cost += measure(type);  // nested atom
+          cost += measure(type, render_params(cj));  // nested atom
         }
       }
-      measuring.erase(module);
-      atom_cost[module] = cost;
+      measuring.erase(key);
+      atom_cost[key] = cost;
       return cost;
     };
 
-    for (const auto& [module, count] : atom_instances) {
-      const int cost = measure(module);
-      out.atoms.push_back({module, count, cost});
+    for (const auto& [key, use] : atom_uses) {
+      const int cost = measure(use.module, use.parameters);
+      out.atoms.push_back({use.module, use.instances, cost, use.parameters});
     }
 
     for (const auto& use : out.atoms)
@@ -603,6 +682,16 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
       if (!std::regex_search(ref_src, m, rm))
         throw std::runtime_error("ref has no module: " + ref_path);
       const std::string ref_mod = m[1].str();
+      write_text(dir.path() / "ref.v", ref_src);
+      run_yosys("read_verilog -sv -lib atoms.v; read_verilog -sv ref.v; "
+                "proc; write_json ref.json",
+                "ref_ports.log");
+      const Json rroot = Json::parse(read_file(dir.path() / "ref.json"));
+      if (!rroot.contains("modules") ||
+          !rroot.at("modules").contains(ref_mod))
+        throw std::runtime_error("ref module not found: " + ref_mod);
+      require_same_ports(module_ports(rroot.at("modules").at(ref_mod)),
+                         module_ports(root.at("modules").at("top")), "ref");
       const Json& ports = root.at("modules").at("top").at("ports");
       std::string header, wires, conns, cmps;
       int n_in = 0, n_out = 0;
@@ -642,7 +731,6 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
                           "  top u_top(" + conns + ");\n  " + ref_mod +
                           " u_ref(" + ref_conns + ");\n  assign mismatch = 1'b0" +
                           cmps + ";\nendmodule\n";
-      write_text(dir.path() / "ref.v", ref_src);
       write_text(dir.path() / "miter.v", miter);
       run_yosys("read_verilog -sv atoms.v; read_verilog -sv top.v; "
                 "read_verilog -sv ref.v; read_verilog -sv miter.v; "
@@ -651,6 +739,13 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
       out.verified = true;
       out.ok = true;
       return out;
+    }
+    {
+      std::map<std::string, PortSpec> want;
+      for (const auto& v : spec.vars) want[v] = {"input", 1};
+      for (const auto& n : spec.names) want[n] = {"output", 1};
+      require_same_ports(module_ports(root.at("modules").at("top")), want,
+                         "spec");
     }
     if (spec.has_dont_cares())
       throw std::runtime_error("--rtl does not support don't-care masks yet");

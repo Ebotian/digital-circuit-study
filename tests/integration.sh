@@ -282,6 +282,97 @@ JSON
   [ "$(jq -r '.atoms[0].module' "$TMP/rtl8.json")" = "pe42" ] || fail "rtl atom"
   [ "$(jq -r '.total == (.atom_cost + .cell_cost)' "$TMP/rtl8.json")" = "true" ] || fail "rtl cost"
   [ -f "$TMP/rtl8/netlist.v" ] || fail "rtl netlist"
+  # Port names/directions/widths must match before a miter is built: Yosys
+  # silently pads or truncates, which would prove only part of the inputs.
+  cat > "$TMP/one.v" <<'VERILOG'
+module top(input logic A, output logic Y);
+  assign Y = A;
+endmodule
+VERILOG
+  cat > "$TMP/wide.v" <<'VERILOG'
+module top(input logic [1:0] A, output logic Y);
+  assign Y = A[1] ^ A[0];
+endmodule
+VERILOG
+  cat > "$TMP/wide.json" <<'JSON'
+{"name":"wide","inputs":["A"],"outputs":[{"name":"Y","expr":"A"}]}
+JSON
+  if "$BIN" multi synth --rtl "$TMP/wide.v" --atoms "$TMP/atoms8.v" \
+      --spec "$TMP/wide.json" --json >/dev/null 2>&1; then
+    fail "spec width mismatch must be rejected"
+  fi
+  cat > "$TMP/refwide.v" <<'VERILOG'
+module golden(input logic A, output logic [1:0] Y);
+  assign Y = {A, ~A};
+endmodule
+VERILOG
+  if "$BIN" multi synth --rtl "$TMP/one.v" --atoms "$TMP/atoms8.v" \
+      --ref "$TMP/refwide.v" --json >/dev/null 2>&1; then
+    fail "ref width mismatch must be rejected"
+  fi
+
+  # Instance parameters are part of an atom's identity and its measured cost.
+  cat > "$TMP/invp.v" <<'VERILOG'
+module invp(input logic A, output logic Y);
+  parameter INVERT = 0;
+  assign Y = INVERT ? ~A : A;
+endmodule
+VERILOG
+  cat > "$TMP/par_top.v" <<'VERILOG'
+module top(input logic A, output logic Y);
+  invp #(.INVERT(1)) u(.A(A), .Y(Y));
+endmodule
+VERILOG
+  cat > "$TMP/inv.json" <<'JSON'
+{"name":"inv","inputs":["A"],"outputs":[{"name":"Y","expr":"~A"}]}
+JSON
+  "$BIN" multi synth --rtl "$TMP/par_top.v" --atoms "$TMP/invp.v" \
+    --spec "$TMP/inv.json" --json > "$TMP/par.json" || fail "parameterised atom"
+  [ "$(jq -r .total "$TMP/par.json")" = "2" ] || fail "parameterised atom cost"
+  [ "$(jq -r .verified "$TMP/par.json")" = "true" ] || fail "parameterised atom verify"
+
+  # --max-fanin applies to the RTL path too (no NAND3_X1 under a 2-input cap).
+  cat > "$TMP/nand3.v" <<'VERILOG'
+module top(input logic A, B, C, output logic Y);
+  assign Y = ~(A & B & C);
+endmodule
+VERILOG
+  cat > "$TMP/nand3.json" <<'JSON'
+{"name":"nand3","inputs":["A","B","C"],"outputs":[{"name":"Y","expr":"~(A&B&C)"}]}
+JSON
+  "$BIN" multi synth --rtl "$TMP/nand3.v" --atoms "$TMP/atoms8.v" \
+    --spec "$TMP/nand3.json" --max-fanin 2 --out "$TMP/fanin_rtl" \
+    --json > "$TMP/fanin.json" || fail "rtl max-fanin"
+  [ "$(jq -r .total "$TMP/fanin.json")" = "10" ] || fail "rtl max-fanin cost"
+  if grep -q 'NAND3' "$TMP/fanin_rtl/netlist.v"; then fail "rtl max-fanin cell"; fi
+
+  # --emit-atom must carry the atoms file into atom_library, not only its own
+  # module: the next stage still needs the sub-atoms to map the parent.
+  cat > "$TMP/leaf.v" <<'VERILOG'
+module leaf(input logic A, output logic Y);
+  assign Y = ~A;
+endmodule
+VERILOG
+  cat > "$TMP/parent.v" <<'VERILOG'
+module top(input logic A, output logic Y);
+  leaf u(.A(A), .Y(Y));
+endmodule
+VERILOG
+  cat > "$TMP/parent2.v" <<'VERILOG'
+module top(input logic A, output logic Y);
+  parent u(.A(A), .Y(Y));
+endmodule
+VERILOG
+  "$BIN" multi synth --rtl "$TMP/parent.v" --atoms "$TMP/leaf.v" \
+    --spec "$TMP/inv.json" --emit-atom parent --json > "$TMP/atom_lib.json" \
+    || fail "atom library emit"
+  [ "$(jq -r .atom_library "$TMP/atom_lib.json" | grep -c '^module')" = "2" ] \
+    || fail "atom library lost a sub-atom"
+  cat "$TMP/atom_lib.json" | "$BIN" multi synth --rtl "$TMP/parent2.v" \
+    --atoms - --spec "$TMP/inv.json" --json > "$TMP/atom_lib2.json" \
+    || fail "piped atom library"
+  [ "$(jq -r .verified "$TMP/atom_lib2.json")" = "true" ] || fail "piped atom verify"
+
   # Shell pipeline: a generated module becomes the next stage's atom.
   #   stage1 --emit-atom pe42 | stage2 --atoms -
   cat > "$TMP/pe42.json" <<'JSON'
