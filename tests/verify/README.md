@@ -26,8 +26,9 @@ tests/verify/
     rtl/                # 该实例的 RTL 夹具（pe42/top16/gold16）
   formal/
     core.sh             # 单元/性质测试（ctest）
-    optional.sh         # Verilator 回归 + 完整 CLI/开关级/Z3/Yosys 套件
-    optional/verilator-xor6/  # 开关级 6T XOR：4/4 正例 + 注入故障负例
+    optional.sh         # 完整 CLI/开关级/Z3/Yosys 套件（integration.sh）
+  simulation/
+    verilator-xor6/     # 开关级 6T XOR：4/4 正例 + 注入故障负例（动态仿真）
 ```
 
 ## 实例验证矩阵
@@ -48,7 +49,8 @@ tests/verify/
 | 层 | 内容 | 依赖 | 何时跑 |
 |---|---|---|---|
 | core | 布尔/精确覆盖/开关级/CDL/浮空/别名/dc 规则 | 仅构建产物 | 每次提交（CI） |
-| optional | Verilator 开关级 XOR6（正/负对照）、CLI 端到端、Yosys SAT、Z3 工作进程、PDK 单元 | verilator/yosys/z3/PDK | 本地完整回归、CI |
+| optional | CLI 端到端、Yosys SAT、Z3 工作进程、PDK 单元 | yosys/z3/PDK | 本地完整回归、CI |
+| simulation | Verilator 开关级 XOR6（4/4 正例 + 注入故障负例） | verilator | 本地/CI |
 
 ## 运行
 
@@ -56,6 +58,7 @@ tests/verify/
 tests/verify/run.sh instances   # 实例验证
 tests/verify/run.sh formal      # 形式化核心
 tests/verify/run.sh optional    # 形式化可选（完整 CLI）
+tests/verify/run.sh simulation  # 动态仿真（Verilator）
 tests/verify/run.sh all
 make verify                     # 只跑实例验证
 ```
