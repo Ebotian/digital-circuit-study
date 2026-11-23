@@ -14,6 +14,7 @@
 #include "dcstudy/cmos.hpp"
 #include "dcstudy/designspace.hpp"
 #include "dcstudy/driver_profile.hpp"
+#include "dcstudy/limits.hpp"
 #include "dcstudy/parallel.hpp"
 #include "dcstudy/switchlevel.hpp"
 #include "dcstudy/synthesis.hpp"
@@ -30,6 +31,22 @@ std::vector<int> target_of(const FuncSpec& s) {
   return t;
 }
 }  // namespace
+
+TEST_CASE("memory limit values parse strictly") {
+  REQUIRE(parse_mem_limit_mb("0") == 0);
+  REQUIRE(parse_mem_limit_mb("512") == 512);
+  REQUIRE(parse_mem_limit_mb("1048576") == 1048576);
+  REQUIRE_THROWS_AS(parse_mem_limit_mb(""), std::invalid_argument);
+  REQUIRE_THROWS_AS(parse_mem_limit_mb("-1"), std::invalid_argument);
+  REQUIRE_THROWS_AS(parse_mem_limit_mb(" 64"), std::invalid_argument);
+  REQUIRE_THROWS_AS(parse_mem_limit_mb("2G"), std::invalid_argument);
+  REQUIRE_THROWS_AS(parse_mem_limit_mb("1048577"), std::invalid_argument);
+  // 0 MiB means "the hard rlimit"; when that is unlimited it stays unlimited.
+  if (current_mem_limit_mb() == 0) {
+    REQUIRE(apply_mem_limit(0) == 0);
+    REQUIRE(current_mem_limit_mb() == 0);
+  }
+}
 
 TEST_CASE("parallel_for covers every index") {
   std::vector<int> seen(37, 0);

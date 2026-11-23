@@ -103,6 +103,18 @@ make filc-smoke      # 可选:用 Fil-C 跑 Z3-free 内核(约 15 s)
 
 worker 仍然是“一次请求一个进程”,所以并行是进程级的;GPU 没有参与计算。
 
+### 内存上限
+
+`dcstudy` 启动时给**整个进程树**装一个 `RLIMIT_AS`:yosys、`dcstudy-z3`、Node 渲染 worker 都继承同一个 rlimit,所以一条命令就覆盖所有外部工具。
+
+- `--mem-limit MB`(或 `DCSTUDY_MEM_LIMIT_MB=MB`)设定上限,默认 **4096**;`0` 表示只受硬 rlimit 约束(通常是无限)。
+- 超限时分配直接失败,CLI 输出 `memory limit reached (N MB, --mem-limit)`、退出码 2,而不是等内核 OOM killer 开枪(那会把整机拖进 swap)。
+- `--heavy`(n=6 Dedekind,约 10 GB)在没显式给上限时自动把默认值抬到 12288。
+- 管的是**虚拟地址空间**而不是 RSS;Node/V8 自己预留约 1.3 GB 地址空间,所以渲染 worker 的上限不要低于 2 GB(默认值足够)。
+- 要 RSS 硬保证(连 swap 一起锁死),再套一层 cgroup v2:`systemd-run --user --scope -p MemoryMax=4G -p MemorySwapMax=0 -- ./build/dcstudy ...`
+- Fil-C 构建的地址空间开销很大,跑 `dcstudy-filc` 时用 `--mem-limit 0`。
+- 线程池也吃这份预算(每个线程 8 MB 栈):上限太小时 `parallel_for` 会退回更少的 worker 而不是 abort。
+
 > **Fil-C 说明**:`make filc` 已能编出完整的 `build/dcstudy-filc`(约 40 s),它通过 `/proc/self/exe` 找到 host 编的 `build/dcstudy-z3` 并进程调用。`make filc-smoke` 是更小的纯内核冒烟;完整 CLI 也已在 Fil-C 下跑通 `bool` / `cdl --exact` / `design min --verify yosys|both` / `render --png`。`render` 命令额外调用 Node TS worker;如果二进制被搬走,用 `DCSTUDY_RENDER_HELPER=/path/to/render_worker.ts` 指定(也可以指向 Python 版本做对照)。
 
 完整 CLI 的内存检查用 ASan/UBSan 补上:

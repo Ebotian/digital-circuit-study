@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <new>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -18,6 +19,7 @@
 #include "dcstudy/driver_profile.hpp"
 #include "dcstudy/designspace.hpp"
 #include "dcstudy/json.hpp"
+#include "dcstudy/limits.hpp"
 #include "dcstudy/math_client.hpp"
 #include "dcstudy/multi_path.hpp"
 #include "dcstudy/multistage.hpp"
@@ -379,9 +381,61 @@ Options:
   --spec         JSON circuit spec: {"inputs":[...],"outputs":[{"name":...,"expr":...}]}
   --max-fanin N  static CMOS cell fan-in limit (e.g. 2); 0 = library default
   --heavy        allow the n=6 Dedekind count (about 40 s and 10 GB)
+  --mem-limit    memory cap in MiB for dcstudy and every child it spawns
+                 (default 4096; 0 = hard rlimit). DCSTUDY_MEM_LIMIT_MB sets
+                 the same cap; --heavy raises the default to 12288
 
 Exit codes: 0 success, 1 verification/feasibility failure, 2 usage/runtime error.
 )";
+}
+
+constexpr unsigned long kDefaultMemLimitMb = 4096;
+// n=6 Dedekind count needs roughly 10 GB, so --heavy lifts the default cap.
+constexpr unsigned long kHeavyMemLimitMb = 12288;
+
+// Freed before reporting an allocation failure, so the error path does not
+// have to allocate while the cap is already reached.
+char* g_oom_reserve = nullptr;
+
+// Install the memory cap before any command runs: --mem-limit wins, then
+// DCSTUDY_MEM_LIMIT_MB, then the default (raised for --heavy).  Children
+// inherit RLIMIT_AS, so this bounds the whole process tree.
+void configure_mem_limit(int argc, char** argv) {
+  bool explicit_limit = false;
+  bool heavy = false;
+  std::string text;
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg = argv[i];
+    if (arg == "--heavy") {
+      heavy = true;
+    } else if (arg == "--mem-limit" && i + 1 < argc) {
+      text = argv[++i];
+      explicit_limit = true;
+    } else if (arg.rfind("--mem-limit=", 0) == 0) {
+      text = arg.substr(std::string("--mem-limit=").size());
+      explicit_limit = true;
+    }
+  }
+  if (!explicit_limit) {
+    if (const char* env = std::getenv("DCSTUDY_MEM_LIMIT_MB"); env && *env) {
+      text = env;
+      explicit_limit = true;
+    }
+  }
+  unsigned long mb = kDefaultMemLimitMb;
+  if (explicit_limit) {
+    try {
+      mb = parse_mem_limit_mb(text);
+    } catch (const std::invalid_argument& e) {
+      throw CliError(e.what());
+    }
+  } else if (heavy) {
+    mb = kHeavyMemLimitMb;
+  }
+  const unsigned long installed = apply_mem_limit(mb);
+  if (mb != 0 && installed != 0 && installed < mb)
+    std::cerr << "warning: --mem-limit " << mb << " MB clamped to " << installed
+              << " MB by the hard rlimit\n";
 }
 
 int cmd_bool(const std::string& sub, int argc, char** argv) {
@@ -2090,6 +2144,8 @@ int main(int argc, char** argv) {
       for (int i = 1; i + 1 < argc; ++i) argv[i] = argv[i + 1];
       argv[argc - 1] = json_arg;
     }
+    configure_mem_limit(argc, argv);
+    g_oom_reserve = new (std::nothrow) char[64 * 1024];
     const std::string cmd = argv[1];
     if (cmd == "help" || cmd == "--help" || cmd == "-h") {
       help();
@@ -2107,6 +2163,16 @@ int main(int argc, char** argv) {
     if (cmd == "render") return cmd_render(argc, argv);
     if (cmd == "pipeline") return cmd_pipeline(argc, argv);
     throw CliError("unknown command: " + cmd);
+  } catch (const std::bad_alloc&) {
+    delete[] g_oom_reserve;
+    g_oom_reserve = nullptr;
+    const unsigned long mb = current_mem_limit_mb();
+    std::string why = "out of memory";
+    if (mb != 0)
+      why = "memory limit reached (" + std::to_string(mb) +
+            " MB, --mem-limit); raise it or shrink the search";
+    emit_error(want_json, why, 2);
+    return 2;
   } catch (const CliError& e) {
     emit_error(want_json, e.what(), e.code);
     return e.code;

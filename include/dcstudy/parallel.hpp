@@ -48,24 +48,33 @@ void parallel_for(std::size_t count, int jobs, Fn&& fn) {
   std::atomic<bool> stopped{false};
   std::mutex error_mutex;
   std::exception_ptr error;
+  auto worker = [&] {
+    while (!stopped.load(std::memory_order_relaxed)) {
+      const std::size_t i = next.fetch_add(1, std::memory_order_relaxed);
+      if (i >= count) return;
+      try {
+        fn(i);
+      } catch (...) {
+        std::lock_guard<std::mutex> lock(error_mutex);
+        if (!error) error = std::current_exception();
+        stopped.store(true, std::memory_order_relaxed);
+        return;
+      }
+    }
+  };
   std::vector<std::thread> pool;
   pool.reserve(workers);
   for (std::size_t t = 0; t < workers; ++t) {
-    pool.emplace_back([&] {
-      while (!stopped.load(std::memory_order_relaxed)) {
-        const std::size_t i = next.fetch_add(1, std::memory_order_relaxed);
-        if (i >= count) return;
-        try {
-          fn(i);
-        } catch (...) {
-          std::lock_guard<std::mutex> lock(error_mutex);
-          if (!error) error = std::current_exception();
-          stopped.store(true, std::memory_order_relaxed);
-          return;
-        }
-      }
-    });
+    try {
+      pool.emplace_back(worker);
+    } catch (const std::exception&) {
+      // Thread budget exhausted (a memory cap counts each stack).  Destroying
+      // a joinable std::thread calls std::terminate, so keep the pool we have
+      // and let this thread cover the rest instead of aborting.
+      break;
+    }
   }
+  worker();
   for (auto& t : pool) t.join();
   if (error) std::rethrow_exception(error);
 }

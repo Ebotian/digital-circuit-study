@@ -26,6 +26,18 @@ command -v jq >/dev/null || fail "jq is required for integration tests"
 [ "$("$BIN" math gf2 --rows '1,1' --json | jq -r '.nullity')" = "1" ] || fail "math gf2 nullity"
 pass "boolean functions + math worker"
 
+# A memory cap must turn a runaway search into a clean error.  n=6 Dedekind
+# needs about 10 GB, so 256 MiB has to stop it in-process, with exit code 2,
+# instead of letting the machine swap and then die.
+if DCSTUDY_MEM_LIMIT_MB=256 "$BIN" bool count --n 6 --heavy --json \
+     > "$TMP/mem-heavy.json" 2>/dev/null; then
+  fail "256 MB cap should stop the n=6 Dedekind count"
+fi
+[ "$(jq -r .ok "$TMP/mem-heavy.json")" = "false" ] || fail "memory cap ok=false"
+[ "$(jq -r .exit_code "$TMP/mem-heavy.json")" = "2" ] || fail "memory cap exit code"
+[ "$(jq -r '.error | test("memory limit")' "$TMP/mem-heavy.json")" = "true" ] || fail "memory cap message"
+pass "memory limit"
+
 [ "$("$BIN" cmos synth --expr '~(A&B)' --json | jq -r .total)" = "4" ] || fail "NAND2 4T"
 [ "$("$BIN" cmos synth --expr '~(A|B)' --json | jq -r .total)" = "4" ] || fail "NOR2 4T"
 [ "$("$BIN" cmos synth --expr 'A&B' --json | jq -r .realizable)" = "false" ] || fail "AND2 not single-stage"
@@ -176,6 +188,18 @@ JSON
   [ "$(jq -r .proof "$TMP/hex7seg.exact")" = "true" ] || fail "hex7seg optimality proof"
   [ "$(jq -r .verified "$TMP/hex7seg.exact")" = "true" ] || fail "hex7seg exact verify"
   pass "hex7seg spec (2-input / default / exact)"
+
+  # The cap is inherited by yosys and dcstudy-z3: 1 GiB is plenty for this
+  # spec, 64 MiB is not, and the failure has to stay a normal JSON error.
+  "$BIN" multi exact --spec "$ROOT/specs/hex7seg.json" --mem-limit 1024 --json \
+    > "$TMP/mem-ok.json" || fail "1 GiB cap fits multi exact"
+  [ "$(jq -r .verified "$TMP/mem-ok.json")" = "true" ] || fail "1 GiB cap verify"
+  if "$BIN" multi synth --spec "$ROOT/specs/hex7seg.json" --mem-limit 64 --json \
+       > "$TMP/mem-fail.json" 2>/dev/null; then
+    fail "64 MB cap should not fit multi synth"
+  fi
+  [ "$(jq -r .ok "$TMP/mem-fail.json")" = "false" ] || fail "64 MB cap ok=false"
+  pass "memory cap reaches child processes"
 
 # Multi-output path variables with shared edges.
 cat > "$TMP/halfadder.json" <<'JSON'

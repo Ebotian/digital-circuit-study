@@ -24,6 +24,7 @@ add_library(dcstudy_core STATIC
   src/bdd_switch.cpp
   src/cmos.cpp
   src/driver_profile.cpp
+  src/limits.cpp
   src/static_exact.cpp
   src/template_synth.cpp
   src/designspace.cpp

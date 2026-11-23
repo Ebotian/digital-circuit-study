@@ -7,7 +7,7 @@ SOURCES := $(wildcard src/*.cpp) $(wildcard include/dcstudy/*.hpp) \
 FILC_SOURCES := src/main.cpp src/bdd_switch.cpp src/boolfunc.cpp src/cdl.cpp src/cmos.cpp \
                 src/designspace.cpp src/driver_profile.cpp src/math_client.cpp \
                 src/multi_path.cpp src/multistage.cpp src/path_search.cpp \
-                src/static_exact.cpp src/template_synth.cpp \
+                src/limits.cpp src/static_exact.cpp src/template_synth.cpp \
                 src/switchlevel.cpp \
                 src/synthesis.cpp \
                 src/verilog.cpp src/verify.cpp src/worker_client.cpp \
