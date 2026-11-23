@@ -48,6 +48,7 @@ TEST_CASE("joint switch-graph check rejects outputs sharing a node",
 }
 
 TEST_CASE("minimum pass-network designs match the lecture", "[switchlevel]") {
+  REQUIRE_Z3_HELPER();
   SpaceOptions opt;
   opt.max_cost = 6;
   opt.max_chain = 3;
@@ -65,6 +66,7 @@ TEST_CASE("minimum pass-network designs match the lecture", "[switchlevel]") {
 
 TEST_CASE("don't-care rows drive exact synthesis and verification",
           "[switchlevel]") {
+  REQUIRE_Z3_HELPER();
   // 4-to-2 encoder: only the four one-hot inputs are care rows.
   const std::vector<std::string> vars{"A3", "A2", "A1", "A0"};
   const FuncSpec y0 = spec_from_expr("A1|A3", vars);
@@ -97,6 +99,7 @@ TEST_CASE("don't-care rows drive exact synthesis and verification",
 
 TEST_CASE("don't-care completion does not depend on arbitrary values",
           "[switchlevel]") {
+  REQUIRE_Z3_HELPER();
   // Only AB=01 is constrained (Y=1); the other three rows are free.  Both
   // expressions must complete to the same 2T gate (a single literal's PDN),
   // not fall back to whatever the expression happens to compute on free rows.
@@ -126,6 +129,7 @@ TEST_CASE("don't-care completion does not depend on arbitrary values",
 
 TEST_CASE("only-high don't-care constraint keeps the inverter realizable",
           "[switchlevel]") {
+  REQUIRE_Z3_HELPER();
   // Y=~A with only "A=0 => Y=1" required: A=1 is free, so the 2T inverter is
   // a valid implementation.  The must-cover PDN set is empty; the search must
   // pick a cube inside the don't-care rows instead of calling it constant.
@@ -144,6 +148,7 @@ TEST_CASE("only-high don't-care constraint keeps the inverter realizable",
 }
 
 TEST_CASE("input-driven forcing still detects a contention", "[switchlevel]") {
+  REQUIRE_Z3_HELPER();
   // A PMOS gated by A ties input B to Q, so at A=0 the fixed point forces Q
   // through an input rather than a rail: invariant_ok is false, but the
   // forcing data is still valid and must reach the solver.  Y's first row
@@ -175,6 +180,7 @@ TEST_CASE("input-driven forcing still detects a contention", "[switchlevel]") {
 
 TEST_CASE("floating gate on a channel terminal is still enumerated",
           "[switchlevel]") {
+  REQUIRE_Z3_HELPER();
   // M1 pulls Y up when A=0; M2 is gated by F; M3 can pull F low, but it is off
   // at A=0, so F floats there.  F=1 then fights the pull-up: the row is X, not
   // a definite 1.  A gate that also sits on a channel terminal must not be
@@ -204,6 +210,7 @@ TEST_CASE("floating gate on a channel terminal is still enumerated",
 
 TEST_CASE("input aliases resolve in fixpoint and exact analysis",
           "[switchlevel]") {
+  REQUIRE_Z3_HELPER();
   // The port A is an alias of the internal gate net G; both modes must feed
   // the same net, otherwise the exact path analyses an unconnected input.
   Subckt c;
@@ -256,6 +263,7 @@ TEST_CASE("hex truth tables fill the table bit by bit", "[switchlevel]") {
 
 TEST_CASE("switch-level exact marks an undriven gate as floating",
           "[switchlevel]") {
+  REQUIRE_Z3_HELPER();
   // Two NMOS: N1 (x, gate F, VSS) has an undriven gate F, N2 (Y, gate A, x).
   // With A=1, Y is pulled low only when the floating node happens to be 1, so
   // the exact answer is Z, not a definite 0.
@@ -279,6 +287,7 @@ TEST_CASE("switch-level exact marks an undriven gate as floating",
 }
 
 TEST_CASE("switch-level fixed point on a synthetic NOR2", "[switchlevel]") {
+  REQUIRE_Z3_HELPER();
   Subckt c;
   c.name = "NOR2_TEST";
   c.ports = {"A", "B", "Z", "VDD", "VSS"};

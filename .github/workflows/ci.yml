@@ -1,0 +1,139 @@
+name: ci
+
+# Dependency-light gates only: no Z3 worker, Yosys, Verilator, PDK or Fil-C.
+# The full suite (make ci-full) still runs on a prepared machine.
+on:
+  push:
+  pull_request:
+
+env:
+  CATCH2_TAG: v3.7.1
+
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build clang
+          git clone --depth 1 -b "$CATCH2_TAG" https://github.com/catchorg/Catch2.git /tmp/catch2
+          cmake -S /tmp/catch2 -B /tmp/catch2/build -DCMAKE_BUILD_TYPE=Release
+          sudo cmake --build /tmp/catch2/build -j"$(nproc)" --target install
+      - name: build (-Werror)
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DDCSTUDY_BUILD_Z3_HELPER=OFF -DDCSTUDY_WERROR=ON
+          cmake --build build -j"$(nproc)"
+      - name: test
+        run: |
+          ctest --test-dir build --output-on-failure
+          BIN="$PWD/build/dcstudy" bash tests/smoke/cli.sh
+
+  asan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build clang
+          git clone --depth 1 -b "$CATCH2_TAG" https://github.com/catchorg/Catch2.git /tmp/catch2
+          cmake -S /tmp/catch2 -B /tmp/catch2/build -DCMAKE_BUILD_TYPE=Release
+          sudo cmake --build /tmp/catch2/build -j"$(nproc)" --target install
+      - name: build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DDCSTUDY_BUILD_Z3_HELPER=OFF -DDCSTUDY_SANITIZE=ON
+          cmake --build build -j"$(nproc)"
+      - name: test
+        run: ctest --test-dir build --output-on-failure
+
+  gcc:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++
+          git clone --depth 1 -b "$CATCH2_TAG" https://github.com/catchorg/Catch2.git /tmp/catch2
+          cmake -S /tmp/catch2 -B /tmp/catch2/build -DCMAKE_BUILD_TYPE=Release
+          sudo cmake --build /tmp/catch2/build -j"$(nproc)" --target install
+      - name: build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER=g++ -DDCSTUDY_BUILD_Z3_HELPER=OFF
+          cmake --build build -j"$(nproc)"
+      - name: test
+        run: ctest --test-dir build --output-on-failure
+
+  coverage:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build clang llvm
+          git clone --depth 1 -b "$CATCH2_TAG" https://github.com/catchorg/Catch2.git /tmp/catch2
+          cmake -S /tmp/catch2 -B /tmp/catch2/build -DCMAKE_BUILD_TYPE=Release
+          sudo cmake --build /tmp/catch2/build -j"$(nproc)" --target install
+      - name: build and run
+        run: |
+          cmake -S . -B build-cov -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DDCSTUDY_BUILD_Z3_HELPER=OFF -DDCSTUDY_COVERAGE=ON
+          cmake --build build-cov -j"$(nproc)"
+          LLVM_PROFILE_FILE="$PWD/build-cov/cov-%p.profraw" \
+            ctest --test-dir build-cov --output-on-failure
+          llvm-profdata merge -sparse build-cov/*.profraw -o build-cov/cov.profdata
+          llvm-cov report build-cov/dcstudy_tests \
+            -instr-profile=build-cov/cov.profdata > build-cov/coverage.txt
+          grep -E '^TOTAL' build-cov/coverage.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: build-cov/coverage.txt
+
+  fuzz:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: install deps
+        run: sudo apt-get update && sudo apt-get install -y clang
+      - name: build fuzzers
+        run: |
+          mkdir -p build
+          clang++ -std=c++20 -O1 -g -fsanitize=fuzzer,address,undefined -Iinclude \
+            fuzz/fuzz_json.cpp -o build/fuzz_json
+          clang++ -std=c++20 -O1 -g -fsanitize=fuzzer,address,undefined -Iinclude \
+            fuzz/fuzz_expr.cpp src/core/boolfunc.cpp -o build/fuzz_expr
+      - name: fuzz
+        run: |
+          build/fuzz_json -max_total_time=60 fuzz/corpus/json
+          build/fuzz_expr -max_total_time=60 fuzz/corpus/expr
+
+  scripts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: install deps
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: shellcheck
+        run: shellcheck -x -S warning $(find . -name '*.sh' -not -path './build*' -not -path './.git/*')
+
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: mypy
+        run: |
+          python -m pip install mypy
+          mypy --ignore-missing-imports workers/render_worker.py

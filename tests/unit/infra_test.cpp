@@ -48,6 +48,7 @@ TEST_CASE("JSON parser and Z3 protocol round-trip", "[infra]") {
 }
 
 TEST_CASE("batched driver profile matches single-design analysis", "[infra]") {
+  REQUIRE_Z3_HELPER();
   const FuncSpec s = spec_from_expr("A^B");
   SpaceOptions opt;
   opt.max_cost = 6;

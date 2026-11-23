@@ -89,6 +89,8 @@ make fuzz            # libFuzzer: JSON/表达式(FUZZ_TIME=30)
 make shellcheck      # 15 个 shell 脚本
 make pylint          # mypy on workers/render_worker.py
 make ci-full         # ci + 以上全部(tslint 需 workers/node_modules)
+
+> GitHub CI 只跑不依赖重型库的部分：Release/-Werror、ASan、gcc、覆盖率、fuzz、shellcheck、mypy（`-DDCSTUDY_BUILD_Z3_HELPER=OFF`，Z3 用例自动 skip）。clice format/lint、Yosys/Verilator/PDK、Fil-C 仍走本地 `make ci-full`。
 ```
 
 渲染命令默认用 Node(直接跑 `workers/render_worker.ts`);`--png` 额外需要 `rsvg-convert`,`logic.svg` 额外需要 `pdflatex` + `circuitikz`(缺失时退回逻辑块)。Python worker 保留作对照,可用 `DCSTUDY_RENDER_HELPER=workers/render_worker.py` 切回;Python 版没有逻辑面板。

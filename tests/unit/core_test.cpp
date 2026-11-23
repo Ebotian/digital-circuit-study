@@ -91,6 +91,7 @@ TEST_CASE("Boolean matrix closure", "[core]") {
 }
 
 TEST_CASE("exact SOP of NAND2 and unrealisable XOR", "[core]") {
+  REQUIRE_Z3_HELPER();
   const FuncSpec nand = spec_from_expr("~(A&B)");
   const CmosDesign d = synthesize_cmos(nand.func, nand.vars);
   REQUIRE(d.realizable);
@@ -159,6 +160,7 @@ TEST_CASE("design space rejects single-phase transmission gates", "[core]") {
 }
 
 TEST_CASE("emitted dut is Verilog", "[core]") {
+  REQUIRE_Z3_HELPER();
   const FuncSpec s = spec_from_expr("A^B");
   SpaceOptions opt;
   opt.max_cost = 6;

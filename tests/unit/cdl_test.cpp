@@ -1,6 +1,7 @@
 #include "helpers.hpp"
 
 TEST_CASE("CDL aliases keep both output ports", "[cdl]") {
+  REQUIRE_Z3_HELPER();
   // Two outputs on one net: the exported subckt lists both ports and declares
   // the alias; the analysis must report both, not leave Y1 dangling.
   Subckt c;
