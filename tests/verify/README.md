@@ -13,9 +13,8 @@
 ```
 tests/verify/
   lib.sh                # BIN/fail/pass/need
-  run.sh                # instances | formal | optional | all
+  Makefile              # instances | simulation | formal | optional | all
   instances/            # 实例验证（已知答案）
-    run.sh              # 驱动：依次跑 scripts/ 下的用例 + 动态仿真
     specs/              # 各实例的 spec：decoder38/encoder42/hex7seg/pe42/nor2/xor2/xnor2
     scripts/            # 各实例断言：decoder38.sh ... prio16.sh/lzcount16.sh
     rtl/                # RTL 夹具：pe42/pe16/top16/gold16/lzcount16/gold_lzcount16/tb_lzcount16
@@ -50,12 +49,13 @@ tests/verify/
 ## 运行
 
 ```bash
-tests/verify/run.sh instances   # 实例验证（含 Verilator 仿真）
-tests/verify/run.sh formal      # 形式化核心
-tests/verify/run.sh optional    # 形式化可选（完整 CLI）
-tests/verify/run.sh all
-make verify                     # 只跑实例验证
+make -C tests/verify instances   # 实例验证（含 Verilator 仿真）
+make -C tests/verify formal      # 形式化核心
+make -C tests/verify optional    # 形式化可选（完整 CLI）
+make -C tests/verify all         # 以上全部
+make verify                      # 仓库根目录：只跑实例
+make verify-all                  # 仓库根目录：全量
 ```
 
-新增实例：在 `instances/` 放一个 `<name>.sh`，断言 `verified` 与 `total`，
-并把名字加进 `instances/run.sh` 的 `for` 列表；spec 放 `instances/specs/`，RTL 夹具放 `instances/rtl/`。
+新增实例：在 `instances/scripts/` 放一个 `<name>.sh`，断言 `verified` 与 `total`，
+并把名字加进 `tests/verify/Makefile` 的 `INSTANCE_CASES`；spec 放 `instances/specs/`，RTL 夹具放 `instances/rtl/`。

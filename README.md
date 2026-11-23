@@ -71,6 +71,7 @@
 make                 # 主程序 + dcstudy-z3 worker
 make test            # Catch2 单元测试(会启动 worker)
 make verify          # 实例验证(见 tests/verify/README.md)
+make verify-all      # 实例 + 形式化(ctest) + 完整 CLI 套件
 make integration     # 黑盒 CLI + Yosys/Verilator 集成测试
 make filc            # 用 Fil-C 编完整 CLI(不链 Z3)
 make filc-smoke      # 可选:用 Fil-C 跑 Z3-free 内核(约 15 s)
