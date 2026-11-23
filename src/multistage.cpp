@@ -6,6 +6,10 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <map>
+#include <regex>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -526,23 +530,55 @@ RtlSynthResult synthesize_rtl_atoms(const std::string& rtl_path,
       }
     }
 
-    // Measure each atom by mapping the module on its own.
+    // Module names in the library: measuring one atom blackboxes the others,
+    // so its cost is computed the same way its parent was charged.
+    std::vector<std::string> lib_modules;
+    {
+      const std::string src = read_file(atoms_path);
+      const std::regex re("\\bmodule\\s+([A-Za-z_]\\w*)");
+      for (std::sregex_iterator it(src.begin(), src.end(), re), end;
+           it != end; ++it)
+        lib_modules.push_back((*it)[1].str());
+    }
     std::map<std::string, int> atom_cost;
-    for (const auto& [module, count] : atom_instances) {
+    std::set<std::string> measuring;
+    std::function<int(const std::string&)> measure =
+        [&](const std::string& module) -> int {
+      if (const auto it = atom_cost.find(module); it != atom_cost.end())
+        return it->second;
+      if (!measuring.insert(module).second)
+        throw std::runtime_error("recursive atom " + module);
+      std::string blackbox;
+      for (const auto& m : lib_modules)
+        if (m != module) blackbox += m + " ";
       const std::string json_name = "atom_" + module + ".json";
-      run_yosys("read_verilog -sv atoms.v; synth -top " + module +
-                    "; abc -liberty " + lib + " " + dont_use +
-                    "; opt_clean; write_json " + json_name,
+      run_yosys("read_verilog -sv atoms.v; blackbox " + blackbox +
+                    "; synth -top " + module + "; abc -liberty " + lib +
+                    " " + dont_use + "; opt_clean; write_json " + json_name,
                 "atom.log");
       const Json aroot = Json::parse(read_file(dir.path() / json_name));
       if (!aroot.contains("modules") || !aroot.at("modules").contains(module))
         throw std::runtime_error("atom " + module + " did not map");
       const Json& acells = aroot.at("modules").at(module).at("cells");
-      std::string error;
-      const int cost =
-          mapped_transistors(acells, library, "atom " + module, error);
-      if (cost < 0) throw std::runtime_error(error);
+      int cost = 0;
+      for (const auto& [inst, cj] : acells.object()) {
+        const std::string type = cj.at("type").as_string();
+        if (library.has(type)) {
+          if (!static_cell(type))
+            throw std::runtime_error("atom " + module +
+                                     " mapped to non-static cell: " + type);
+          cost += static_cast<int>(library.cell(type).transistor_count());
+        } else {
+          cost += measure(type);  // nested atom
+        }
+      }
+      measuring.erase(module);
       atom_cost[module] = cost;
+      return cost;
+    };
+
+    for (const auto& [module, count] : atom_instances) {
+      const int cost = measure(module);
       out.atoms.push_back({module, count, cost});
     }
 

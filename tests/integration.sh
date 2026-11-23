@@ -293,6 +293,22 @@ JSON
   [ "$(jq -r .verified "$TMP/pipe-atom.json")" = "true" ] || fail "pipeline verify"
   [ "$(jq -r '.atoms[0].module' "$TMP/pipe-atom.json")" = "pe42" ] || fail "pipeline atom"
   [ "$(jq -r '.total == (.atom_cost + .cell_cost)' "$TMP/pipe-atom.json")" = "true" ] || fail "pipeline cost"
+  # Arbitrary chaining: each stage adds its module to the piped atom library.
+  cat > "$TMP/top8c.v" <<'V'
+module top(input logic A7, A6, A5, A4, A3, A2, A1, A0,
+           output logic Y2, Y1, Y0);
+  pe8 u(A7, A6, A5, A4, A3, A2, A1, A0, Y2, Y1, Y0);
+endmodule
+V
+  "$BIN" multi synth --spec "$TMP/pe42.json" --emit-atom pe42 --json \
+    | "$BIN" multi synth --rtl "$TMP/top8.v" --atoms - --emit-atom pe8 \
+        --spec "$TMP/prio8.json" --json \
+    | "$BIN" multi synth --rtl "$TMP/top8c.v" --atoms - --spec "$TMP/prio8.json" --json \
+    > "$TMP/pipe-chain.json" || fail "3-stage chain"
+  [ "$(jq -r .verified "$TMP/pipe-chain.json")" = "true" ] || fail "chain verify"
+  [ "$(jq -r '.atoms[0].module' "$TMP/pipe-chain.json")" = "pe8" ] || fail "chain atom"
+  [ "$(jq -r '.atoms[0].transistors' "$TMP/pipe-chain.json")" = "66" ] || fail "chain cost"
+
   # Same free-row spec through the mapper and the path search: 2T as well.
   [ "$("$BIN" multi synth --spec "$TMP/free.json" --json | jq -r .total)" = "2" ] || fail "free-row synth"
   [ "$("$BIN" multi path --spec "$TMP/free.json" --max-cost 64 --json | jq -r .total)" = "2" ] || fail "free-row path"

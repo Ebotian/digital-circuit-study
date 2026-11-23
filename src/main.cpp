@@ -1821,13 +1821,20 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
     //   dcstudy ... --emit-atom pe42 --json | dcstudy ... --atoms -
     std::string atoms_path = a.get("atoms");
     std::string temp_atoms;
+    std::string stdin_library;
     if (atoms_path == "-") {
       std::ostringstream in;
       in << std::cin.rdbuf();
       const Json prev = Json::parse(in.str());
-      if (!prev.contains("atom_verilog"))
+      const std::string lib = prev.contains("atom_library")
+                                  ? prev.at("atom_library").as_string()
+                                  : (prev.contains("atom_verilog")
+                                         ? prev.at("atom_verilog").as_string()
+                                         : std::string());
+      if (lib.empty())
         throw CliError(
             "--atoms - expects a piped 'multi synth --emit-atom' result");
+      stdin_library = lib;
       static std::atomic<int> counter{0};
       temp_atoms = (fs::temp_directory_path() /
                     ("dcstudy-atom-" +
@@ -1836,7 +1843,7 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
                                         .count()) +
                      "-" + std::to_string(counter++) + ".v"))
                        .string();
-      std::ofstream(temp_atoms) << prev.at("atom_verilog").as_string();
+      std::ofstream(temp_atoms) << lib;
       atoms_path = temp_atoms;
     }
     const RtlSynthResult r =
@@ -1849,6 +1856,19 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
       fs::create_directories(out_dir, ec);
       std::ofstream(out_dir + "/netlist.v") << r.verilog;
       std::ofstream(out_dir + "/netlist.json") << r.json;
+    }
+    const std::string atom_name = a.get("emit-atom");
+    std::string atom_src;
+    if (!atom_name.empty()) {
+      atom_src = a.get("rtl");
+      std::ifstream in(atom_src);
+      std::ostringstream os;
+      os << in.rdbuf();
+      atom_src = os.str();
+      const auto pos = atom_src.find("module top");
+      if (pos != std::string::npos)
+        atom_src.replace(pos, std::string("module top").size(),
+                         "module " + atom_name);
     }
     if (a.is("json")) {
       Json j;
@@ -1869,6 +1889,14 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
       }
       j["atoms"] = std::move(atoms);
       j["verified"] = r.verified;
+      if (!atom_src.empty()) {
+        j["atom_name"] = atom_name;
+        j["atom_verilog"] = atom_src;
+        j["atom_library"] = stdin_library.empty()
+                                ? atom_src
+                                : stdin_library + "\n" + atom_src;
+        j["atom_transistors"] = r.total;
+      }
       if (!ok) j["reason"] = r.reason;
       std::cout << j.dump() << "\n";
     } else if (!ok) {
@@ -1927,6 +1955,7 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
                   "module " + atom_name);
     j["atom_name"] = atom_name;
     j["atom_verilog"] = src;
+    j["atom_library"] = src;
     j["atom_transistors"] = m.total;
   }
   j["total"] = m.total;
