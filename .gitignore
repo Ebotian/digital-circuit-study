@@ -21,3 +21,6 @@ abc.history
 
 # clice/clang tooling
 compile_commands.json
+
+# 独立质量门禁构建目录
+build-*/

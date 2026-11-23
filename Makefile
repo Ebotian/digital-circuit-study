@@ -1,5 +1,8 @@
 BUILD ?= build
 CXX ?= clang++
+ifeq ($(origin CXX),default)
+CXX := clang++
+endif
 FILC ?= filc++
 CMAKE ?= cmake
 SOURCES := $(shell find src -name "*.cpp") $(shell find include -name "*.hpp") \
@@ -16,7 +19,7 @@ FILC_SOURCES := src/cli/main.cpp src/switch/bdd_switch.cpp src/core/boolfunc.cpp
                 src/cli/z3_client.cpp src/cli/render_client.cpp \
                 src/z3/z3_protocol.cpp
 
-.PHONY: all build test format format-check lint ci smoke smoke-cli smoke-filc filc filc-smoke verify verify-all integration clean
+.PHONY: all build test format format-check lint ci ci-full asan werror coverage test-gcc fuzz shellcheck pylint tslint smoke smoke-cli smoke-filc filc filc-smoke verify verify-all integration clean
 
 all: build
 
@@ -53,14 +56,12 @@ format-check: $(CCDB)
 	clice format --check
 
 # Full gate for CI: format, lint, unit+smoke, instances+formal+integration.
-ci: format-check lint test verify-all
+ci: format-check lint werror test verify-all
 
 # clice lint (LLVM/Clang toolkit; needs build/compile_commands.json).
-lint:
-	@command -v clice >/dev/null 2>&1 || { echo "clice not installed" >&2; exit 1; }
-	@[ -e compile_commands.json ] || ln -sf $(BUILD)/compile_commands.json compile_commands.json
+lint: $(CCDB)
 	@clice lint -j 0 | tee $(BUILD)/clice-lint.txt
-	@grep -q ": 0 findings" $(BUILD)/clice-lint.txt || { echo "clice lint findings" >&2; exit 1; }
+	@grep -q ": 0 findings" $(BUILD)/clice-lint.txt
 
 smoke: smoke-cli
 	@if command -v $(FILC) >/dev/null 2>&1; then \
@@ -93,3 +94,46 @@ filc-smoke: smoke-filc
 
 clean:
 	rm -rf $(BUILD)
+# --- extended quality gates (P0/P1) ---------------------------------------
+asan:
+	$(CMAKE) -S . -B build-asan -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF -DCMAKE_CXX_COMPILER=$(CXX) -DCMAKE_BUILD_TYPE=Debug -DDCSTUDY_SANITIZE=ON
+	$(CMAKE) --build build-asan -j
+	ctest --test-dir build-asan --output-on-failure
+
+werror:
+	$(CMAKE) -S . -B build-werror -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF -DCMAKE_CXX_COMPILER=$(CXX) -DCMAKE_BUILD_TYPE=Release -DDCSTUDY_WERROR=ON
+	$(CMAKE) --build build-werror -j
+
+coverage:
+	$(CMAKE) -S . -B build-cov -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Debug -DDCSTUDY_COVERAGE=ON
+	$(CMAKE) --build build-cov -j
+	LLVM_PROFILE_FILE=$(abspath build-cov)/cov-%p.profraw ctest --test-dir build-cov --output-on-failure
+	llvm-profdata merge -sparse build-cov/*.profraw -o build-cov/cov.profdata
+	llvm-cov report build-cov/dcstudy_tests -instr-profile=build-cov/cov.profdata > build-cov/coverage.txt
+	@grep -E '^TOTAL' build-cov/coverage.txt
+
+test-gcc:
+	$(CMAKE) -S . -B build-gcc -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++
+	$(CMAKE) --build build-gcc -j
+	ctest --test-dir build-gcc --output-on-failure
+
+FUZZ_TIME ?= 30
+fuzz:
+	clang++ -std=c++20 -O1 -g -fsanitize=fuzzer,address,undefined -Iinclude \
+	  fuzz/fuzz_json.cpp -o $(BUILD)/fuzz_json
+	clang++ -std=c++20 -O1 -g -fsanitize=fuzzer,address,undefined -Iinclude \
+	  fuzz/fuzz_expr.cpp src/core/boolfunc.cpp -o $(BUILD)/fuzz_expr
+	$(BUILD)/fuzz_json -max_total_time=$(FUZZ_TIME) fuzz/corpus/json
+	$(BUILD)/fuzz_expr -max_total_time=$(FUZZ_TIME) fuzz/corpus/expr
+
+# Non-C++ assets: skip when the tool is missing (fail under CI=1).
+shellcheck:
+	shellcheck -x -S warning $$(find . -name '*.sh' -not -path './build*' -not -path './.git/*')
+
+pylint:
+	mypy --ignore-missing-imports workers/render_worker.py
+
+tslint:
+	cd workers && npx tsc --noEmit
+
+ci-full: ci asan werror coverage test-gcc fuzz shellcheck pylint

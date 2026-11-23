@@ -19,6 +19,20 @@ if(DCSTUDY_SANITIZE)
   add_link_options(-fsanitize=address,undefined)
 endif()
 
+option(DCSTUDY_WERROR "Treat warnings as errors" OFF)
+if(DCSTUDY_WERROR)
+  add_compile_options(-Werror)
+endif()
+
+option(DCSTUDY_COVERAGE "Instrument for LLVM source-based coverage" OFF)
+if(DCSTUDY_COVERAGE AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  message(FATAL_ERROR "DCSTUDY_COVERAGE requires Clang")
+endif()
+if(DCSTUDY_COVERAGE)
+  add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
+  add_link_options(-fprofile-instr-generate -fcoverage-mapping)
+endif()
+
 add_library(dcstudy_core STATIC
   src/core/boolfunc.cpp
   src/core/cdl.cpp

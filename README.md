@@ -80,6 +80,15 @@ make format          # clice 默认风格格式化(需要 clice)
 make format-check    # 只检查, CI 用
 make lint            # clice lint(有 finding 即失败)
 make ci              # format-check + lint + test + verify-all
+# 扩展质量门禁(make ci-full 全跑)
+make asan            # ASan/UBSan 构建 + ctest
+make werror          # -Werror 构建
+make coverage        # LLVM 覆盖率(build-cov/coverage.txt)
+make test-gcc        # gcc 构建 + ctest
+make fuzz            # libFuzzer: JSON/表达式(FUZZ_TIME=30)
+make shellcheck      # 15 个 shell 脚本
+make pylint          # mypy on workers/render_worker.py
+make ci-full         # ci + 以上全部(tslint 需 workers/node_modules)
 ```
 
 渲染命令默认用 Node(直接跑 `workers/render_worker.ts`);`--png` 额外需要 `rsvg-convert`,`logic.svg` 额外需要 `pdflatex` + `circuitikz`(缺失时退回逻辑块)。Python worker 保留作对照,可用 `DCSTUDY_RENDER_HELPER=workers/render_worker.py` 切回;Python 版没有逻辑面板。
