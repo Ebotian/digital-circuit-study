@@ -1,0 +1,55 @@
+# 验证目录
+
+按**验证目的**而不是按命令组织测试：
+
+- `instances/` — **实例验证**：完整设计从 spec/RTL 到映射网表，断言已知答案（成本、验证结论）。
+  这些是教材例题和组合示例，跑得快，不依赖 Z3/PDK 之外的东西（prio16 需要 Yosys）。
+- `formal/` — **形式化验证**：
+  - `core.sh`：单元/性质测试（布尔代数、精确覆盖、开关级语义、CDL 解析、别名、浮空竞争、dc/any 规则等），
+    只依赖构建产物，CI 必跑；
+  - `optional.sh`：CLI 黑盒套件 `tests/integration.sh`，覆盖 Yosys/Verilator/Z3/PDK 相关功能，
+    缺依赖时本地跳过、`CI=1` 时直接失败。
+
+```
+tests/verify/
+  lib.sh                # BIN/fail/pass/need
+  run.sh                # instances | formal | optional | all
+  instances/            # 实例验证（已知答案）
+    decoder38.sh        # 3-8 译码器：54T
+    encoder42.sh        # 4-2 编码器（any）：exact 8T / synth 8T / path 7T
+    prio42.sh           # 4-2 优先编码器：16T
+    prio16.sh           # 16-4 优先编码器：4x pe42 + 胶合 = 172T，结构 miter
+    rtl/                # 该实例的 RTL 夹具（pe42/top16/gold16）
+  formal/
+    core.sh             # 单元/性质测试（ctest）
+    optional.sh         # 完整 CLI/开关级/Z3/Yosys 套件（integration.sh）
+```
+
+## 实例验证矩阵
+
+| 实例 | 输入 | 验证方式 | 断言 |
+|---|---|---|---|
+| 3-8 译码器 | spec | 逐输出开关级 miter | 54T，verified |
+| 4-2 编码器（any） | spec + any 掩码 | exact 的 dc 空间搜索 + 开关级 | 8T / 8T / 7T |
+| 4-2 优先编码器 | spec | 逐输出开关级 miter | 16T，verified |
+| 16-4 优先编码器 | RTL + 原子 + --ref | 结构 miter（无真值表） | 172T = 4x16T + 108T，PASS |
+
+## 形式化验证矩阵
+
+| 层 | 内容 | 依赖 | 何时跑 |
+|---|---|---|---|
+| core | 布尔/精确覆盖/开关级/CDL/浮空/别名/dc 规则 | 仅构建产物 | 每次提交（CI） |
+| optional | CLI 端到端、Yosys SAT、Verilator、Z3 工作进程、PDK 单元 | yosys/verilator/z3/PDK | 本地完整回归、CI |
+
+## 运行
+
+```bash
+tests/verify/run.sh instances   # 实例验证
+tests/verify/run.sh formal      # 形式化核心
+tests/verify/run.sh optional    # 形式化可选（完整 CLI）
+tests/verify/run.sh all
+make verify                     # 只跑实例验证
+```
+
+新增实例：在 `instances/` 放一个 `<name>.sh`，断言 `verified` 与 `total`，
+并加入 `instances/run.sh` 的列表；RTL 夹具放 `instances/rtl/`。

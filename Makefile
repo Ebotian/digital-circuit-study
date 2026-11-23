@@ -13,7 +13,7 @@ FILC_SOURCES := src/main.cpp src/bdd_switch.cpp src/boolfunc.cpp src/cdl.cpp src
                 src/verilog.cpp src/verify.cpp src/worker_client.cpp \
                 src/z3_client.cpp src/render_client.cpp src/z3_protocol.cpp
 
-.PHONY: all build test integration filc filc-smoke clean
+.PHONY: all build test verify integration filc filc-smoke clean
 
 all: build
 
@@ -27,6 +27,9 @@ $(BUILD)/dcstudy: $(SOURCES) $(BUILD)/CMakeCache.txt
 
 test: $(BUILD)/dcstudy
 	ctest --test-dir $(BUILD) --output-on-failure
+
+verify: $(BUILD)/dcstudy
+	BIN=$(abspath $(BUILD))/dcstudy bash tests/verify/run.sh instances
 
 integration: $(BUILD)/dcstudy
 	BIN=$(abspath $(BUILD))/dcstudy bash tests/integration.sh
