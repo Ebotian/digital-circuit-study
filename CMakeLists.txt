@@ -10,6 +10,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 add_compile_options(-Wall -Wextra -Wpedantic)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(DCSTUDY_SANITIZE "Build with AddressSanitizer and UBSan" OFF)
 option(DCSTUDY_BUILD_Z3_HELPER "Build the out-of-process Z3 worker" ON)

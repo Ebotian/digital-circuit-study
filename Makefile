@@ -16,7 +16,7 @@ FILC_SOURCES := src/cli/main.cpp src/switch/bdd_switch.cpp src/core/boolfunc.cpp
                 src/cli/z3_client.cpp src/cli/render_client.cpp \
                 src/z3/z3_protocol.cpp
 
-.PHONY: all build test smoke smoke-cli smoke-filc filc filc-smoke verify verify-all integration clean
+.PHONY: all build test lint smoke smoke-cli smoke-filc filc filc-smoke verify verify-all integration clean
 
 all: build
 
@@ -40,6 +40,13 @@ verify-all: $(BUILD)/dcstudy
 
 integration: $(BUILD)/dcstudy
 	BIN=$(abspath $(BUILD))/dcstudy bash tests/integration.sh
+
+# clice lint (LLVM/Clang toolkit; needs build/compile_commands.json).
+lint:
+	@command -v clice >/dev/null 2>&1 || { echo "clice not installed" >&2; exit 1; }
+	@[ -e compile_commands.json ] || ln -sf $(BUILD)/compile_commands.json compile_commands.json
+	@clice lint -j 0 | tee $(BUILD)/clice-lint.txt
+	@grep -q ": 0 findings" $(BUILD)/clice-lint.txt || { echo "clice lint findings" >&2; exit 1; }
 
 smoke: smoke-cli
 	@if command -v $(FILC) >/dev/null 2>&1; then \

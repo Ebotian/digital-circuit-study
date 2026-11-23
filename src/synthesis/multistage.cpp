@@ -442,24 +442,6 @@ MultiStageDesign synthesize_multistage_static(
 
 namespace {
 
-int mapped_transistors(const Json& cells, const CdlLibrary& library,
-                       const std::string& what, std::string& error) {
-  int total = 0;
-  for (const auto& [inst, cj] : cells.object()) {
-    const std::string type = cj.at("type").as_string();
-    if (!library.has(type)) {
-      error = what + " uses non-library cell " + type;
-      return -1;
-    }
-    if (!static_cell(type)) {
-      error = what + " maps to non-static cell " + type;
-      return -1;
-    }
-    total += static_cast<int>(library.cell(type).transistor_count());
-  }
-  return total;
-}
-
 struct PortSpec {
   std::string dir;
   int width = 0;
