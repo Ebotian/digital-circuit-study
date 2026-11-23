@@ -9,11 +9,11 @@
 #include <iostream>
 #include <vector>
 
-#include "dcstudy/boolfunc.hpp"
-#include "dcstudy/boolmatrix.hpp"
-#include "dcstudy/cmos.hpp"
-#include "dcstudy/designspace.hpp"
-#include "dcstudy/verilog.hpp"
+#include "core/boolfunc.hpp"
+#include "core/boolmatrix.hpp"
+#include "core/cmos.hpp"
+#include "core/designspace.hpp"
+#include "core/verilog.hpp"
 
 using namespace dcstudy;
 

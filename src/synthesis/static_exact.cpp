@@ -1,4 +1,4 @@
-#include "dcstudy/static_exact.hpp"
+#include "synthesis/static_exact.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -9,8 +9,8 @@
 #include <stdexcept>
 #include <utility>
 
-#include "dcstudy/parallel.hpp"
-#include "dcstudy/switchlevel.hpp"
+#include "core/parallel.hpp"
+#include "switch/switchlevel.hpp"
 
 namespace dcstudy {
 namespace {

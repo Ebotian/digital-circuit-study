@@ -1,4 +1,4 @@
-#include "dcstudy/verilog.hpp"
+#include "core/verilog.hpp"
 
 #include <algorithm>
 #include <sstream>

@@ -1,4 +1,4 @@
-#include "dcstudy/multi_path.hpp"
+#include "synthesis/multi_path.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -8,9 +8,9 @@
 #include <string>
 #include <vector>
 
-#include "dcstudy/driver_profile.hpp"
-#include "dcstudy/parallel.hpp"
-#include "dcstudy/static_exact.hpp"
+#include "core/driver_profile.hpp"
+#include "core/parallel.hpp"
+#include "synthesis/static_exact.hpp"
 
 namespace dcstudy {
 namespace {

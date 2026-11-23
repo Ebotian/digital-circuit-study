@@ -1,8 +1,8 @@
-#include "dcstudy/render_client.hpp"
+#include "cli/render_client.hpp"
 
 #include <stdexcept>
 
-#include "dcstudy/worker_client.hpp"
+#include "cli/worker_client.hpp"
 
 namespace dcstudy {
 

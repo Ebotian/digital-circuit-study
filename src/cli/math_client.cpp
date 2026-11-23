@@ -1,4 +1,4 @@
-#include "dcstudy/math_client.hpp"
+#include "cli/math_client.hpp"
 
 #include <cstdint>
 #include <stdexcept>
@@ -6,8 +6,8 @@
 #include <utility>
 #include <vector>
 
-#include "dcstudy/json.hpp"
-#include "dcstudy/z3_client.hpp"
+#include "core/json.hpp"
+#include "cli/z3_client.hpp"
 
 namespace dcstudy {
 

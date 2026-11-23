@@ -93,7 +93,7 @@ make smoke-filc      # 可选:用 Fil-C 跑 Z3-free 内核(约 15 s;旧名 filc-
 
 - 主程序先尝试 `$DCSTUDY_Z3_HELPER`,否则找自己旁边的 `dcstudy-z3`。
 - worker 每次调用一个请求,120 秒超时;Z3 崩溃/越界不会带走主进程。
-- 协议是普通 JSON,见 `include/dcstudy/z3_protocol.hpp`;worker 也可以单独替换成 mock 做测试。
+- 协议是普通 JSON,见 `include/z3/z3_protocol.hpp`;worker 也可以单独替换成 mock 做测试。
 - `render` 复用同一套 IPC:主进程把已经验证过的设计拓扑交给 `workers/render_worker.ts`,Node 只负责画 SVG/HTML,不参与正确性判定。`workers/render_worker.py` 是保留的对照实现。
 
 ### CPU 并行
@@ -542,26 +542,13 @@ verilator --binary --timing -Wno-fatal -Wno-WIDTH -Wno-UNUSEDSIGNAL \
 ```text
 .
 ├── CMakeLists.txt / Makefile
-├── include/dcstudy/
-│   ├── bits.hpp          动态位集(真值表 / 覆盖集 / 矩阵行)
-│   ├── boolfunc.hpp      布尔函数、表达式解析、ANF、Dedekind 计数
-│   ├── boolmatrix.hpp    布尔半环矩阵乘法 + Warshall 传递闭包
-│   ├── cdl.hpp           CDL 标准单元网表解析
-│   ├── switchlevel.hpp   开关级不动点(精确解走 worker)
-│   ├── cmos.hpp          Quine–McCluskey + 精确 Petrick 覆盖
-│   ├── designspace.hpp   pass-network 设计空间 D(含传输门两相约束)
-│   ├── synthesis.hpp     最小成本设计的约束/解码层
-│   ├── z3_protocol.hpp   Z3 worker 的 JSON 协议
-│   ├── z3_client.hpp     Z3 worker 查找 + 进程调用
-│   ├── z3_solvers.hpp    Z3 worker 内实现(Optimize / SAT)
-│   ├── symmetry.hpp       bliss 输入自同构群
-│   ├── math_client.hpp    主进程的数学 worker 客户端
-│   ├── math_engine.hpp    GraphBLAS 闭包 / FLINT GF(2)
-│   ├── worker_client.hpp 通用 worker 查找 / JSON IPC
-│   ├── render_client.hpp 渲染 worker 客户端
-│   ├── verilog.hpp       DUT / 参考 / miter / testbench 生成
-│   ├── verify.hpp        Yosys SAT 证明 + Verilator 仿真
-│   └── json.hpp          有序 JSON 输出 + 解析
+├── include/              公共头文件(按模块, 不再有 dcstudy/ 子目录)
+│   ├── core/             bits/boolfunc/boolmatrix/cdl/cmos/designspace/
+│   │                     driver_profile/json/limits/parallel/partial/verilog/verify
+│   ├── synthesis/        static_exact/multi_path/multistage/path_search/synthesis/template_synth
+│   ├── switch/           switchlevel/bdd_switch
+│   ├── z3/               z3_protocol/z3_solvers/math_engine/symmetry
+│   └── cli/              worker_client/render_client/math_client/z3_client
 ├── src/                  按模块分组
 │   ├── cli/              main + worker 客户端(math/render/z3/generic)
 │   ├── core/             布尔函数/CDL/CMOS/设计空间/limits/verilog/verify

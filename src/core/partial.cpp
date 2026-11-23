@@ -1,6 +1,6 @@
-#include "dcstudy/partial.hpp"
+#include "core/partial.hpp"
 
-#include "dcstudy/static_exact.hpp"
+#include "synthesis/static_exact.hpp"
 
 namespace dcstudy {
 

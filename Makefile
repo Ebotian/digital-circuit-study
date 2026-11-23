@@ -2,7 +2,7 @@ BUILD ?= build
 CXX ?= clang++
 FILC ?= filc++
 CMAKE ?= cmake
-SOURCES := $(shell find src -name "*.cpp") $(wildcard include/dcstudy/*.hpp) \
+SOURCES := $(shell find src -name "*.cpp") $(shell find include -name "*.hpp") \
            $(wildcard tests/unit/*) $(wildcard tests/smoke/*)
 FILC_SOURCES := src/cli/main.cpp src/switch/bdd_switch.cpp src/core/boolfunc.cpp \
                 src/core/cdl.cpp src/core/cmos.cpp src/core/designspace.cpp \
@@ -52,7 +52,7 @@ smoke-cli: $(BUILD)/dcstudy
 	BIN=$(abspath $(BUILD))/dcstudy bash tests/smoke/cli.sh
 
 # Full safe CLI under Fil-C; it spawns the host-built Z3 worker.
-filc: $(FILC_SOURCES) $(wildcard include/dcstudy/*.hpp)
+filc: $(FILC_SOURCES) $(shell find include -name "*.hpp")
 	@mkdir -p $(BUILD)
 	$(FILC) --filc-no-ape -std=c++20 -O1 -Iinclude $(FILC_SOURCES) \
 	  -o $(BUILD)/dcstudy-filc

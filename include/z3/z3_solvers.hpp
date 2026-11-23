@@ -1,7 +1,7 @@
 // Solver implementations that live in the dcstudy-z3 worker process.
 #pragma once
 
-#include "dcstudy/z3_protocol.hpp"
+#include "z3/z3_protocol.hpp"
 
 namespace dcstudy {
 

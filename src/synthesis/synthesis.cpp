@@ -1,4 +1,4 @@
-#include "dcstudy/synthesis.hpp"
+#include "synthesis/synthesis.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -8,9 +8,9 @@
 #include <string>
 #include <vector>
 
-#include "dcstudy/driver_profile.hpp"
-#include "dcstudy/z3_client.hpp"
-#include "dcstudy/z3_protocol.hpp"
+#include "core/driver_profile.hpp"
+#include "cli/z3_client.hpp"
+#include "z3/z3_protocol.hpp"
 
 namespace dcstudy {
 namespace {

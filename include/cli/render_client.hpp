@@ -3,7 +3,7 @@
 
 #include <string>
 
-#include "dcstudy/json.hpp"
+#include "core/json.hpp"
 
 namespace dcstudy {
 

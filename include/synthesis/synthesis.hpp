@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "dcstudy/designspace.hpp"
+#include "core/designspace.hpp"
 
 namespace dcstudy {
 

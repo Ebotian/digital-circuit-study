@@ -11,8 +11,8 @@
 #include <string>
 #include <vector>
 
-#include "dcstudy/bits.hpp"
-#include "dcstudy/boolfunc.hpp"
+#include "core/bits.hpp"
+#include "core/boolfunc.hpp"
 
 namespace dcstudy {
 

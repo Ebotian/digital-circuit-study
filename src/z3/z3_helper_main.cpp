@@ -5,11 +5,11 @@
 #include <iterator>
 #include <string>
 
-#include "dcstudy/json.hpp"
-#include "dcstudy/math_engine.hpp"
-#include "dcstudy/symmetry.hpp"
-#include "dcstudy/z3_protocol.hpp"
-#include "dcstudy/z3_solvers.hpp"
+#include "core/json.hpp"
+#include "z3/math_engine.hpp"
+#include "z3/symmetry.hpp"
+#include "z3/z3_protocol.hpp"
+#include "z3/z3_solvers.hpp"
 
 using namespace dcstudy;
 

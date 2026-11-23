@@ -1,4 +1,4 @@
-#include "dcstudy/designspace.hpp"
+#include "core/designspace.hpp"
 
 #include <algorithm>
 #include <cstdint>

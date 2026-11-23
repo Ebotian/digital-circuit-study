@@ -1,4 +1,4 @@
-#include "dcstudy/driver_profile.hpp"
+#include "core/driver_profile.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -8,8 +8,8 @@
 #include <string>
 #include <vector>
 
-#include "dcstudy/boolmatrix.hpp"
-#include "dcstudy/math_client.hpp"
+#include "core/boolmatrix.hpp"
+#include "cli/math_client.hpp"
 
 namespace dcstudy {
 namespace {

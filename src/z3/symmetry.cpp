@@ -1,4 +1,4 @@
-#include "dcstudy/symmetry.hpp"
+#include "z3/symmetry.hpp"
 
 #include <algorithm>
 #include <cstddef>

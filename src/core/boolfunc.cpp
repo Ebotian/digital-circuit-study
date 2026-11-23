@@ -1,4 +1,4 @@
-#include "dcstudy/boolfunc.hpp"
+#include "core/boolfunc.hpp"
 
 #include <algorithm>
 #include <cctype>

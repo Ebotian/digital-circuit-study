@@ -6,8 +6,8 @@
 #include <string>
 #include <vector>
 
-#include "dcstudy/boolfunc.hpp"
-#include "dcstudy/synthesis.hpp"
+#include "core/boolfunc.hpp"
+#include "synthesis/synthesis.hpp"
 
 namespace dcstudy {
 

@@ -1,4 +1,4 @@
-#include "dcstudy/verify.hpp"
+#include "core/verify.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -14,7 +14,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "dcstudy/verilog.hpp"
+#include "core/verilog.hpp"
 
 namespace dcstudy {
 namespace {

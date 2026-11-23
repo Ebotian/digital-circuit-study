@@ -15,10 +15,10 @@
 #include <string>
 #include <vector>
 
-#include "dcstudy/boolfunc.hpp"
-#include "dcstudy/cdl.hpp"
-#include "dcstudy/cmos.hpp"
-#include "dcstudy/partial.hpp"
+#include "core/boolfunc.hpp"
+#include "core/cdl.hpp"
+#include "core/cmos.hpp"
+#include "core/partial.hpp"
 
 namespace dcstudy {
 

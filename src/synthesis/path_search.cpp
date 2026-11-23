@@ -1,4 +1,4 @@
-#include "dcstudy/path_search.hpp"
+#include "synthesis/path_search.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "dcstudy/driver_profile.hpp"
+#include "core/driver_profile.hpp"
 
 namespace dcstudy {
 namespace {

@@ -1,4 +1,4 @@
-#include "dcstudy/multistage.hpp"
+#include "synthesis/multistage.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -19,12 +19,12 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "dcstudy/cdl.hpp"
-#include "dcstudy/json.hpp"
-#include "dcstudy/parallel.hpp"
-#include "dcstudy/static_exact.hpp"
-#include "dcstudy/switchlevel.hpp"
-#include "dcstudy/verify.hpp"
+#include "core/cdl.hpp"
+#include "core/json.hpp"
+#include "core/parallel.hpp"
+#include "synthesis/static_exact.hpp"
+#include "switch/switchlevel.hpp"
+#include "core/verify.hpp"
 
 namespace dcstudy {
 namespace {

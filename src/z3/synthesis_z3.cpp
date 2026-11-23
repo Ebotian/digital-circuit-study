@@ -1,4 +1,4 @@
-#include "dcstudy/z3_solvers.hpp"
+#include "z3/z3_solvers.hpp"
 
 #include <algorithm>
 #include <cstdint>

@@ -1,6 +1,6 @@
-#include "dcstudy/switchlevel.hpp"
+#include "switch/switchlevel.hpp"
 
-#include "dcstudy/parallel.hpp"
+#include "core/parallel.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -11,10 +11,10 @@
 #include <utility>
 #include <vector>
 
-#include "dcstudy/boolmatrix.hpp"
-#include "dcstudy/math_client.hpp"
-#include "dcstudy/z3_client.hpp"
-#include "dcstudy/z3_protocol.hpp"
+#include "core/boolmatrix.hpp"
+#include "cli/math_client.hpp"
+#include "cli/z3_client.hpp"
+#include "z3/z3_protocol.hpp"
 
 namespace dcstudy {
 namespace {

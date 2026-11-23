@@ -9,9 +9,9 @@
 #include <string>
 #include <vector>
 
-#include "dcstudy/boolfunc.hpp"
-#include "dcstudy/designspace.hpp"
-#include "dcstudy/driver_profile.hpp"
+#include "core/boolfunc.hpp"
+#include "core/designspace.hpp"
+#include "core/driver_profile.hpp"
 
 namespace dcstudy {
 

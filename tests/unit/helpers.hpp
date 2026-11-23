@@ -8,20 +8,20 @@
 #include <string>
 #include <vector>
 
-#include "dcstudy/bits.hpp"
-#include "dcstudy/boolfunc.hpp"
-#include "dcstudy/boolmatrix.hpp"
-#include "dcstudy/cdl.hpp"
-#include "dcstudy/cmos.hpp"
-#include "dcstudy/designspace.hpp"
-#include "dcstudy/driver_profile.hpp"
-#include "dcstudy/limits.hpp"
-#include "dcstudy/parallel.hpp"
-#include "dcstudy/static_exact.hpp"
-#include "dcstudy/switchlevel.hpp"
-#include "dcstudy/synthesis.hpp"
-#include "dcstudy/verilog.hpp"
-#include "dcstudy/z3_protocol.hpp"
+#include "core/bits.hpp"
+#include "core/boolfunc.hpp"
+#include "core/boolmatrix.hpp"
+#include "core/cdl.hpp"
+#include "core/cmos.hpp"
+#include "core/designspace.hpp"
+#include "core/driver_profile.hpp"
+#include "core/limits.hpp"
+#include "core/parallel.hpp"
+#include "synthesis/static_exact.hpp"
+#include "switch/switchlevel.hpp"
+#include "synthesis/synthesis.hpp"
+#include "core/verilog.hpp"
+#include "z3/z3_protocol.hpp"
 
 using namespace dcstudy;
 

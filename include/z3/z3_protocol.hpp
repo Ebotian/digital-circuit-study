@@ -5,9 +5,9 @@
 #include <string>
 #include <vector>
 
-#include "dcstudy/cdl.hpp"
-#include "dcstudy/json.hpp"
-#include "dcstudy/switchlevel.hpp"
+#include "core/cdl.hpp"
+#include "core/json.hpp"
+#include "switch/switchlevel.hpp"
 
 namespace dcstudy {
 

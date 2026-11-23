@@ -1,8 +1,8 @@
-#include "dcstudy/z3_client.hpp"
+#include "cli/z3_client.hpp"
 
 #include <stdexcept>
 
-#include "dcstudy/worker_client.hpp"
+#include "cli/worker_client.hpp"
 
 namespace dcstudy {
 

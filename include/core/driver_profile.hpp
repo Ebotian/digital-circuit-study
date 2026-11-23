@@ -10,8 +10,8 @@
 #include <string>
 #include <vector>
 
-#include "dcstudy/designspace.hpp"
-#include "dcstudy/synthesis.hpp"
+#include "core/designspace.hpp"
+#include "synthesis/synthesis.hpp"
 
 namespace dcstudy {
 

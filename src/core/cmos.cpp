@@ -1,4 +1,4 @@
-#include "dcstudy/cmos.hpp"
+#include "core/cmos.hpp"
 
 #include <algorithm>
 #include <cstdint>

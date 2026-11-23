@@ -1,4 +1,4 @@
-#include "dcstudy/limits.hpp"
+#include "core/limits.hpp"
 
 #include <sys/resource.h>
 #include <unistd.h>

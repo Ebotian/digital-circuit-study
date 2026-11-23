@@ -8,8 +8,8 @@
 #include <string>
 #include <vector>
 
-#include "dcstudy/boolfunc.hpp"
-#include "dcstudy/partial.hpp"
+#include "core/boolfunc.hpp"
+#include "core/partial.hpp"
 
 namespace dcstudy {
 

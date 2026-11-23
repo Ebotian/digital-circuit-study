@@ -1,4 +1,4 @@
-#include "dcstudy/z3_protocol.hpp"
+#include "z3/z3_protocol.hpp"
 
 #include <cstdint>
 #include <stdexcept>

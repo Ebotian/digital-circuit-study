@@ -1,4 +1,4 @@
-#include "dcstudy/bdd_switch.hpp"
+#include "switch/bdd_switch.hpp"
 
 #include <algorithm>
 #include <map>
