@@ -238,6 +238,35 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
       }
     }
 
+    // Yosys may fold several output ports onto one bit (e.g. Y0 and Y1 both
+    // ~(A&B)).  Keep the port->bit map: the first output names the shared
+    // net, later ones become aliases instead of dangling unconnected.
+    const Json& ports = top.at("ports");
+    std::map<std::int64_t, std::string> input_of_bit;
+    for (const auto& v : vars) {
+      if (!ports.contains(v)) continue;
+      const auto& pb = ports.at(v).at("bits").array();
+      if (!pb.empty() && pb[0].is_number()) input_of_bit[pb[0].as_int()] = v;
+    }
+    std::map<std::int64_t, std::string> output_of_bit;
+    std::vector<int> alias_of(out_names.size(), -1);
+    for (std::size_t k = 0; k < out_names.size(); ++k) {
+      if (!ports.contains(out_names[k])) continue;
+      const auto& pb = ports.at(out_names[k]).at("bits").array();
+      if (pb.empty() || !pb[0].is_number()) continue;
+      const auto id = pb[0].as_int();
+      auto it = output_of_bit.find(id);
+      if (it == output_of_bit.end()) {
+        output_of_bit.emplace(id, out_names[k]);
+        if (!input_of_bit.count(id)) bits[id] = out_names[k];
+      } else {
+        const auto canon =
+            std::find(out_names.begin(), out_names.end(), it->second) -
+            out_names.begin();
+        alias_of[k] = static_cast<int>(canon);
+      }
+    }
+
     const Json& cells = top.at("cells");
     for (const auto& [inst, cj] : cells.object()) {
       GateInstance gi;
@@ -267,9 +296,10 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
       flat.ports.push_back(v);
       flat.pin_dir[v] = PinDir::Input;
     }
-    for (const auto& name : out_names) {
-      flat.ports.push_back(name);
-      flat.pin_dir[name] = PinDir::Output;
+    for (std::size_t k = 0; k < out_names.size(); ++k) {
+      if (alias_of[k] >= 0) continue;  // same net as its canonical output
+      flat.ports.push_back(out_names[k]);
+      flat.pin_dir[out_names[k]] = PinDir::Output;
     }
     flat.ports.push_back("VDD");
     flat.pin_dir["VDD"] = PinDir::Power;
@@ -308,7 +338,12 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
       if (d.pmos) ++out.pfet;
       else ++out.nfet;
     }
-    out.cdl = cdl_from_subckt(flat);
+    std::string alias_notes;
+    for (std::size_t k = 0; k < out_names.size(); ++k)
+      if (alias_of[k] >= 0)
+        alias_notes += "*.ALIAS " + out_names[k] + " " +
+                       out_names[static_cast<std::size_t>(alias_of[k])] + "\n";
+    out.cdl = alias_notes + cdl_from_subckt(flat);
     out.verilog = read_file(net_v);
     out.json = read_file(net_json);
 
@@ -318,6 +353,7 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
     out.truths.resize(out_names.size());
     std::vector<char> output_ok(out_names.size(), 0);
     parallel_for(out_names.size(), parallel_jobs(), [&](std::size_t k) {
+      if (alias_of[k] >= 0) return;  // copied from the canonical output
       const Subckt one =
           switch_output_cone(flat, vars, out_names[k], "VDD", "VSS");
       const SwitchAnalysis a =
@@ -329,6 +365,11 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
       out.truths[k] = std::move(truth);
       output_ok[k] = (out.truths[k] == funcs[k].truth_string()) ? 1 : 0;
     });
+    for (std::size_t k = 0; k < out_names.size(); ++k) {
+      if (alias_of[k] < 0) continue;
+      out.truths[k] = out.truths[static_cast<std::size_t>(alias_of[k])];
+      output_ok[k] = (out.truths[k] == funcs[k].truth_string()) ? 1 : 0;
+    }
     out.verified = std::all_of(output_ok.begin(), output_ok.end(),
                                [](char v) { return v != 0; });
     out.ok = true;

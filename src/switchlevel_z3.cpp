@@ -159,8 +159,20 @@ SwitchSolution z3_solve_switch(const SwitchProblem& p) {
       const bool can1 = (checked(solver) == z3::sat);
       solver.pop();
 
+      // can0/can1 are existential: "some consistent state drives the output
+      // to 0/1".  An undriven gate can leave the output floating in another
+      // state, so also ask whether both rails can be unreachable.  When that
+      // holds the rail value is only possible, not guaranteed.
+      solver.push();
+      solver.add(!r0[out_idx[oi]]);
+      solver.add(!r1[out_idx[oi]]);
+      const bool can_float = (checked(solver) == z3::sat);
+      solver.pop();
+
       if (can0 && can1)
         row.values[oi] = Logic::Race;
+      else if ((can0 || can1) && can_float)
+        row.values[oi] = Logic::Float;
       else if (can0)
         row.values[oi] = Logic::Zero;
       else if (can1)

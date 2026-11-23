@@ -329,20 +329,30 @@ FuncSpec spec_from_truth(const std::string& text,
     if (vars.empty())
       throw std::invalid_argument("hex truth tables need --vars");
     n = vars.size();
-    std::uint64_t v = 0;
-    for (std::size_t i = 2; i < s.size(); ++i) {
-      char c = s[i];
-      int d = std::isdigit(static_cast<unsigned char>(c))
-                  ? c - '0'
-                  : (std::tolower(static_cast<unsigned char>(c)) - 'a' + 10);
-      if (d < 0 || d > 15) throw std::invalid_argument("bad hex digit in truth table");
-      v = (v << 4) | static_cast<std::uint64_t>(d);
+    const std::size_t width = std::size_t{1} << n;
+    bits = Bits(width);
+    // Fill the table bit by bit instead of packing into a 64-bit integer:
+    // hex tables can be wider than 64 rows and the shift would be undefined
+    // (and silently wrap) past that.  A digit is four bits, least significant
+    // digit last, and any bit outside the table is a width error.
+    const std::size_t digits = s.size() - 2;
+    for (std::size_t k = 0; k < digits; ++k) {
+      const char c = s[2 + k];
+      const int d = std::isdigit(static_cast<unsigned char>(c))
+                        ? c - '0'
+                        : (std::tolower(static_cast<unsigned char>(c)) - 'a' + 10);
+      if (d < 0 || d > 15)
+        throw std::invalid_argument("bad hex digit in truth table");
+      const std::size_t base = 4 * (digits - 1 - k);
+      for (int b = 0; b < 4; ++b) {
+        if (!((d >> b) & 1)) continue;
+        const std::size_t pos = base + static_cast<std::size_t>(b);
+        if (pos >= width)
+          throw std::invalid_argument(
+              "hex truth table does not fit the variables");
+        bits.set(pos);
+      }
     }
-    if (n < 6 && v >= (std::uint64_t{1} << (std::size_t{1} << n)))
-      throw std::invalid_argument("hex truth table does not fit the variables");
-    bits = Bits(std::size_t{1} << n);
-    for (std::size_t i = 0; i < bits.size(); ++i)
-      if ((v >> i) & 1ULL) bits.set(i);
   } else {
     for (char c : s)
       if (c != '0' && c != '1')

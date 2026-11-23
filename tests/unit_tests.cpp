@@ -255,6 +255,45 @@ TEST_CASE("emitted dut is Verilog") {
   REQUIRE(emit_ref(s.func, s.vars).find("module ref") != std::string::npos);
 }
 
+TEST_CASE("hex truth tables fill the table bit by bit") {
+  const std::vector<std::string> vars{"A", "B", "C", "D", "E", "F", "G"};
+  const FuncSpec wide = spec_from_truth("0x1", vars);
+  REQUIRE(wide.func.num_minterms() == 128);
+  int ones = 0;
+  for (std::uint32_t m = 0; m < 128; ++m) ones += wide.func.value(m) ? 1 : 0;
+  REQUIRE(ones == 1);
+  REQUIRE(wide.func.value(0));
+  REQUIRE_FALSE(wide.func.value(64));  // used to be set by a 64-bit shift
+  // A digit that spills past the table is an error, not a silent truncation.
+  REQUIRE_THROWS_AS(spec_from_truth("0x10000000000000000", {"A", "B"}),
+                    std::invalid_argument);
+  const FuncSpec full = spec_from_truth("0xf", {"A", "B"});
+  for (std::uint32_t m = 0; m < 4; ++m) REQUIRE(full.func.value(m));
+}
+
+TEST_CASE("switch-level exact marks an undriven gate as floating") {
+  // Two NMOS: N1 (x, gate F, VSS) has an undriven gate F, N2 (Y, gate A, x).
+  // With A=1, Y is pulled low only when the floating node happens to be 1, so
+  // the exact answer is Z, not a definite 0.
+  Subckt c;
+  c.name = "FLOATY";
+  c.ports = {"A", "Y", "VDD", "VSS"};
+  c.pin_dir = {{"A", PinDir::Input},
+               {"Y", PinDir::Output},
+               {"VDD", PinDir::Power},
+               {"VSS", PinDir::Ground}};
+  auto n = [](const std::string& name, const std::string& d,
+              const std::string& g, const std::string& s) {
+    return Device{name, d, g, s, "NMOS", false};
+  };
+  c.devices = {n("N1", "x", "F", "VSS"), n("N2", "Y", "A", "x")};
+  const auto r = analyze_switch(c, {"A"}, {"Y"}, true);
+  REQUIRE(r.rows.size() == 2);
+  REQUIRE(logic_symbol(r.rows[0].values[0]) == 'Z');
+  REQUIRE(logic_symbol(r.rows[1].values[0]) == 'Z');
+  REQUIRE_FALSE(r.rows[1].floating_gates.empty());
+}
+
 TEST_CASE("switch-level fixed point on a synthetic NOR2") {
   Subckt c;
   c.name = "NOR2_TEST";

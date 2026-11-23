@@ -201,7 +201,7 @@ cell XOR2_X1: 10 devices, mode=fixpoint
   Z = 0110
 ```
 
-默认走**单调不动点 + 布尔矩阵可达闭包**;`--exact` 用 Z3 对导通器件建模并展开 VDD/VSS 的可达路径。遇到浮空栅极时自动退回 Z3,不会把「未证明」当「已证明」。
+默认走**单调不动点 + 布尔矩阵可达闭包**;`--exact` 用 Z3 对导通器件建模并展开 VDD/VSS 的可达路径。遇到浮空栅极时自动退回 Z3。Z3 版对每个输出分别问三个可满足性问题——能否被拉到 0、能否被拉到 1、能否**两条轨都不可达**——第三种成立时输出记 `Z`,所以浮空栅极不会把「可能被拉低」误报成确定的 0。
 
 ### 4. 最小晶体管数设计 + 形式证明
 
@@ -239,7 +239,7 @@ optimum: 6T  designs=...
 
 - 单级判据：`¬f` 单调递增；PDN 是 NMOS 串并联，PUN 是它的 De Morgan 对偶
 - 多级：Yosys/ABC 映射到静态单元白名单（NAND/NOR/AND/OR/AOI/OAI/INV/BUF），禁止 XOR/XNOR/MUX/TG 单元；静态模式默认预算 `--max-cost 32`
-- `--max-fanin N` 可强制只用 ≤N 输入标准单元（例如 NAND3 → AND2+NAND2 = 10T；不加约束则单级 NAND3 = 6T）。禁用清单直接从 CDL 的 `*.PININFO` 生成，映射后还会逐单元复核输入数，超限直接报错而不是悄悄放过
+- `--max-fanin N` 可强制只用 ≤N 输入标准单元（例如 NAND3 → AND2+NAND2 = 10T；不加约束则单级 NAND3 = 6T）。扇入按**不同输入信号数**算，不是最长乘积项——`~(A|B|C)` 是三个并联单项，仍算 3 输入 NOR。禁用清单直接从 CDL 的 `*.PININFO` 生成，映射后还会逐单元复核输入数，超限直接报错而不是悄悄放过
 - 每个器件 gate-only；`--no-tg` 不能替代 `--static-cmos`
 - `--verify static` 对生成的多级网表做 **CDL flatten → Z3 switch-level** 全输入证明
 - `--emit` 单级写 `static-cmos.json/cdl`；多级写 `gate-level.v`、`netlist.json`、`flattened.cdl`
@@ -270,7 +270,7 @@ optimum: 6T  designs=...
 工具没有内置 `decoder` 特例；多输出电路统一走 `multi synth`：
 输入变量和多个输出表达式写在 JSON 里，Yosys/ABC 把它们当**一个多输出网络**综合，
 共享输入反相器、fanout 和中间逻辑，再把每个标准单元展开成 CDL，
-用现有的 `analyze_switch` 对**所有输出**做全输入 switch-level 证明。
+用现有的 `analyze_switch` 对**所有输出**做全输入 switch-level 证明。两个输出写成同一个表达式时 Yosys 会把它们合成一个 bit,展开时按别名处理(CDL 里写 `*.ALIAS`),两个输出都会被验证。
 
 `specs/decoder38.json`(仓库自带,可直接复现)：
 
@@ -363,9 +363,11 @@ optimal: 54T
 
 | 实现 | 模型 | 晶体管 | 验证 |
 |---|---|---|---|
-| 静态标准单元(`--max-fanin 2`) | Yosys/ABC + Nangate45,全部 ≤2 输入 | **192T**(96N + 96P) | 逐输出 switch-level PASS |
-| 静态标准单元(库默认 fan-in) | 同上,允许 AOI/OAI 复杂门 | **162T**(81N + 81P) | 逐输出 switch-level PASS |
+| 静态标准单元(`--max-fanin 2`) | Yosys/ABC + Nangate45,全部 ≤2 输入 | **192T**(96N + 96P)* | 逐输出 switch-level PASS |
+| 静态标准单元(库默认 fan-in) | 同上,允许 AOI/OAI 复杂门 | **162T**(81N + 81P)* | 逐输出 switch-level PASS |
 | 定制单级复杂 CMOS | 每输出一个 PDN/PUN,共享输入反相器 | **180T**(90N + 90P) | 模型内 proof + PASS |
+
+\* 这两行的数字依赖 Yosys/ABC 版本(另一个 Yosys 0.52 + 同一 PDK 的组合给出 47 单元/194T,功能验证同样通过),集成测试因此只断言扇入契约与预算上界,不钉死单元数。
 
 “定制”在这里指**定制复杂门**,不是 pass-transistor 全定制。三种结果放在一起看:标准单元多级映射(162T)比“每个输出压成单个复杂门”的 180T 更省晶体管,说明单级复杂门模型是保守模型,价值在于它是**可证明最优**的;`--max-fanin 2` 的 192T 则是把单元库限制到 2 输入后的代价。无三态的 `multi path` 现在会先走 PUN/PDN 双轨路径搜索;对这个七段 spec,双轨搜索目前仍未在 45 秒预算内完成,上面三个静态结果都是可用的无三态实现。对 1-to-4 分路器和 3-to-8 译码器,双轨搜索给出 18T / 44T 的无三态网络(整图联合电气校验通过)。
 

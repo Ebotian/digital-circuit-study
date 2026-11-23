@@ -856,15 +856,22 @@ Json multi_design_json(const MultiStageMultiDesign& m) {
   return j;
 }
 
+// Fan-in of a single-stage static gate is the number of distinct input
+// signals its PDN uses -- not the longest product term.  Three parallel
+// single-literal terms is still a 3-input NOR.
+int static_gate_fanin(const CmosDesign& d) {
+  std::uint64_t used = 0;
+  for (const auto& c : d.pull_down.terms) used |= c.care;
+  return static_cast<int>(__builtin_popcountll(used));
+}
+
 int cmd_design_static(const Args& a, const FuncSpec& spec,
                       const SpaceOptions& opt, VerifyMode vmode, bool json) {
   const CmosDesign d = synthesize_cmos(spec.func, spec.vars);
   const int max_fanin = std::stoi(a.get("max-fanin", "0"));
   if (max_fanin != 0 && (max_fanin < 2 || max_fanin > 4))
     throw CliError("--max-fanin must be 0 or 2..4");
-  int single_fanin = 0;
-  for (const auto& c : d.pull_down.terms)
-    single_fanin = std::max(single_fanin, c.literals());
+  const int single_fanin = static_gate_fanin(d);
   const bool fanin_ok = max_fanin == 0 || single_fanin <= max_fanin;
   const bool single_ok = d.realizable && d.total <= opt.max_cost &&
       !d.pull_down.terms.empty() &&
@@ -1556,10 +1563,14 @@ int cmd_multi_path(const Args& a, const MultiSpec& spec) {
       synthesize_path_variables_multi(spec.funcs, spec.names, spec.vars, opt,
                                       a.is("tri-state"));
   const bool json = a.is("json");
+  std::string fallback_note;
   if ((!r.ok || !r.verified) && !a.is("tri-state")) {
     const StaticExactResult s =
         synthesize_static_exact_multi(spec.funcs, spec.names, spec.vars);
-    if (s.ok && s.verified) {
+    if (s.ok && s.verified && s.total > opt.max_cost)
+      fallback_note = " (static fallback needs " + std::to_string(s.total) +
+                      "T, over --max-cost " + std::to_string(opt.max_cost) + ")";
+    if (s.ok && s.verified && s.total <= opt.max_cost) {
       Json j;
       j["ok"] = true;
       j["command"] = "multi.path";
@@ -1586,7 +1597,7 @@ int cmd_multi_path(const Args& a, const MultiSpec& spec) {
       Json j;
       j["ok"] = false;
       j["command"] = "multi.path";
-      j["reason"] = r.reason;
+      j["reason"] = r.reason + fallback_note;
       Json edges = Json::Array{};
       for (const auto& e : r.graph.edges) {
         Json ej;
@@ -1606,7 +1617,7 @@ int cmd_multi_path(const Args& a, const MultiSpec& spec) {
                                 {"sources", sources}, {"outputs", outs}};
       std::cout << j.dump() << "\n";
     } else {
-      std::cerr << "multi path failed: " << r.reason << "\n";
+      std::cerr << "multi path failed: " << r.reason << fallback_note << "\n";
     }
     return 1;
   }
@@ -1894,9 +1905,7 @@ int cmd_render_static(const Args& a, const FuncSpec& spec,
   const int max_fanin = std::stoi(a.get("max-fanin", "0"));
   if (max_fanin != 0 && (max_fanin < 2 || max_fanin > 4))
     throw CliError("--max-fanin must be 0 or 2..4");
-  int single_fanin = 0;
-  for (const auto& c : d.pull_down.terms)
-    single_fanin = std::max(single_fanin, c.literals());
+  const int single_fanin = static_gate_fanin(d);
   const bool fanin_ok = max_fanin == 0 || single_fanin <= max_fanin;
   const bool single_ok = d.realizable && d.total <= opt.max_cost &&
       !d.pull_down.terms.empty() &&
@@ -2125,17 +2134,16 @@ int cmd_pipeline(int argc, char** argv) {
       for (const auto& d : r.at("designs").array()) {
         std::cout << "  " << d.at("cost").dump(0) << "T  "
                   << d.at("topology").as_string() << "\n";
-        if (d.at("verification").is_object()) {
-          if (d.at("verification").at("yosys").is_object())
+        if (d.contains("verification") &&
+            d.at("verification").is_object()) {
+          const Json& v = d.at("verification");
+          if (v.contains("yosys") && v.at("yosys").is_object())
             std::cout << "    yosys: "
-                      << (d.at("verification").at("yosys").at("ok").as_bool() ? "PASS"
-                                                                              : "FAIL")
+                      << (v.at("yosys").at("ok").as_bool() ? "PASS" : "FAIL")
                       << "\n";
-          if (d.at("verification").at("verilator").is_object())
+          if (v.contains("verilator") && v.at("verilator").is_object())
             std::cout << "    verilator: "
-                      << (d.at("verification").at("verilator").at("ok").as_bool()
-                              ? "PASS"
-                              : "FAIL")
+                      << (v.at("verilator").at("ok").as_bool() ? "PASS" : "FAIL")
                       << "\n";
         }
       }

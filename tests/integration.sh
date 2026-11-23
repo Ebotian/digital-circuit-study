@@ -30,6 +30,12 @@ command -v jq >/dev/null || fail "jq is required for integration tests"
 [ "$("$BIN" math closure --n 3 --edges 0-1,1-2 --json | jq -r '.rows[0] | join(",")')" = "0,1,2" ] || fail "math closure"
 [ "$("$BIN" math gf2 --rows '1,1' --json | jq -r '.rank')" = "1" ] || fail "math gf2 rank"
 [ "$("$BIN" math gf2 --rows '1,1' --json | jq -r '.nullity')" = "1" ] || fail "math gf2 nullity"
+# Hex truth tables wider than 64 rows used to set bit 64 too (shift UB),
+# and over-wide hex was silently truncated before the width check.
+[ "$("$BIN" bool info --tt 0x1 --vars A,B,C,D,E,F,G --json | jq -r '[.truth | explode[] | select(. == 49)] | length')" = "1" ] || fail "hex truth width"
+rc=0
+"$BIN" bool info --tt 0x10000000000000000 --vars A,B --json >/dev/null 2>&1 || rc=$?
+[ "$rc" = "2" ] || fail "over-wide hex accepted"
 pass "boolean functions + math worker"
 
 # A memory cap must turn a runaway search into a clean error.  n=6 Dedekind
@@ -114,6 +120,9 @@ pass "symmetry quotient"
 [ "$(jq -r .optimum "$TMP/nand3-10.json")" = "10" ] || fail "static NAND3 10T"
 [ "$(jq -r '[.designs[0].cells[].type] | sort | join(",")' "$TMP/nand3-10.json")" = "AND2_X1,NAND2_X1" ] || fail "NAND3 10T cells"
 [ "$(jq -r .verification.static.ok "$TMP/nand3-10.json")" = "true" ] || fail "NAND3 10T switch-level"
+# Fan-in counts distinct input signals, not the longest product term:
+# ~(A|B|C) is a 3-input NOR and must not pass --max-fanin 2 single-stage.
+[ "$("$BIN" design min --expr '~(A|B|C)' --vars A,B,C --static-cmos --max-fanin 2 --json | jq -r '.designs[0].cost')" = "10" ] || fail "NOR3 fan-in 2"
 pass "static CMOS constraint"
 
 # General multi-output synthesis: the 3-to-8 decoder is only a spec file.
@@ -158,6 +167,22 @@ JSON
   [ "$(jq -r .verified "$TMP/demux4.static")" = "true" ] || fail "1-to-4 dual-rail verification"
   [ "$(jq -r '.graph.sources | length' "$TMP/demux4.static")" = "2" ] || fail "1-to-4 dual rails"
   [ "$(jq -r .mode "$TMP/demux4.static")" = "dual-rail" ] || fail "1-to-4 dual-rail mode"
+  # The path search honours --max-cost; the static fallback must too.
+  if "$BIN" multi path --spec "$ROOT/specs/decoder38.json" --max-cost 1 --json \
+       > "$TMP/path-budget.json"; then
+    fail "multi path ignored --max-cost"
+  fi
+  [ "$(jq -r .ok "$TMP/path-budget.json")" = "false" ] || fail "path budget json"
+  # Two outputs defined by the same expression share one Yosys bit; both must
+  # still be named and verified instead of one dangling as Z.
+  cat > "$TMP/alias.json" <<'JSON'
+{"name":"alias","inputs":["A","B"],"outputs":[
+ {"name":"Y0","expr":"~(A&B)"},{"name":"Y1","expr":"~(A&B)"}]}
+JSON
+  "$BIN" multi synth --spec "$TMP/alias.json" --json > "$TMP/alias.out" || fail "aliased outputs"
+  [ "$(jq -r .verified "$TMP/alias.out")" = "true" ] || fail "aliased verify"
+  [ "$(jq -r '.truths.Y0' "$TMP/alias.out")" = "1110" ] || fail "aliased Y0"
+  [ "$(jq -r '.truths.Y1' "$TMP/alias.out")" = "1110" ] || fail "aliased Y1"
   [ "$(jq -r '[.graph.nets[] | select(startswith("wire:"))] | length' "$TMP/demux4.static")" = "0" ] || fail "demux still has wire connectors"
   "$BIN" multi path --spec "$ROOT/specs/decoder38.json" --max-cost 54 --json     > "$TMP/decoder38.static" || fail "3-8 dual-rail path"
   [ "$(jq -r .total "$TMP/decoder38.static")" = "44" ] || fail "3-8 dual-rail 44T"
@@ -175,12 +200,16 @@ JSON
   "$BIN" multi synth --spec "$ROOT/specs/hex7seg.json" --max-fanin 2 --json \
     > "$TMP/hex7seg.fanin2" || fail "hex7seg --max-fanin 2"
   [ "$(jq -r .verified "$TMP/hex7seg.fanin2")" = "true" ] || fail "hex7seg 2-input verify"
-  [ "$(jq -r .cells "$TMP/hex7seg.fanin2")" = "44" ] || fail "hex7seg 2-input cell count"
-  [ "$(jq -r .total "$TMP/hex7seg.fanin2")" = "192" ] || fail "hex7seg 2-input 192T"
+  # ABC's cell count varies between Yosys/ABC releases, so assert the fan-in
+  # contract (the tool errors on over-fanin cells) and a budget, not an exact
+  # mapping.  This machine: 44 cells / 192T.
+  total=$(jq -r .total "$TMP/hex7seg.fanin2")
+  [ "$total" -le 230 ] || fail "hex7seg 2-input over budget ($total T)"
   "$BIN" multi synth --spec "$ROOT/specs/hex7seg.json" --json \
     > "$TMP/hex7seg.default" || fail "hex7seg default fan-in"
   [ "$(jq -r .verified "$TMP/hex7seg.default")" = "true" ] || fail "hex7seg default verify"
-  [ "$(jq -r .total "$TMP/hex7seg.default")" = "162" ] || fail "hex7seg default 162T"
+  total=$(jq -r .total "$TMP/hex7seg.default")
+  [ "$total" -le 200 ] || fail "hex7seg default over budget ($total T)"
   "$BIN" multi exact --spec "$ROOT/specs/hex7seg.json" --json \
     > "$TMP/hex7seg.exact" || fail "hex7seg exact"
   [ "$(jq -r .optimal "$TMP/hex7seg.exact")" = "180" ] || fail "hex7seg exact 180T"
@@ -288,6 +317,12 @@ pass "negative control"
 [ "$(jq -r '.runs[] | select(.name=="nand2") | .optimum' "$TMP/pipe.json")" = "4" ] || fail "pipeline nand2"
 [ "$(jq -r '.runs[] | select(.name=="and2") | .optimum' "$TMP/pipe.json")" = "5" ] || fail "pipeline and2"
 [ -f "$TMP/cands/xor2_0/dut.v" ] || fail "pipeline emitted no DUT"
+# Text output must not read verification fields that were not generated.
+"$BIN" pipeline --funcs 'nand2=~(A&B)' --max-cost 6 --max-chain 3 --verify none \
+  > "$TMP/pipe-none.txt" || fail "pipeline text none"
+"$BIN" pipeline --funcs 'nand2=~(A&B)' --max-cost 6 --max-chain 3 --verify yosys \
+  > "$TMP/pipe-yosys.txt" || fail "pipeline text yosys"
+grep -q "yosys: PASS" "$TMP/pipe-yosys.txt" || fail "pipeline text yosys output"
 pass "pipeline"
 
 # JSON errors keep the same interface.
