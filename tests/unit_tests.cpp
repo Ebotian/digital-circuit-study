@@ -286,6 +286,62 @@ TEST_CASE("don't-care rows drive exact synthesis and verification") {
                                 y0.func.truth_string(), any));
 }
 
+TEST_CASE("floating gate on a channel terminal is still enumerated") {
+  // M1 pulls Y up when A=0; M2 is gated by F; M3 can pull F low, but it is off
+  // at A=0, so F floats there.  F=1 then fights the pull-up: the row is X, not
+  // a definite 1.  A gate that also sits on a channel terminal must not be
+  // skipped by a topology filter.
+  Subckt c;
+  c.name = "RACE2";
+  c.ports = {"A", "Y", "VDD", "VSS"};
+  c.pin_dir = {{"A", PinDir::Input},
+               {"Y", PinDir::Output},
+               {"VDD", PinDir::Power},
+               {"VSS", PinDir::Ground}};
+  auto n = [](const std::string& name, const std::string& d,
+              const std::string& g, const std::string& s) {
+    return Device{name, d, g, s, "NMOS", false};
+  };
+  auto p = [](const std::string& name, const std::string& d,
+              const std::string& g, const std::string& s) {
+    return Device{name, d, g, s, "PMOS", true};
+  };
+  c.devices = {p("P1", "Y", "A", "VDD"), n("N1", "Y", "F", "VSS"),
+               n("N2", "F", "A", "VSS")};
+  const auto r = analyze_switch(c, {"A"}, {"Y"}, true);
+  REQUIRE(r.rows.size() == 2);
+  REQUIRE(logic_symbol(r.rows[0].values[0]) == 'X');
+  REQUIRE(logic_symbol(r.rows[1].values[0]) == 'Z');
+}
+
+TEST_CASE("input aliases resolve in fixpoint and exact analysis") {
+  // The port A is an alias of the internal gate net G; both modes must feed
+  // the same net, otherwise the exact path analyses an unconnected input.
+  Subckt c;
+  c.name = "INALIAS";
+  c.ports = {"A", "Y", "VDD", "VSS"};
+  c.pin_dir = {{"A", PinDir::Input},
+               {"Y", PinDir::Output},
+               {"VDD", PinDir::Power},
+               {"VSS", PinDir::Ground}};
+  c.aliases = {{"A", "G"}};
+  auto n = [](const std::string& name, const std::string& d,
+              const std::string& g, const std::string& s) {
+    return Device{name, d, g, s, "NMOS", false};
+  };
+  auto p = [](const std::string& name, const std::string& d,
+              const std::string& g, const std::string& s) {
+    return Device{name, d, g, s, "PMOS", true};
+  };
+  c.devices = {p("P1", "Y", "G", "VDD"), n("N1", "Y", "G", "VSS")};
+  const auto fp = analyze_switch(c, {"A"}, {"Y"}, false);
+  const auto ex = analyze_switch(c, {"A"}, {"Y"}, true);
+  for (std::size_t i = 0; i < 2; ++i)
+    REQUIRE(fp.rows[i].values[0] == ex.rows[i].values[0]);
+  REQUIRE(logic_symbol(ex.rows[0].values[0]) == '1');
+  REQUIRE(logic_symbol(ex.rows[1].values[0]) == '0');
+}
+
 TEST_CASE("CDL aliases keep both output ports") {
   // Two outputs on one net: the exported subckt lists both ports and declares
   // the alias; the analysis must report both, not leave Y1 dangling.

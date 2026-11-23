@@ -126,6 +126,11 @@ std::string cdl_from_subckt(const Subckt& c) {
     out += dev.name + " " + dev.drain + " " + dev.gate + " " + dev.source +
            " " + bulk + " " + dev.model + "\n";
   }
+  // Two ports on one net cannot be written in a transistor netlist, so tie
+  // them with a 0 V source: SPICE simulators then see the alias connected
+  // (the *.ALIAS line above is what this repo's own parser uses).
+  for (const auto& [alias, canon] : c.aliases)
+    out += "V__alias_" + alias + " " + alias + " " + canon + " 0\n";
   out += ".ENDS\n";
   return out;
 }

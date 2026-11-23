@@ -242,6 +242,8 @@ JSON
   [ "$(jq -r '.cells[0].outputs | length' "$TMP/alias.lst")" = "2" ] || fail "alias ports"
   "$BIN" cdl solve --cdl "$TMP/alias-out/flattened.cdl" --cell MULTI_STAGE_STATIC_CMOS --inputs A,B --json > "$TMP/alias.solve" || fail "alias cdl solve"
   [ "$(jq -r '.truth.Y1' "$TMP/alias.solve")" = "1110" ] || fail "alias readback"
+  # A comment alone does not connect the second port in a SPICE simulator.
+  grep -q "V__alias_Y1 Y1 Y0 0" "$TMP/alias-out/flattened.cdl" || fail "alias short missing"
   [ "$(jq -r '[.graph.nets[] | select(startswith("wire:"))] | length' "$TMP/demux4.static")" = "0" ] || fail "demux still has wire connectors"
   "$BIN" multi path --spec "$ROOT/specs/decoder38.json" --max-cost 54 --json     > "$TMP/decoder38.static" || fail "3-8 dual-rail path"
   [ "$(jq -r .total "$TMP/decoder38.static")" = "44" ] || fail "3-8 dual-rail 44T"

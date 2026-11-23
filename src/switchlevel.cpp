@@ -278,7 +278,8 @@ SwitchAnalysis analyze_switch(const Subckt& cell,
     base.devices = cell.devices;
     base.vdd = vdd;
     base.vss = vss;
-    base.inputs = inputs;
+    base.inputs.clear();
+    for (const auto& p : inputs) base.inputs.push_back(net_of(p));
     base.outputs.clear();
     for (const auto& p : outputs) base.outputs.push_back(net_of(p));
     base.rows = minterms;
@@ -332,8 +333,12 @@ SwitchAnalysis analyze_switch(const Subckt& cell,
       p.rows.clear();
       for (std::size_t j = out_parts[oi].first; j < out_parts[oi].second; ++j)
         p.outputs.push_back(base.outputs[j]);
-      for (std::size_t j = row_parts[ri].first; j < row_parts[ri].second; ++j)
+      for (std::size_t j = row_parts[ri].first; j < row_parts[ri].second; ++j) {
         p.rows.push_back(minterms[j]);
+        // The fixed point already knows which gate values it could not force;
+        // hand those to the solver so it can enumerate the stored charge.
+        p.floating.push_back(fps[minterms[j]].floating_gates);
+      }
       sols[ti] = decode_switch_solution(z3_call(encode_switch_problem(p)));
     });
 

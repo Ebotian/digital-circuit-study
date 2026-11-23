@@ -192,6 +192,15 @@ Json encode_switch_problem(const SwitchProblem& p) {
   Json rows = Json::Array{};
   for (auto r : p.rows) rows.push_back(static_cast<std::int64_t>(r));
   j["rows"] = std::move(rows);
+  if (!p.floating.empty()) {
+    Json fl = Json::Array{};
+    for (const auto& row : p.floating) {
+      Json names = Json::Array{};
+      for (const auto& n : row) names.push_back(n);
+      fl.push_back(std::move(names));
+    }
+    j["floating"] = std::move(fl);
+  }
   Json devs = Json::Array{};
   for (const auto& d : p.devices) {
     Json dj;
@@ -215,6 +224,15 @@ SwitchProblem decode_switch_problem(const Json& j) {
   if (!rs.is_array()) throw std::runtime_error("protocol: rows must be an array");
   for (const auto& r : rs.array())
     p.rows.push_back(static_cast<std::uint32_t>(r.as_int()));
+  if (j.contains("floating") && j.at("floating").is_array()) {
+    for (const auto& row : j.at("floating").array()) {
+      std::vector<std::string> names;
+      for (const auto& n : row.array()) names.push_back(n.as_string());
+      p.floating.push_back(std::move(names));
+    }
+    if (p.floating.size() != p.rows.size())
+      throw std::runtime_error("protocol: floating rows do not match rows");
+  }
   const Json& ds = need(j, "devices");
   if (!ds.is_array()) throw std::runtime_error("protocol: devices must be an array");
   for (const auto& dj : ds.array()) {

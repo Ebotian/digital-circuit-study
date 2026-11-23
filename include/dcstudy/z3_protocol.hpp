@@ -41,6 +41,10 @@ struct SwitchProblem {
   std::vector<std::string> inputs;
   std::vector<std::string> outputs;
   std::vector<std::uint32_t> rows;
+  // Optional, parallel to rows: nets whose stored gate value is free in that
+  // row (the fixed point could not force them).  The solver enumerates them
+  // to catch a floating gate that can enable both rails at once.
+  std::vector<std::vector<std::string>> floating;
 };
 
 struct SwitchSolutionRow {
