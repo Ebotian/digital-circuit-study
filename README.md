@@ -76,6 +76,10 @@ make verify-all      # 实例 + 形式化(ctest) + 完整 CLI 套件
 make integration     # 黑盒 CLI + Yosys/Verilator 集成测试
 make filc            # 用 Fil-C 编完整 CLI(不链 Z3)
 make smoke-filc      # 可选:用 Fil-C 跑 Z3-free 内核(约 15 s;旧名 filc-smoke 仍可用)
+make format          # clice 默认风格格式化(需要 clice)
+make format-check    # 只检查, CI 用
+make lint            # clice lint(有 finding 即失败)
+make ci              # format-check + lint + test + verify-all
 ```
 
 渲染命令默认用 Node(直接跑 `workers/render_worker.ts`);`--png` 额外需要 `rsvg-convert`,`logic.svg` 额外需要 `pdflatex` + `circuitikz`(缺失时退回逻辑块)。Python worker 保留作对照,可用 `DCSTUDY_RENDER_HELPER=workers/render_worker.py` 切回;Python 版没有逻辑面板。

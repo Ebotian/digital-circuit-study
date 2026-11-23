@@ -16,7 +16,7 @@ FILC_SOURCES := src/cli/main.cpp src/switch/bdd_switch.cpp src/core/boolfunc.cpp
                 src/cli/z3_client.cpp src/cli/render_client.cpp \
                 src/z3/z3_protocol.cpp
 
-.PHONY: all build test lint smoke smoke-cli smoke-filc filc filc-smoke verify verify-all integration clean
+.PHONY: all build test format format-check lint ci smoke smoke-cli smoke-filc filc filc-smoke verify verify-all integration clean
 
 all: build
 
@@ -40,6 +40,20 @@ verify-all: $(BUILD)/dcstudy
 
 integration: $(BUILD)/dcstudy
 	BIN=$(abspath $(BUILD))/dcstudy bash tests/integration.sh
+
+CCDB = compile_commands.json
+$(CCDB):
+	@ln -sf $(BUILD)/compile_commands.json $(CCDB)
+
+# Formatting: clice's default style (no .clang-format in the repo).
+format: $(CCDB)
+	clice format
+
+format-check: $(CCDB)
+	clice format --check
+
+# Full gate for CI: format, lint, unit+smoke, instances+formal+integration.
+ci: format-check lint test verify-all
 
 # clice lint (LLVM/Clang toolkit; needs build/compile_commands.json).
 lint:
