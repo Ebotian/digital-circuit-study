@@ -562,16 +562,12 @@ verilator --binary --timing -Wno-fatal -Wno-WIDTH -Wno-UNUSEDSIGNAL \
 │   ├── verilog.hpp       DUT / 参考 / miter / testbench 生成
 │   ├── verify.hpp        Yosys SAT 证明 + Verilator 仿真
 │   └── json.hpp          有序 JSON 输出 + 解析
-├── src/                  对应实现 + main.cpp(CLI)
-│   ├── z3_helper_main.cpp worker 入口(Z3 + bliss)
-│   ├── synthesis_z3.cpp   Z3 Optimize / orbit blocking
-│   ├── symmetry.cpp       bliss 彩色图自同构
-│   ├── math_engine.cpp    GraphBLAS / FLINT 内核
-│   ├── math_client.cpp    数学 worker 客户端
-│   ├── switchlevel_z3.cpp 开关级精确 SAT 模型
-│   ├── worker_client.cpp  通用 JSON worker IPC
-│   ├── render_client.cpp  渲染 worker 客户端
-│   └── z3_client.cpp      Z3 worker 客户端
+├── src/                  按模块分组
+│   ├── cli/              main + worker 客户端(math/render/z3/generic)
+│   ├── core/             布尔函数/CDL/CMOS/设计空间/limits/verilog/verify
+│   ├── synthesis/        精确覆盖/模板/多级/多输出路径
+│   ├── switch/           开关级不动点 + BDD 路径
+│   └── z3/               Z3 worker: 入口/模型/对称/bliss/math 引擎/协议
 ├── workers/
 │   ├── render_worker.ts   TS/Node SVG/HTML 渲染 worker(默认)
 │   └── render_worker.py   Python 渲染 worker(对照/fallback)

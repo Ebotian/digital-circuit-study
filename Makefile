@@ -2,16 +2,19 @@ BUILD ?= build
 CXX ?= clang++
 FILC ?= filc++
 CMAKE ?= cmake
-SOURCES := $(wildcard src/*.cpp) $(wildcard include/dcstudy/*.hpp) \
+SOURCES := $(shell find src -name "*.cpp") $(wildcard include/dcstudy/*.hpp) \
            $(wildcard tests/unit/*) $(wildcard tests/smoke/*)
-FILC_SOURCES := src/main.cpp src/bdd_switch.cpp src/boolfunc.cpp src/cdl.cpp src/cmos.cpp \
-                src/designspace.cpp src/driver_profile.cpp src/math_client.cpp \
-                src/multi_path.cpp src/multistage.cpp src/path_search.cpp \
-                src/limits.cpp src/partial.cpp src/static_exact.cpp src/template_synth.cpp \
-                src/switchlevel.cpp \
-                src/synthesis.cpp \
-                src/verilog.cpp src/verify.cpp src/worker_client.cpp \
-                src/z3_client.cpp src/render_client.cpp src/z3_protocol.cpp
+FILC_SOURCES := src/cli/main.cpp src/switch/bdd_switch.cpp src/core/boolfunc.cpp \
+                src/core/cdl.cpp src/core/cmos.cpp src/core/designspace.cpp \
+                src/core/driver_profile.cpp src/cli/math_client.cpp \
+                src/synthesis/multi_path.cpp src/synthesis/multistage.cpp \
+                src/synthesis/path_search.cpp src/core/limits.cpp \
+                src/core/partial.cpp src/synthesis/static_exact.cpp \
+                src/synthesis/template_synth.cpp src/switch/switchlevel.cpp \
+                src/synthesis/synthesis.cpp src/core/verilog.cpp \
+                src/core/verify.cpp src/cli/worker_client.cpp \
+                src/cli/z3_client.cpp src/cli/render_client.cpp \
+                src/z3/z3_protocol.cpp
 
 .PHONY: all build test smoke smoke-cli smoke-filc filc filc-smoke verify verify-all integration clean
 
@@ -56,11 +59,11 @@ filc: $(FILC_SOURCES) $(wildcard include/dcstudy/*.hpp)
 	@echo "run: DCSTUDY_Z3_HELPER=$(abspath $(BUILD))/dcstudy-z3 $(BUILD)/dcstudy-filc ..."
 
 # Optional memory-safety run of the Z3-free core under Fil-C.
-smoke-filc: tests/smoke/filc_smoke.cpp src/boolfunc.cpp src/cmos.cpp \
-            src/designspace.cpp src/verilog.cpp
+smoke-filc: tests/smoke/filc_smoke.cpp src/core/boolfunc.cpp src/core/cmos.cpp \
+            src/core/designspace.cpp src/core/verilog.cpp
 	@mkdir -p $(BUILD)
 	$(FILC) --filc-no-ape -std=c++20 -O1 -Iinclude tests/smoke/filc_smoke.cpp \
-	  src/boolfunc.cpp src/cmos.cpp src/designspace.cpp src/verilog.cpp \
+	  src/core/boolfunc.cpp src/core/cmos.cpp src/core/designspace.cpp src/core/verilog.cpp \
 	  -o $(BUILD)/filc_smoke
 	$(BUILD)/filc_smoke
 

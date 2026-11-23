@@ -19,32 +19,32 @@ if(DCSTUDY_SANITIZE)
 endif()
 
 add_library(dcstudy_core STATIC
-  src/boolfunc.cpp
-  src/cdl.cpp
-  src/bdd_switch.cpp
-  src/cmos.cpp
-  src/driver_profile.cpp
-  src/limits.cpp
-  src/partial.cpp
-  src/static_exact.cpp
-  src/template_synth.cpp
-  src/designspace.cpp
-  src/math_client.cpp
-  src/multi_path.cpp
-  src/multistage.cpp
-  src/path_search.cpp
-  src/switchlevel.cpp
-  src/synthesis.cpp
-  src/verilog.cpp
-  src/verify.cpp
-  src/worker_client.cpp
-  src/z3_client.cpp
-  src/render_client.cpp
-  src/z3_protocol.cpp
+  src/core/boolfunc.cpp
+  src/core/cdl.cpp
+  src/core/cmos.cpp
+  src/core/driver_profile.cpp
+  src/core/limits.cpp
+  src/core/partial.cpp
+  src/core/designspace.cpp
+  src/core/verilog.cpp
+  src/core/verify.cpp
+  src/synthesis/static_exact.cpp
+  src/synthesis/template_synth.cpp
+  src/synthesis/synthesis.cpp
+  src/synthesis/multi_path.cpp
+  src/synthesis/multistage.cpp
+  src/synthesis/path_search.cpp
+  src/switch/switchlevel.cpp
+  src/switch/bdd_switch.cpp
+  src/cli/math_client.cpp
+  src/cli/worker_client.cpp
+  src/cli/z3_client.cpp
+  src/cli/render_client.cpp
+  src/z3/z3_protocol.cpp
 )
 target_include_directories(dcstudy_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-add_executable(dcstudy src/main.cpp)
+add_executable(dcstudy src/cli/main.cpp)
 target_link_libraries(dcstudy PRIVATE dcstudy_core)
 
 if(DCSTUDY_BUILD_Z3_HELPER)
@@ -54,12 +54,12 @@ if(DCSTUDY_BUILD_Z3_HELPER)
   find_library(FLINT_LIBRARY flint REQUIRED)
   find_library(GMP_LIBRARY gmp REQUIRED)
   add_executable(dcstudy_z3
-    src/z3_helper_main.cpp
-    src/synthesis_z3.cpp
-    src/switchlevel_z3.cpp
-    src/math_engine.cpp
-    src/symmetry.cpp
-    src/z3_protocol.cpp
+    src/z3/z3_helper_main.cpp
+    src/z3/synthesis_z3.cpp
+    src/z3/switchlevel_z3.cpp
+    src/z3/math_engine.cpp
+    src/z3/symmetry.cpp
+    src/z3/z3_protocol.cpp
   )
   set_target_properties(dcstudy_z3 PROPERTIES OUTPUT_NAME dcstudy-z3)
   target_include_directories(dcstudy_z3 PRIVATE
