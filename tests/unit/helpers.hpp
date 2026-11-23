@@ -34,13 +34,13 @@ inline std::vector<int> target_of(const FuncSpec &s) {
 }
 
 inline bool z3_helper_available() {
-  if (const char* p = std::getenv("DCSTUDY_Z3_HELPER"); p && *p)
+  if (const char *p = std::getenv("DCSTUDY_Z3_HELPER"); p && *p)
     return std::filesystem::exists(p);
   return false;
 }
 
-#define REQUIRE_Z3_HELPER()                        \
-  do {                                             \
-    if (!z3_helper_available())                    \
-      SKIP("dcstudy-z3 not built");                \
+#define REQUIRE_Z3_HELPER()                                                    \
+  do {                                                                         \
+    if (!z3_helper_available())                                                \
+      SKIP("dcstudy-z3 not built");                                            \
   } while (0)

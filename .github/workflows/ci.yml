@@ -137,3 +137,27 @@ jobs:
         run: |
           python -m pip install mypy
           mypy --ignore-missing-imports workers/render_worker.py
+  clice:
+    runs-on: ubuntu-24.04
+    env:
+      CLICE_VERSION: v1.0.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: install clice
+        run: |
+          url="https://github.com/clice-io/clice/releases/download/${CLICE_VERSION}/clice-${CLICE_VERSION#v}.x86_64-unknown-linux-gnu.tar.gz"
+          curl -sSL -o /tmp/clice.tar.gz "$url"
+          tar -xzf /tmp/clice.tar.gz -C /tmp
+          sudo mv /tmp/clice /opt/clice
+          sudo ln -sf /opt/clice/bin/clice /usr/local/bin/clice
+          clice --version
+      - name: install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build clang
+      - name: configure (compile_commands)
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER=clang++ -DDCSTUDY_BUILD_Z3_HELPER=OFF
+      - name: format and lint
+        run: make format-check lint
