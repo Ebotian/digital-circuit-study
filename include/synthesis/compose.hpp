@@ -6,6 +6,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "core/partial.hpp"
 #include "synthesis/multistage.hpp"
@@ -22,6 +23,7 @@ struct ComposeResult {
   RtlSynthResult synth; // mapping + cost + verification
 };
 
-ComposeResult compose_mux2(const MultiProblem &spec);
+ComposeResult compose_mux2(const MultiProblem &spec,
+                           const std::vector<MultiProblem> &library = {});
 
 } // namespace dcstudy

@@ -1836,8 +1836,9 @@ int cmd_multi_path(const Args &a, const MultiProblem &spec) {
   return 0;
 }
 
-int cmd_multi_compose(const Args &a, const MultiProblem &spec) {
-  const ComposeResult r = compose_mux2(spec);
+int cmd_multi_compose(const Args &a, const MultiProblem &spec,
+                      const std::vector<MultiProblem> &library) {
+  const ComposeResult r = compose_mux2(spec, library);
   const bool json = a.is("json");
   const std::string out_dir = a.get("out");
   if (r.ok && !out_dir.empty()) {
@@ -1983,7 +1984,31 @@ int cmd_multi(const std::string &sub, int argc, char **argv) {
   const Args a = parse_args(argc, argv, 3);
   if (sub == "compose") {
     const MultiProblem spec = load_multi_spec(a.need("spec"), 16);
-    return cmd_multi_compose(a, spec);
+    std::vector<MultiProblem> library;
+    if (a.has("library")) {
+      std::ifstream in(a.get("library"));
+      if (!in)
+        throw CliError("cannot read library: " + a.get("library"));
+      std::ostringstream os;
+      os << in.rdbuf();
+      const Json arr = Json::parse(os.str());
+      if (!arr.is_array())
+        throw CliError("--library must be a JSON array of specs");
+      int idx = 0;
+      static std::atomic<int> counter{0};
+      for (const auto &e : arr.array()) {
+        const std::string p = (fs::temp_directory_path() /
+                               ("dcstudy-lib-" + std::to_string(counter++) +
+                                "-" + std::to_string(idx++) + ".json"))
+                                  .string();
+        {
+          std::ofstream(p) << e.dump();
+        }
+        library.push_back(load_multi_spec(p, 16));
+        fs::remove(p);
+      }
+    }
+    return cmd_multi_compose(a, spec, library);
   }
   if (sub == "exact") {
     const MultiProblem spec = load_multi_spec(a.need("spec"));

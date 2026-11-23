@@ -1,0 +1,9 @@
+[
+  {"name": "pe42", "inputs": ["A3", "A2", "A1", "A0"],
+   "outputs": [{"name": "Y1", "expr": "A3|A2"},
+               {"name": "Y0", "expr": "A3|(~A2&A1)"}]},
+  {"name": "or4", "inputs": ["A3", "A2", "A1", "A0"],
+   "outputs": [{"name": "Y", "expr": "A3|A2|A1|A0"}]},
+  {"name": "mux2", "inputs": ["A", "B", "S"],
+   "outputs": [{"name": "Y", "expr": "(S&B)|(~S&A)"}]}
+]

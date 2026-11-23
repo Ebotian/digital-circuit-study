@@ -68,7 +68,8 @@ std::string temp_dir() {
 
 } // namespace
 
-ComposeResult compose_mux2(const MultiProblem &spec) {
+ComposeResult compose_mux2(const MultiProblem &spec,
+                           const std::vector<MultiProblem> &library) {
   ComposeResult out;
   if (spec.vars.empty() || spec.outputs.empty()) {
     out.reason = "compose needs a non-empty spec";
@@ -76,6 +77,72 @@ ComposeResult compose_mux2(const MultiProblem &spec) {
   }
   if (spec.has_dont_cares()) {
     out.reason = "compose does not support don't-care masks yet";
+    return out;
+  }
+
+  // Exact whole-function match first: one atom instance, no search needed.
+  for (const auto &atom : library) {
+    if (atom.vars.size() != spec.vars.size() ||
+        atom.outputs.size() != spec.outputs.size())
+      continue;
+    bool same = true;
+    const std::size_t at_rows = std::size_t{1} << atom.vars.size();
+    for (std::size_t k = 0; k < atom.outputs.size() && same; ++k)
+      for (std::size_t m = 0; m < at_rows && same; ++m)
+        if (atom.outputs[k].func.value(static_cast<std::uint32_t>(m)) !=
+            spec.outputs[k].func.value(static_cast<std::uint32_t>(m)))
+          same = false;
+    if (!same)
+      continue;
+
+    std::ostringstream top;
+    top << "module top(";
+    for (std::size_t i = 0; i < spec.vars.size(); ++i)
+      top << (i ? ", " : "") << "input logic " << spec.vars[i];
+    for (std::size_t i = 0; i < spec.names.size(); ++i)
+      top << ", output logic " << spec.names[i];
+    top << ");\n  " << atom.title << " u(";
+    for (std::size_t i = 0; i < atom.vars.size(); ++i)
+      top << (i ? ", " : "") << "." << atom.vars[i] << "(" << spec.vars[i]
+          << ")";
+    for (std::size_t i = 0; i < atom.names.size(); ++i)
+      top << ", ." << atom.names[i] << "(" << spec.names[i] << ")";
+    top << ");\nendmodule\n";
+
+    std::ostringstream at;
+    at << "module " << atom.title << "(";
+    for (std::size_t i = 0; i < atom.vars.size(); ++i)
+      at << (i ? ", " : "") << "input logic " << atom.vars[i];
+    for (std::size_t i = 0; i < atom.names.size(); ++i)
+      at << ", output logic " << atom.names[i];
+    at << ");\n";
+    for (std::size_t k = 0; k < atom.outputs.size(); ++k)
+      at << "  assign " << atom.names[k] << " = "
+         << atom.outputs[k].func.sop(atom.vars) << ";\n";
+    at << "endmodule\n";
+
+    out.rtl = top.str();
+    out.atom_rtl = at.str();
+    out.nodes = 1;
+    const std::string dir = temp_dir();
+    const fs::path top_path = fs::path(dir) / "top.v";
+    const fs::path atom_path = fs::path(dir) / (atom.title + ".v");
+    {
+      std::ofstream(top_path) << out.rtl;
+      std::ofstream(atom_path) << out.atom_rtl;
+    }
+    try {
+      out.synth =
+          synthesize_rtl_atoms(top_path.string(), atom_path.string(), spec);
+      out.ok = out.synth.ok;
+      out.verified = out.synth.verified;
+      if (!out.synth.ok)
+        out.reason = out.synth.reason;
+    } catch (const std::exception &e) {
+      out.reason = e.what();
+    }
+    std::error_code ec;
+    fs::remove_all(dir, ec);
     return out;
   }
 
