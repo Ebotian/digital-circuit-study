@@ -69,12 +69,13 @@
 
 ```bash
 make                 # 主程序 + dcstudy-z3 worker
-make test            # Catch2 单元测试(会启动 worker)
+make test            # 单元测试(按模块) + CLI 烟测
+make smoke           # CLI 烟测 + (有 Fil-C 时)Fil-C 烟测
 make verify          # 实例验证(见 tests/verify/README.md)
 make verify-all      # 实例 + 形式化(ctest) + 完整 CLI 套件
 make integration     # 黑盒 CLI + Yosys/Verilator 集成测试
 make filc            # 用 Fil-C 编完整 CLI(不链 Z3)
-make filc-smoke      # 可选:用 Fil-C 跑 Z3-free 内核(约 15 s)
+make smoke-filc      # 可选:用 Fil-C 跑 Z3-free 内核(约 15 s;旧名 filc-smoke 仍可用)
 ```
 
 渲染命令默认用 Node(直接跑 `workers/render_worker.ts`);`--png` 额外需要 `rsvg-convert`,`logic.svg` 额外需要 `pdflatex` + `circuitikz`(缺失时退回逻辑块)。Python worker 保留作对照,可用 `DCSTUDY_RENDER_HELPER=workers/render_worker.py` 切回;Python 版没有逻辑面板。
@@ -120,7 +121,7 @@ worker 仍然是“一次请求一个进程”,所以并行是进程级的;GPU �
 - Fil-C 构建的地址空间开销很大,跑 `dcstudy-filc` 时用 `--mem-limit 0`。
 - 线程池也吃这份预算(每个线程 8 MB 栈):上限太小时 `parallel_for` 会退回更少的 worker 而不是 abort。
 
-> **Fil-C 说明**:`make filc` 已能编出完整的 `build/dcstudy-filc`(约 40 s),它通过 `/proc/self/exe` 找到 host 编的 `build/dcstudy-z3` 并进程调用。`make filc-smoke` 是更小的纯内核冒烟;完整 CLI 也已在 Fil-C 下跑通 `bool` / `cdl --exact` / `design min --verify yosys|both` / `render --png`。`render` 命令额外调用 Node TS worker;如果二进制被搬走,用 `DCSTUDY_RENDER_HELPER=/path/to/render_worker.ts` 指定(也可以指向 Python 版本做对照)。
+> **Fil-C 说明**:`make filc` 已能编出完整的 `build/dcstudy-filc`(约 40 s),它通过 `/proc/self/exe` 找到 host 编的 `build/dcstudy-z3` 并进程调用。`make smoke-filc` 是更小的纯内核冒烟(`filc-smoke` 为旧别名);完整 CLI 也已在 Fil-C 下跑通 `bool` / `cdl --exact` / `design min --verify yosys|both` / `render --png`。`render` 命令额外调用 Node TS worker;如果二进制被搬走,用 `DCSTUDY_RENDER_HELPER=/path/to/render_worker.ts` 指定(也可以指向 Python 版本做对照)。
 
 完整 CLI 的内存检查用 ASan/UBSan 补上:
 
@@ -575,8 +576,8 @@ verilator --binary --timing -Wno-fatal -Wno-WIDTH -Wno-UNUSEDSIGNAL \
 │   ├── render_worker.ts   TS/Node SVG/HTML 渲染 worker(默认)
 │   └── render_worker.py   Python 渲染 worker(对照/fallback)
 ├── tests/
-│   ├── unit_tests.cpp    Catch2 单元测试
-│   ├── filc_smoke.cpp    Fil-C 内存安全冒烟(Z3-free 内核)
+│   ├── unit/             Catch2 单元测试(按模块: core/switchlevel/cdl/infra)
+│   ├── smoke/            CLI 烟测 + Fil-C 内存安全冒烟(Z3-free 内核)
 │   ├── integration.sh    黑盒 CLI / 形式工具集成测试
 │   └── verify/           验证目录: instances(实例) / formal(核心/可选)
 ├── docs/                 四本 HTML 讲义(见上)

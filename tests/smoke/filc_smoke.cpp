@@ -1,6 +1,6 @@
 // Fil-C memory-safety smoke test for the Z3-free core.
 //
-// Build with: make filc-smoke
+// Build with: make smoke-filc
 // This target exercises the pure Boolean/CMOS/design-space/Verilog layers.
 // The full CLI (make filc) also builds under Fil-C and spawns the host-built
 // dcstudy-z3 worker for Z3; that path is covered by the integration tests.

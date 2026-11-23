@@ -79,13 +79,19 @@ endif()
 enable_testing()
 find_package(Catch2 3 QUIET)
 if(Catch2_FOUND)
-  add_executable(dcstudy_tests tests/unit_tests.cpp)
+  file(GLOB DCSTUDY_UNIT_SOURCES CONFIGURE_DEPENDS
+       ${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/*_test.cpp)
+  add_executable(dcstudy_tests ${DCSTUDY_UNIT_SOURCES})
   target_link_libraries(dcstudy_tests PRIVATE dcstudy_core Catch2::Catch2WithMain)
-  add_test(NAME unit COMMAND dcstudy_tests)
-  if(DCSTUDY_BUILD_Z3_HELPER)
-    set_tests_properties(unit PROPERTIES
-      ENVIRONMENT "DCSTUDY_Z3_HELPER=$<TARGET_FILE:dcstudy_z3>")
-  endif()
+  # One ctest entry per module: tags in tests/unit/<module>_test.cpp select it.
+  set(DCSTUDY_UNIT_MODULES core switchlevel cdl infra)
+  foreach(mod ${DCSTUDY_UNIT_MODULES})
+    add_test(NAME unit_${mod} COMMAND dcstudy_tests "[${mod}]")
+    if(DCSTUDY_BUILD_Z3_HELPER)
+      set_tests_properties(unit_${mod} PROPERTIES
+        ENVIRONMENT "DCSTUDY_Z3_HELPER=$<TARGET_FILE:dcstudy_z3>")
+    endif()
+  endforeach()
 else()
   # Missing dependency must not look like "all tests passed".
   add_test(NAME unit_missing_catch2
