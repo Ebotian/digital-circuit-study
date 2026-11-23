@@ -45,12 +45,27 @@ struct StaticExactResult {
 
 // Exact minimum DNF of `onset` over the available literals.  A negative
 // literal for variable i is available iff bit i of `neg_allowed` is set.
+// Rows in `dc` may be covered by cubes but do not have to be (don't-care
+// set), so the cover only has to contain `onset`.
 // Returns false when no cover exists with those literals.
 bool exact_min_dnf_literals(const Bits& onset, std::size_t n,
-                            std::uint64_t neg_allowed, Sop& out);
+                            std::uint64_t neg_allowed, Sop& out,
+                            const Bits* dc = nullptr);
+
+// True when a switch-level truth string ('0'/'1'/'Z'/'X') satisfies the target
+// truth table, ignoring rows marked in `any`.  Don't-care rows still have to
+// be driven to 0 or 1 by a static network (Z/X is not an extension).
+bool truth_satisfies(const std::string& truth, const std::string& target,
+                     const Bits& any);
+
+// Complete a partial function: don't-care rows get values chosen by the
+// minimum-literal SOP cover (all input literals available), so downstream
+// synthesis starts from a compact total extension.
+BoolFunc complete_with_min_sop(const BoolFunc& f, const Bits& any);
 
 StaticExactResult synthesize_static_exact_multi(
     const std::vector<BoolFunc>& funcs, const std::vector<std::string>& names,
-    const std::vector<std::string>& vars);
+    const std::vector<std::string>& vars,
+    const std::vector<Bits>& any = {});
 
 }  // namespace dcstudy

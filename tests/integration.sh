@@ -150,6 +150,30 @@ rc=0
 [ "$rc" = "2" ] || fail "pipeline --verify static"
 pass "static CMOS constraint"
 
+# Don't-care ("any") outputs: the 4-to-2 encoder only cares about one-hot
+# inputs, so the PDNs can be chosen as A0|A2 / A0|A1 (8T, no inverters).
+"$BIN" multi exact --spec "$ROOT/specs/encoder42.json" --json > "$TMP/encoder.exact" || fail "encoder exact"
+[ "$(jq -r .verified "$TMP/encoder.exact")" = "true" ] || fail "encoder verify"
+[ "$(jq -r .total "$TMP/encoder.exact")" = "8" ] || fail "encoder don't-care 8T"
+[ "$(jq -r '.any.Y0 | length' "$TMP/encoder.exact")" = "16" ] || fail "encoder any echo"
+# Tri-state has no "any 0/1" semantics: Z is not an extension.
+rc=0
+"$BIN" multi path --spec "$ROOT/specs/encoder42.json" --tri-state --json >/dev/null 2>&1 || rc=$?
+[ "$rc" = "1" ] || fail "tri-state accepted don't-cares"
+cat > "$TMP/badany.json" <<'JSON'
+{"name":"badany","inputs":["A","B"],"outputs":[{"name":"Y","expr":"A","any":"101"}]}
+JSON
+rc=0
+"$BIN" multi exact --spec "$TMP/badany.json" --json >/dev/null 2>&1 || rc=$?
+[ "$rc" = "2" ] || fail "bad any mask accepted"
+cat > "$TMP/allany.json" <<'JSON'
+{"name":"allany","inputs":["A","B"],"outputs":[{"name":"Y","expr":"A&B","any":"1111"}]}
+JSON
+rc=0
+"$BIN" multi exact --spec "$TMP/allany.json" --json >/dev/null 2>&1 || rc=$?
+[ "$rc" = "2" ] || fail "all-don't-care output accepted"
+pass "don't-care outputs (encoder)"
+
 # General multi-output synthesis: the 3-to-8 decoder is only a spec file.
 if [ -f "$CDL" ] && command -v yosys >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
   "$BIN" multi synth --spec "$ROOT/specs/decoder38.json" --out "$TMP/decoder38"     --json > "$TMP/decoder38.out" || fail "multi-output decoder"
@@ -206,6 +230,11 @@ JSON
 JSON
   "$BIN" multi synth --spec "$TMP/alias.json" --out "$TMP/alias-out" --json > "$TMP/alias.out" || fail "aliased outputs"
   [ "$(jq -r .verified "$TMP/alias.out")" = "true" ] || fail "aliased verify"
+  # Don't-care specs go through mapping and path search too.
+  "$BIN" multi synth --spec "$ROOT/specs/encoder42.json" --json > "$TMP/encoder.synth" || fail "encoder synth"
+  [ "$(jq -r .verified "$TMP/encoder.synth")" = "true" ] || fail "encoder synth verify"
+  "$BIN" multi path --spec "$ROOT/specs/encoder42.json" --max-cost 64 --json > "$TMP/encoder.path" || fail "encoder path"
+  [ "$(jq -r .verified "$TMP/encoder.path")" = "true" ] || fail "encoder path verify"
   [ "$(jq -r '.truths.Y0' "$TMP/alias.out")" = "1110" ] || fail "aliased Y0"
   [ "$(jq -r '.truths.Y1' "$TMP/alias.out")" = "1110" ] || fail "aliased Y1"
   # The exported CDL must keep both ports and read back with both aliases.

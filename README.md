@@ -315,6 +315,41 @@ multi-output static CMOS: decoder3to8
 - 实心点表示连接，交叉无点表示不连接；输出按 `Y0..Y7` 排序，避免 Yosys 内部单元顺序影响可读性；
 - `--max-fanin 2` 同样适用于多输出综合。
 
+#### 未定义输出（`any`）：4-2 编码器
+
+讲义里的 4-2 编码器只在输入为独热码时才有定义，其他输入行是 X（任意值）。spec 的每个输出可以带一个 `"any"` 掩码：宽度等于真值表（`2^n` 行），`1` 表示该行**任意 0/1 都可以**。格式和 `--tt` 一样，支持 `0/1` 串或 `0x` 十六进制。
+
+`specs/encoder42.json`（4 个输入 `A3..A0`，A3 为 MSB；独热行是 1、2、4、8）：
+
+```json
+{
+  "name": "encoder4to2",
+  "inputs": ["A3", "A2", "A1", "A0"],
+  "outputs": [
+    {"name": "Y0", "expr": "A1|A3", "any": "0xFEE9"},
+    {"name": "Y1", "expr": "A2|A3", "any": "0xFEE9"}
+  ]
+}
+```
+
+```bash
+./build/dcstudy multi exact --spec specs/encoder42.json --json
+./build/dcstudy multi synth --spec specs/encoder42.json --json
+./build/dcstudy multi path  --spec specs/encoder42.json --max-cost 64 --json
+```
+
+| 命令 | 结果 | 说明 |
+|---|---|---|
+| `multi exact` | **8T**（0 反相器） | PDN 被选成 `A0\|A2`、`A0\|A1`，在 X 行上取了一个更便宜的扩展 |
+| `multi synth` | 12T（2 个 OR2） | 先用最小 SOP 补全成 `A1\|A3` / `A2\|A3`，再交给 Yosys/ABC |
+| `multi path` | 14T | 同样先补全，再做双轨路径搜索 |
+
+- `multi exact` 的最优性证明**只覆盖 care 行**：X 行允许任何 0/1，所以 PDN 的最小 DNF 是在“必须导通的 care 行 + 可任意覆盖的 X 行”上求的；JSON 里 `any` 会回显掩码，`truths` 是实际扩展。
+- `multi synth` / `multi path` 需要全函数，因此先用**最小字面量 SOP** 补全；验证时 care 行必须匹配、X 行只要求被驱动到 0 或 1（Z/X 不算合法扩展）。
+- `--tri-state` 不接受 `any`：三态的“Z”不是“任意 0/1”的扩展，语义不同，命令会直接报错。
+- 每个输出至少要有**一行 care**：全 1 的 `any`（输出完全任意）会被直接拒绝，而不是让下游映射出常量空网表。
+- 不带 `any` 的 spec 行为完全不变。
+
 #### 严格最优：单级静态复杂 CMOS
 
 `multi synth` 是 Yosys/ABC 的启发式映射，不证明最优。严格版本用 `multi exact`：
@@ -492,7 +527,7 @@ verilator --binary --timing -Wno-fatal -Wno-WIDTH -Wno-UNUSEDSIGNAL \
 │   ├── filc_smoke.cpp    Fil-C 内存安全冒烟(Z3-free 内核)
 │   └── integration.sh    黑盒 CLI / 形式工具集成测试
 ├── docs/                 四本 HTML 讲义(见上)
-├── specs/                可复现的 multi-output JSON spec(decoder38、hex7seg)
+├── specs/                可复现的 multi-output JSON spec(decoder38、hex7seg、encoder42)
 ├── verilog/              Verilator 手工回归(含负对照)
 ├── rtl/                  讲义实验用 RTL
 └── tools/pdk/            yosys-sta 的 PDK 描述文件

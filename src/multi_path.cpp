@@ -10,6 +10,7 @@
 
 #include "dcstudy/driver_profile.hpp"
 #include "dcstudy/parallel.hpp"
+#include "dcstudy/static_exact.hpp"
 
 namespace dcstudy {
 namespace {
@@ -566,7 +567,7 @@ MultiPathSynthesisResult synthesize_dual_rail_multi(
 MultiPathSynthesisResult synthesize_path_variables_multi(
     const std::vector<BoolFunc>& funcs, const std::vector<std::string>& names,
     const std::vector<std::string>& vars, const SpaceOptions& opt,
-    bool tri_state) {
+    bool tri_state, const std::vector<Bits>& any) {
   MultiPathSynthesisResult out;
   out.outputs = names;
   if (funcs.empty() || funcs.size() != names.size() || vars.empty() ||
@@ -574,7 +575,20 @@ MultiPathSynthesisResult synthesize_path_variables_multi(
     out.reason = "multi path synthesis supports 1..4 inputs and matching outputs";
     return out;
   }
-  if (!tri_state) return synthesize_dual_rail_multi(funcs, names, vars, opt);
+  bool has_any = false;
+  for (const auto& mask : any)
+    if (!mask.none()) has_any = true;
+  if (has_any && tri_state) {
+    out.reason = "don't-care masks are not supported with --tri-state";
+    return out;
+  }
+  // The path search needs a total function: pick the minimum-SOP extension on
+  // don't-care rows (any extension is valid, this one keeps paths short).
+  std::vector<BoolFunc> work = funcs;
+  for (std::size_t k = 0; k < work.size(); ++k)
+    if (any.size() == funcs.size() && !any[k].none())
+      work[k] = complete_with_min_sop(funcs[k], any[k]);
+  if (!tri_state) return synthesize_dual_rail_multi(work, names, vars, opt);
   std::vector<std::vector<int>> targets;
   std::vector<AllPath> all;
   for (std::size_t o = 0; o < funcs.size(); ++o) {

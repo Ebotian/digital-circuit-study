@@ -101,10 +101,15 @@ std::string cdl_from_subckt(const Subckt& c) {
 }  // namespace
 
 bool exact_min_dnf_literals(const Bits& onset, std::size_t n,
-                            std::uint64_t neg_allowed, Sop& out) {
+                            std::uint64_t neg_allowed, Sop& out,
+                            const Bits* dc) {
   out = Sop{};
   if (onset.size() != (std::size_t{1} << n))
     throw std::invalid_argument("onset width does not match n");
+  if (dc && dc->size() != onset.size())
+    throw std::invalid_argument("don't-care width does not match onset");
+  // Cubes may cover must-on rows plus don't-care rows, but nothing else.
+  const Bits allowed = dc ? (onset | *dc) : onset;
   if (onset.none()) return true;  // constant 0
   if (onset.count() == onset.size()) {
     // Constant 1: a zero-literal term.  The caller treats this as a hard tie.
@@ -143,7 +148,7 @@ bool exact_min_dnf_literals(const Bits& onset, std::size_t n,
     c.care = care;
     c.value = value;
     c.cover = cover_of(care, value, n);
-    if (!c.cover.subset_of(onset)) continue;
+    if (!c.cover.subset_of(allowed)) continue;
     if (!c.cover.intersects(onset)) continue;
     cubes.push_back(std::move(c));
   }
@@ -163,9 +168,39 @@ bool exact_min_dnf_literals(const Bits& onset, std::size_t n,
   return true;
 }
 
+bool truth_satisfies(const std::string& truth, const std::string& target,
+                     const Bits& any) {
+  if (truth.size() != target.size()) return false;
+  for (std::size_t m = 0; m < truth.size(); ++m) {
+    if (any.size() == truth.size() && any.test(m)) {
+      // Any extension is acceptable, but a static network still has to drive
+      // the row to 0 or 1: Z/X is not a valid total extension.
+      if (truth[m] != '0' && truth[m] != '1') return false;
+      continue;
+    }
+    if (truth[m] != target[m]) return false;
+  }
+  return true;
+}
+
+BoolFunc complete_with_min_sop(const BoolFunc& f, const Bits& any) {
+  if (any.none()) return f;
+  const std::size_t n = f.arity();
+  if (any.size() != f.bits().size())
+    throw std::invalid_argument("don't-care mask width does not match function");
+  const Bits onset = f.bits() & ~any;
+  Sop sop;
+  const std::uint64_t all_literals = (std::uint64_t{1} << n) - 1;
+  if (!exact_min_dnf_literals(onset, n, all_literals, sop, &any))
+    throw std::invalid_argument("don't-care completion found no cover");
+  Bits bits(f.bits().size());
+  for (const auto& term : sop.terms) bits |= term.cover;
+  return BoolFunc(n, std::move(bits));
+}
+
 StaticExactResult synthesize_static_exact_multi(
     const std::vector<BoolFunc>& funcs, const std::vector<std::string>& names,
-    const std::vector<std::string>& vars) {
+    const std::vector<std::string>& vars, const std::vector<Bits>& any) {
   StaticExactResult out;
   out.outputs = names;
   if (funcs.empty() || funcs.size() != names.size()) {
@@ -184,6 +219,12 @@ StaticExactResult synthesize_static_exact_multi(
     }
   }
 
+  // Empty mask used when the caller passed no don't-care sets.
+  const Bits no_dc = Bits::zeros(funcs.empty() ? 0 : funcs.front().bits().size());
+  const auto dc_of = [&](std::size_t k) -> const Bits& {
+    return any.size() == funcs.size() ? any[k] : no_dc;
+  };
+
   int best_total = std::numeric_limits<int>::max();
   int best_gate_cost = 0;
   int best_inv_cost = 0;
@@ -199,6 +240,10 @@ StaticExactResult synthesize_static_exact_multi(
   int cube_gate_cost = 0;
   std::vector<Sop> cube_pdn;
   for (std::size_t k = 0; k < funcs.size(); ++k) {
+    if (!dc_of(k).none()) {
+      cube_form = false;  // don't-cares need the full cover search
+      break;
+    }
     const Sop fcube = exact_min_sop(funcs[k].bits(), n);
     if (fcube.terms.size() != 1 || fcube.terms[0].care == 0) {
       cube_form = false;
@@ -240,9 +285,11 @@ StaticExactResult synthesize_static_exact_multi(
                    MaskEval ev;
                    bool feasible = true;
                    for (std::size_t k = 0; k < funcs.size(); ++k) {
-                     const Bits onset = ~funcs[k].bits();
+                     const Bits& dc = dc_of(k);
+                     const Bits onset = ~funcs[k].bits() & ~dc;
                      Sop sop;
-                     if (!exact_min_dnf_literals(onset, n, mask, sop)) {
+                     if (!exact_min_dnf_literals(
+                             onset, n, mask, sop, dc.none() ? nullptr : &dc)) {
                        feasible = false;
                        break;
                      }
@@ -395,7 +442,9 @@ StaticExactResult synthesize_static_exact_multi(
     for (const auto& row : a.rows)
       truth.push_back(logic_symbol(row.values[0]));
     out.truths[k] = std::move(truth);
-    output_ok[k] = (out.truths[k] == funcs[k].truth_string()) ? 1 : 0;
+    output_ok[k] =
+        truth_satisfies(out.truths[k], funcs[k].truth_string(), dc_of(k)) ? 1
+                                                                         : 0;
   });
   out.verified = std::all_of(output_ok.begin(), output_ok.end(),
                              [](bool v) { return v; });

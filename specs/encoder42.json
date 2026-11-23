@@ -1,0 +1,8 @@
+{
+  "name": "encoder4to2",
+  "inputs": ["A3", "A2", "A1", "A0"],
+  "outputs": [
+    {"name": "Y0", "expr": "A1|A3", "any": "0xFEE9"},
+    {"name": "Y1", "expr": "A2|A3", "any": "0xFEE9"}
+  ]
+}

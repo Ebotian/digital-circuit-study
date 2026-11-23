@@ -18,6 +18,7 @@
 #include "dcstudy/cdl.hpp"
 #include "dcstudy/json.hpp"
 #include "dcstudy/parallel.hpp"
+#include "dcstudy/static_exact.hpp"
 #include "dcstudy/switchlevel.hpp"
 
 namespace dcstudy {
@@ -144,7 +145,8 @@ namespace {
 
 MultiStageMultiDesign synthesize_multistage_static_multi_impl(
     const std::vector<BoolFunc>& funcs, const std::vector<std::string>& out_names,
-    const std::vector<std::string>& vars, int max_fanin) {
+    const std::vector<std::string>& vars, int max_fanin,
+    const std::vector<Bits>& any) {
   MultiStageMultiDesign out;
   out.outputs = out_names;
   if (funcs.empty() || funcs.size() != out_names.size()) {
@@ -155,6 +157,15 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
     out.reason = "multi-stage synthesis supports 1..4 inputs";
     return out;
   }
+  // Complete partial functions first: the mapper needs a total function, and
+  // the minimum-literal SOP extension keeps the mapped logic small.
+  const Bits no_dc = Bits::zeros(funcs.front().bits().size());
+  const auto dc_of = [&](std::size_t k) -> const Bits& {
+    return any.size() == funcs.size() ? any[k] : no_dc;
+  };
+  std::vector<BoolFunc> work = funcs;
+  for (std::size_t k = 0; k < work.size(); ++k)
+    if (!dc_of(k).none()) work[k] = complete_with_min_sop(funcs[k], dc_of(k));
   const std::string lib = default_liberty_path();
   const std::string cdl = default_cdl_path();
   if (!fs::exists(lib)) {
@@ -180,8 +191,8 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
       if (i + 1 < out_names.size()) os << ", ";
     }
     os << ");\n";
-    for (std::size_t i = 0; i < funcs.size(); ++i)
-      os << "  assign " << out_names[i] << " = " << funcs[i].sop(vars) << ";\n";
+    for (std::size_t i = 0; i < work.size(); ++i)
+      os << "  assign " << out_names[i] << " = " << work[i].sop(vars) << ";\n";
     os << "endmodule\n";
   }
 
@@ -362,12 +373,18 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
       for (const auto& row : a.rows)
         truth.push_back(logic_symbol(row.values[0]));
       out.truths[k] = std::move(truth);
-      output_ok[k] = (out.truths[k] == funcs[k].truth_string()) ? 1 : 0;
+      output_ok[k] =
+          truth_satisfies(out.truths[k], funcs[k].truth_string(), dc_of(k))
+              ? 1
+              : 0;
     });
     for (std::size_t k = 0; k < out_names.size(); ++k) {
       if (alias_of[k] < 0) continue;
       out.truths[k] = out.truths[static_cast<std::size_t>(alias_of[k])];
-      output_ok[k] = (out.truths[k] == funcs[k].truth_string()) ? 1 : 0;
+      output_ok[k] =
+          truth_satisfies(out.truths[k], funcs[k].truth_string(), dc_of(k))
+              ? 1
+              : 0;
     }
     out.verified = std::all_of(output_ok.begin(), output_ok.end(),
                                [](char v) { return v != 0; });
@@ -384,14 +401,16 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
 
 MultiStageMultiDesign synthesize_multistage_static_multi(
     const std::vector<BoolFunc>& funcs, const std::vector<std::string>& out_names,
-    const std::vector<std::string>& vars, int max_fanin) {
-  return synthesize_multistage_static_multi_impl(funcs, out_names, vars, max_fanin);
+    const std::vector<std::string>& vars, int max_fanin,
+    const std::vector<Bits>& any) {
+  return synthesize_multistage_static_multi_impl(funcs, out_names, vars,
+                                                 max_fanin, any);
 }
 
 MultiStageDesign synthesize_multistage_static(
     const BoolFunc& f, const std::vector<std::string>& vars, int max_fanin) {
   MultiStageMultiDesign m =
-      synthesize_multistage_static_multi_impl({f}, {"Y"}, vars, max_fanin);
+      synthesize_multistage_static_multi_impl({f}, {"Y"}, vars, max_fanin, {});
   MultiStageDesign out;
   out.ok = m.ok;
   out.reason = m.reason;

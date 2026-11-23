@@ -16,6 +16,7 @@
 #include "dcstudy/driver_profile.hpp"
 #include "dcstudy/limits.hpp"
 #include "dcstudy/parallel.hpp"
+#include "dcstudy/static_exact.hpp"
 #include "dcstudy/switchlevel.hpp"
 #include "dcstudy/synthesis.hpp"
 #include "dcstudy/verilog.hpp"
@@ -253,6 +254,32 @@ TEST_CASE("emitted dut is Verilog") {
   REQUIRE(dut.find("module dut") != std::string::npos);
   REQUIRE(dut.find("assign ok") != std::string::npos);
   REQUIRE(emit_ref(s.func, s.vars).find("module ref") != std::string::npos);
+}
+
+TEST_CASE("don't-care rows drive exact synthesis and verification") {
+  // 4-to-2 encoder: only the four one-hot inputs are care rows.
+  const std::vector<std::string> vars{"A3", "A2", "A1", "A0"};
+  const FuncSpec y0 = spec_from_expr("A1|A3", vars);
+  const FuncSpec y1 = spec_from_expr("A2|A3", vars);
+  Bits any(16);
+  for (std::size_t m = 0; m < 16; ++m)
+    if (m != 1 && m != 2 && m != 4 && m != 8) any.set(m);
+  const auto r = synthesize_static_exact_multi(
+      {y0.func, y1.func}, {"Y0", "Y1"}, vars, {any, any});
+  REQUIRE(r.ok);
+  REQUIRE(r.verified);
+  // Don't-cares let the PDNs become A0|A2 and A0|A1: 4T + 4T, no inverters.
+  REQUIRE(r.total == 8);
+  REQUIRE(r.inverter_cost == 0);
+  REQUIRE(truth_satisfies(r.truths[0], y0.func.truth_string(), any));
+  REQUIRE(truth_satisfies(r.truths[1], y1.func.truth_string(), any));
+  // Same expressions without don't-cares need inverters and cost more.
+  const auto total =
+      synthesize_static_exact_multi({y0.func, y1.func}, {"Y0", "Y1"}, vars);
+  REQUIRE(total.total > r.total);
+  // A Z/X on a don't-care row is not a valid extension of a static network.
+  REQUIRE_FALSE(truth_satisfies("ZZZZZZZZZZZZZZZZ",
+                                y0.func.truth_string(), any));
 }
 
 TEST_CASE("CDL aliases keep both output ports") {

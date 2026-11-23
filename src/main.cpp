@@ -1457,6 +1457,8 @@ struct MultiSpec {
   std::vector<std::string> vars;
   std::vector<std::string> names;
   std::vector<BoolFunc> funcs;
+  // Per-output don't-care mask: bit m set => row m may be either value.
+  std::vector<Bits> any;
 };
 
 MultiSpec load_multi_spec(const std::string& path) {
@@ -1491,14 +1493,40 @@ MultiSpec load_multi_spec(const std::string& path) {
     }
     if (name.empty() || name == "VDD" || name == "VSS")
       throw CliError("bad output name: " + name);
+    Bits any_mask = Bits::zeros(std::size_t{1} << s.vars.size());
+    if (o.is_object() && o.contains("any")) {
+      const std::string t = o.at("any").as_string();
+      try {
+        any_mask = spec_from_truth(t, s.vars).func.bits();
+      } catch (const std::exception& e) {
+        throw CliError("bad any mask for " + name + ": " + e.what());
+      }
+      if (any_mask.count() == any_mask.size())
+        throw CliError("output " + name +
+                       " has no care rows (any is all 1s)");
+    }
     if (std::find(s.names.begin(), s.names.end(), name) != s.names.end())
       throw CliError("duplicate output name: " + name);
     if (std::find(s.vars.begin(), s.vars.end(), name) != s.vars.end())
       throw CliError("output collides with input: " + name);
     s.names.push_back(name);
     s.funcs.push_back(spec_from_expr(expr, s.vars).func);
+    s.any.push_back(std::move(any_mask));
   }
   return s;
+}
+
+// Echo the don't-care rows of a spec into a result object.
+void add_any_json(Json& j, const MultiSpec& spec) {
+  if (spec.any.empty()) return;
+  Json any = Json::Object{};
+  bool found = false;
+  for (std::size_t i = 0; i < spec.any.size(); ++i) {
+    if (spec.any[i].none()) continue;
+    any[spec.names[i]] = spec.any[i].to_binary_string();
+    found = true;
+  }
+  if (found) j["any"] = std::move(any);
 }
 
 int cmd_multi_template(const Args& a, const MultiSpec& spec) {
@@ -1507,7 +1535,8 @@ int cmd_multi_template(const Args& a, const MultiSpec& spec) {
   opt.max_chain = 4;
   opt.allow_tg = !a.is("no-tg");
   const MultiPathSynthesisResult seed =
-      synthesize_path_variables_multi(spec.funcs, spec.names, spec.vars, opt);
+      synthesize_path_variables_multi(spec.funcs, spec.names, spec.vars, opt,
+                                      false, spec.any);
   if (!seed.ok || !seed.verified) {
     if (a.is("json")) {
       Json j;
@@ -1566,12 +1595,13 @@ int cmd_multi_path(const Args& a, const MultiSpec& spec) {
   opt.allow_tg = !a.is("no-tg");
   const MultiPathSynthesisResult r =
       synthesize_path_variables_multi(spec.funcs, spec.names, spec.vars, opt,
-                                      a.is("tri-state"));
+                                      a.is("tri-state"), spec.any);
   const bool json = a.is("json");
   std::string fallback_note;
   if ((!r.ok || !r.verified) && !a.is("tri-state")) {
     const StaticExactResult s =
-        synthesize_static_exact_multi(spec.funcs, spec.names, spec.vars);
+        synthesize_static_exact_multi(spec.funcs, spec.names, spec.vars,
+                                      spec.any);
     if (s.ok && s.verified && s.total > opt.max_cost)
       fallback_note = " (static fallback needs " + std::to_string(s.total) +
                       "T, over --max-cost " + std::to_string(opt.max_cost) + ")";
@@ -1581,6 +1611,7 @@ int cmd_multi_path(const Args& a, const MultiSpec& spec) {
       j["command"] = "multi.path";
       j["mode"] = "static-exact-fallback";
       j["path_reason"] = r.reason;
+      add_any_json(j, spec);
       j["outputs"] = [&] {
         Json v = Json::Array{};
         for (const auto& n : spec.names) v.push_back(n);
@@ -1630,6 +1661,7 @@ int cmd_multi_path(const Args& a, const MultiSpec& spec) {
   j["ok"] = true;
   j["command"] = "multi.path";
   j["mode"] = a.is("tri-state") ? "tri-state" : "dual-rail";
+  add_any_json(j, spec);
   j["model"] = a.is("tri-state")
                    ? "multi-output path variables with shared switch edges"
                    : "PUN/PDN dual-rail path variables with shared switch edges";
@@ -1680,7 +1712,8 @@ int cmd_multi_path(const Args& a, const MultiSpec& spec) {
 
 int cmd_multi_exact(const Args& a, const MultiSpec& spec) {
   const StaticExactResult r =
-      synthesize_static_exact_multi(spec.funcs, spec.names, spec.vars);
+      synthesize_static_exact_multi(spec.funcs, spec.names, spec.vars,
+                                    spec.any);
   const bool json = a.is("json");
   if (!r.ok || !r.verified) {
     if (json) {
@@ -1701,6 +1734,7 @@ int cmd_multi_exact(const Args& a, const MultiSpec& spec) {
   j["command"] = "multi.exact";
   j["model"] = "single-stage static complex CMOS with shared input inverters";
   j["title"] = spec.title;
+  add_any_json(j, spec);
   j["optimal"] = r.total;
   j["total"] = r.total;
   j["gate_cost"] = r.gate_cost;
@@ -1793,7 +1827,7 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
     throw CliError("--max-fanin must be 0 or 2..4");
   const MultiStageMultiDesign m =
       synthesize_multistage_static_multi(spec.funcs, spec.names, spec.vars,
-                                         max_fanin);
+                                         max_fanin, spec.any);
   const bool json = a.is("json");
   if (!m.ok || !m.verified) {
     if (json) {
@@ -1821,6 +1855,7 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
   j["ok"] = true;
   j["command"] = "multi.synth";
   j["title"] = spec.title;
+  add_any_json(j, spec);
   j["total"] = m.total;
   j["nfet"] = m.nfet;
   j["pfet"] = m.pfet;
