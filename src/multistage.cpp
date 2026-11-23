@@ -370,6 +370,7 @@ MultiStageMultiDesign synthesize_multistage_static_multi_impl(
     }
     out.cdl = cdl_from_subckt(flat);
     out.verilog = read_file(net_v);
+    out.rtl = read_file(rtl);
     out.json = read_file(net_json);
 
     // Shared gates make the full seven-output switch graph a hard Z3

@@ -1,3 +1,4 @@
+#include <atomic>
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
@@ -382,7 +383,8 @@ Options:
   --spec         JSON circuit spec: {"inputs":[...],"outputs":[{"name":...,"expr":...}]}
   --max-fanin N  static CMOS cell fan-in limit (e.g. 2); 0 = library default
   --rtl FILE     hierarchical Verilog (top module `top`) to map instead of spec RTL
-  --atoms FILE   atom modules read as blackboxes; cost measured by mapping
+  --atoms FILE   atom modules read as blackboxes; "-" pipes in a previous stage
+  --emit-atom N  emit the generated module (state RTL) as atom N on stdout
   --heavy        allow the n=6 Dedekind count (about 40 s and 10 GB)
   --mem-limit    per-process memory cap in MiB, inherited by every child
                  (not a shared budget: N workers can each reach it). Default:
@@ -1815,8 +1817,31 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
   if (a.has("rtl")) {
     if (!a.has("atoms"))
       throw CliError("--rtl needs --atoms FILE (module library)");
+    // --atoms - reads the module emitted by a previous stage:
+    //   dcstudy ... --emit-atom pe42 --json | dcstudy ... --atoms -
+    std::string atoms_path = a.get("atoms");
+    std::string temp_atoms;
+    if (atoms_path == "-") {
+      std::ostringstream in;
+      in << std::cin.rdbuf();
+      const Json prev = Json::parse(in.str());
+      if (!prev.contains("atom_verilog"))
+        throw CliError(
+            "--atoms - expects a piped 'multi synth --emit-atom' result");
+      static std::atomic<int> counter{0};
+      temp_atoms = (fs::temp_directory_path() /
+                    ("dcstudy-atom-" +
+                     std::to_string(std::chrono::steady_clock::now()
+                                        .time_since_epoch()
+                                        .count()) +
+                     "-" + std::to_string(counter++) + ".v"))
+                       .string();
+      std::ofstream(temp_atoms) << prev.at("atom_verilog").as_string();
+      atoms_path = temp_atoms;
+    }
     const RtlSynthResult r =
-        synthesize_rtl_atoms(a.get("rtl"), a.get("atoms"), spec);
+        synthesize_rtl_atoms(a.get("rtl"), atoms_path, spec);
+    if (!temp_atoms.empty()) fs::remove(temp_atoms);
     const bool ok = r.ok && r.verified;
     const std::string out_dir = a.get("out");
     if (!out_dir.empty() && r.ok) {
@@ -1891,6 +1916,19 @@ int cmd_multi(const std::string& sub, int argc, char** argv) {
   j["command"] = "multi.synth";
   j["title"] = spec.title;
   add_any_json(j, spec);
+  const std::string atom_name = a.get("emit-atom");
+  if (!atom_name.empty() && !m.rtl.empty()) {
+    // Emit the behavioural module (not the mapped netlist) so the next stage
+    // can both black-box it for mapping and use it in the miter.
+    std::string src = m.rtl;
+    const auto pos = src.find("module top");
+    if (pos != std::string::npos)
+      src.replace(pos, std::string("module top").size(),
+                  "module " + atom_name);
+    j["atom_name"] = atom_name;
+    j["atom_verilog"] = src;
+    j["atom_transistors"] = m.total;
+  }
   j["total"] = m.total;
   j["nfet"] = m.nfet;
   j["pfet"] = m.pfet;

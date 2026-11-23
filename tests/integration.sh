@@ -281,6 +281,18 @@ JSON
   [ "$(jq -r '.atoms[0].module' "$TMP/rtl8.json")" = "pe42" ] || fail "rtl atom"
   [ "$(jq -r '.total == (.atom_cost + .cell_cost)' "$TMP/rtl8.json")" = "true" ] || fail "rtl cost"
   [ -f "$TMP/rtl8/netlist.v" ] || fail "rtl netlist"
+  # Shell pipeline: a generated module becomes the next stage's atom.
+  #   stage1 --emit-atom pe42 | stage2 --atoms -
+  cat > "$TMP/pe42.json" <<'JSON'
+{"name":"pe42","inputs":["A3","A2","A1","A0"],
+ "outputs":[{"name":"Y1","expr":"A3|A2"},{"name":"Y0","expr":"A3|(~A2&A1)"}]}
+JSON
+  "$BIN" multi synth --spec "$TMP/pe42.json" --emit-atom pe42 --json \
+    | "$BIN" multi synth --rtl "$TMP/top8.v" --atoms - --spec "$TMP/prio8.json" --json \
+    > "$TMP/pipe-atom.json" || fail "shell pipeline atoms"
+  [ "$(jq -r .verified "$TMP/pipe-atom.json")" = "true" ] || fail "pipeline verify"
+  [ "$(jq -r '.atoms[0].module' "$TMP/pipe-atom.json")" = "pe42" ] || fail "pipeline atom"
+  [ "$(jq -r '.total == (.atom_cost + .cell_cost)' "$TMP/pipe-atom.json")" = "true" ] || fail "pipeline cost"
   # Same free-row spec through the mapper and the path search: 2T as well.
   [ "$("$BIN" multi synth --spec "$TMP/free.json" --json | jq -r .total)" = "2" ] || fail "free-row synth"
   [ "$("$BIN" multi path --spec "$TMP/free.json" --max-cost 64 --json | jq -r .total)" = "2" ] || fail "free-row path"

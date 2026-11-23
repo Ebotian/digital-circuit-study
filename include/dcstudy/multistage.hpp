@@ -44,6 +44,7 @@ struct MultiStageMultiDesign {
   std::string verilog;
   std::string json;
   std::string cdl;
+  std::string rtl;  // behavioural module fed to the mapper (reusable as atom)
   std::vector<std::string> truths;  // parallel to outputs
   bool verified = false;
 };

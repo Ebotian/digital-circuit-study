@@ -375,6 +375,16 @@ multi synth (RTL + atoms): 66T (32T atoms + 34T glue)
   miter: PASS
 ```
 
+
+- \`--emit-atom NAME\` 把本次生成的行为级模块（不是映射后网表）随 JSON 输出，下游用 \`--atoms -\` 从 stdin 读入，shell 管道直接串联：
+
+  \`\`\`bash
+  ./build/dcstudy multi synth --spec specs/encoder42.json --emit-atom enc42 --json \
+    | ./build/dcstudy multi synth --rtl top.v --atoms - --spec top.json --out out/chain
+  \`\`\`
+
+  下游把读到的模块重新映射并测成本；\`--atoms -\` 只接受含 \`atom_verilog\` 的 JSON。8-3 优先编码器用两段管道拼出来仍是 66T（32T 原子 + 34T 胶合），miter PASS。
+
 注意：**组合关系（实例化哪些原子、怎么连）仍由 RTL 表达**，工具优化的是胶合逻辑、映射和成本核算；自动搜索「用哪些原子、怎么分解」是下一步（16-4 还需要 16 输入的真值表/参考，超过当前 12 的上限）。
 
 #### 严格最优：单级静态复杂 CMOS
