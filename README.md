@@ -275,7 +275,7 @@ optimum: 6T  designs=...
 共享输入反相器、fanout 和中间逻辑，再把每个标准单元展开成 CDL，
 用现有的 `analyze_switch` 对**所有输出**做全输入 switch-level 证明。两个输出写成同一个表达式时 Yosys 会把它们合成一个 bit,展开时按别名处理:导出的 `.SUBCKT` 保留两个端口,并写 `*.ALIAS Y1 Y0`;仓库自己的 `cdl solve` 会读取该行,回读时两个输出都有真值表。同一个 net 在 SPICE 里无法写成两个端口,因此导出文件额外用 `V__alias_Y1 Y1 Y0 0` 这个 0V 源把两个端口短接,ngspice 等模拟器也能看到正确连接(`*.ALIAS` 是本仓库解析器用的注释)。
 
-`specs/decoder38.json`(仓库自带,可直接复现)：
+`tests/verify/instances/decoder38.json`(仓库自带,可直接复现)：
 
 ```json
 {
@@ -295,7 +295,7 @@ optimum: 6T  designs=...
 ```
 
 ```bash
-./build/dcstudy multi synth --spec specs/decoder38.json \
+./build/dcstudy multi synth --spec tests/verify/instances/decoder38.json \
   --out out/decoder38 --png --json
 ```
 
@@ -320,7 +320,7 @@ multi-output static CMOS: decoder3to8
 
 讲义里的 4-2 编码器只在输入为独热码时才有定义，其他输入行是 X（任意值）。spec 的每个输出可以带一个 `"any"` 掩码：宽度等于真值表（`2^n` 行），`1` 表示该行**任意 0/1 都可以**。格式和 `--tt` 一样，支持 `0/1` 串或 `0x` 十六进制。
 
-`specs/encoder42.json`（4 个输入 `A3..A0`，A3 为 MSB；独热行是 1、2、4、8）：
+`tests/verify/instances/encoder42.json`（4 个输入 `A3..A0`，A3 为 MSB；独热行是 1、2、4、8）：
 
 ```json
 {
@@ -334,9 +334,9 @@ multi-output static CMOS: decoder3to8
 ```
 
 ```bash
-./build/dcstudy multi exact --spec specs/encoder42.json --json
-./build/dcstudy multi synth --spec specs/encoder42.json --json
-./build/dcstudy multi path  --spec specs/encoder42.json --max-cost 64 --json
+./build/dcstudy multi exact --spec tests/verify/instances/encoder42.json --json
+./build/dcstudy multi synth --spec tests/verify/instances/encoder42.json --json
+./build/dcstudy multi path  --spec tests/verify/instances/encoder42.json --max-cost 64 --json
 ```
 
 | 命令 | 结果 | 说明 |
@@ -380,7 +380,7 @@ multi synth (RTL + atoms): 66T (32T atoms + 34T glue)
 - `--emit-atom NAME` 把本次生成的行为级模块（不是映射后网表）随 JSON 输出，下游用 `--atoms -` 从 stdin 读入，shell 管道直接串联：
 
   ```bash
-  ./build/dcstudy multi synth --spec specs/encoder42.json --emit-atom enc42 --json \
+  ./build/dcstudy multi synth --spec tests/verify/instances/encoder42.json --emit-atom enc42 --json \
     | ./build/dcstudy multi synth --rtl top.v --atoms - --spec top.json --out out/chain
   ```
 
@@ -426,21 +426,21 @@ optimal: 54T
 
 `--out` 会写出 `flattened.cdl` 和 `exact.json`。
 
-#### 例：16 进制七段数码管（`specs/hex7seg.json`）
+#### 例：16 进制七段数码管（`tests/verify/instances/hex7seg.json`）
 
 4 位输入 `A,B,C,D`(A 为 MSB),7 个高有效段输出 `seg_a..seg_g`。显示字形为 `0-9,A,b,C,d,E,F`。
 
 ```bash
 # 静态多级标准单元:44 个 2 输入单元,192T,逐输出 switch-level PASS
-./build/dcstudy multi synth --spec specs/hex7seg.json \
+./build/dcstudy multi synth --spec tests/verify/instances/hex7seg.json \
   --out /tmp/hex7seg-static --max-fanin 2 --png --json
 
 # 不限制 fan-in:31 个单元,162T(用到 AOI21/OAI221/NAND4 等复杂门)
-./build/dcstudy multi synth --spec specs/hex7seg.json \
+./build/dcstudy multi synth --spec tests/verify/instances/hex7seg.json \
   --out /tmp/hex7seg-default --json
 
 # 单级复杂 CMOS(定制门模型):共享 4 个输入反相器,180T,模型内 proof
-./build/dcstudy multi exact --spec specs/hex7seg.json \
+./build/dcstudy multi exact --spec tests/verify/instances/hex7seg.json \
   --out /tmp/hex7seg-custom --json
 ```
 
@@ -576,7 +576,7 @@ verilator --binary --timing -Wno-fatal -Wno-WIDTH -Wno-UNUSEDSIGNAL \
 │   ├── integration.sh    黑盒 CLI / 形式工具集成测试
 │   └── verify/           验证目录: instances(实例) / formal(核心/可选)
 ├── docs/                 四本 HTML 讲义(见上)
-├── specs/                可复现的 multi-output JSON spec(decoder38、hex7seg、encoder42)
+
 ├── verilog/              Verilator 手工回归(含负对照)
 ├── rtl/                  讲义实验用 RTL
 └── tools/pdk/            yosys-sta 的 PDK 描述文件

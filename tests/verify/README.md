@@ -14,7 +14,7 @@
 tests/verify/
   lib.sh                # BIN/fail/pass/need
   run.sh                # instances | formal | optional | all
-  instances/            # 实例验证（已知答案）
+  instances/            # 实例验证（已知答案），spec 与 RTL 夹具都在这里
     decoder38.sh        # 3-8 译码器：54T
     encoder42.sh        # 4-2 编码器（any）：exact 8T / synth 8T / path 7T
     hex7seg.sh          # 4-7 段十六进制数码管：31 cells/162T，exact 180T
@@ -22,6 +22,7 @@ tests/verify/
     nor2.sh             # NOR2：可直接综合（单级互补门）4T
     xor2.sh / xnor2.sh  # XOR/XNOR：不可直接综合，自动设计仍给出 12T/14T/12T
     prio16.sh           # 16-4 优先编码器：4x pe42 + 胶合 = 172T，结构 miter
+    *.json              # 各实例的 spec：decoder38/encoder42/hex7seg/pe42/nor2/xor2/xnor2
     rtl/                # 该实例的 RTL 夹具（pe42/top16/gold16）
   formal/
     core.sh             # 单元/性质测试（ctest）

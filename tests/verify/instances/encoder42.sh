@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Instance: 4-to-2 encoder with don't-care inputs ("any" mask).
 . "$(dirname "$0")/../lib.sh"
-E=$("$BIN" multi exact --spec "$ROOT/specs/encoder42.json" --json)
-S=$("$BIN" multi synth --spec "$ROOT/specs/encoder42.json" --json)
-P=$("$BIN" multi path  --spec "$ROOT/specs/encoder42.json" --json)
+E=$("$BIN" multi exact --spec "$(dirname "$0")/encoder42.json" --json)
+S=$("$BIN" multi synth --spec "$(dirname "$0")/encoder42.json" --json)
+P=$("$BIN" multi path  --spec "$(dirname "$0")/encoder42.json" --json)
 [ "$(jq -r .verified <<<"$E")" = "true" ] || fail "encoder42 exact verify"
 [ "$(jq -r .total <<<"$E")" = "8" ] || fail "encoder42 exact cost"
 [ "$(jq -r .verified <<<"$S")" = "true" ] || fail "encoder42 synth verify"

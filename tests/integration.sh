@@ -7,6 +7,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="${BIN:-$ROOT/build/dcstudy}"
 CDL="${NANGATE45_CDL:-$HOME/yosys-sta/pdk/nangate45/cdl/NangateOpenCellLibrary.cdl}"
 TMP="$(mktemp -d)"
+SPEC="$ROOT/tests/verify/instances"
 trap 'rm -rf "$TMP"' EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -152,13 +153,13 @@ pass "static CMOS constraint"
 
 # Don't-care ("any") outputs: the 4-to-2 encoder only cares about one-hot
 # inputs, so the PDNs can be chosen as A0|A2 / A0|A1 (8T, no inverters).
-"$BIN" multi exact --spec "$ROOT/specs/encoder42.json" --json > "$TMP/encoder.exact" || fail "encoder exact"
+"$BIN" multi exact --spec "$SPEC/encoder42.json" --json > "$TMP/encoder.exact" || fail "encoder exact"
 [ "$(jq -r .verified "$TMP/encoder.exact")" = "true" ] || fail "encoder verify"
 [ "$(jq -r .total "$TMP/encoder.exact")" = "8" ] || fail "encoder don't-care 8T"
 [ "$(jq -r '.any.Y0 | length' "$TMP/encoder.exact")" = "16" ] || fail "encoder any echo"
 # Tri-state has no "any 0/1" semantics: Z is not an extension.
 rc=0
-"$BIN" multi path --spec "$ROOT/specs/encoder42.json" --tri-state --json >/dev/null 2>&1 || rc=$?
+"$BIN" multi path --spec "$SPEC/encoder42.json" --tri-state --json >/dev/null 2>&1 || rc=$?
 [ "$rc" = "1" ] || fail "tri-state accepted don't-cares"
 cat > "$TMP/badany.json" <<'JSON'
 {"name":"badany","inputs":["A","B"],"outputs":[{"name":"Y","expr":"A","any":"101"}]}
@@ -186,7 +187,7 @@ pass "don't-care outputs (encoder)"
 
 # General multi-output synthesis: the 3-to-8 decoder is only a spec file.
 if [ -f "$CDL" ] && command -v yosys >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
-  "$BIN" multi synth --spec "$ROOT/specs/decoder38.json" --out "$TMP/decoder38"     --json > "$TMP/decoder38.out" || fail "multi-output decoder"
+  "$BIN" multi synth --spec "$SPEC/decoder38.json" --out "$TMP/decoder38"     --json > "$TMP/decoder38.out" || fail "multi-output decoder"
   [ "$(jq -r .verified "$TMP/decoder38.out")" = "true" ] || fail "multi-output verify"
   [ "$(jq -r .total "$TMP/decoder38.out")" = "54" ] || fail "decoder 54T"
   # Every output, so a rotated or shifted decoder cannot pass.
@@ -195,7 +196,7 @@ if [ -f "$CDL" ] && command -v yosys >/dev/null 2>&1 && command -v node >/dev/nu
     [ "$(jq -r ".truths.Y$i" "$TMP/decoder38.out")" = "$want" ] || fail "decoder Y$i truth"
     i=$((i + 1))
   done
-  "$BIN" multi exact --spec "$ROOT/specs/decoder38.json" --json > "$TMP/decoder38.exact"     || fail "multi-output exact"
+  "$BIN" multi exact --spec "$SPEC/decoder38.json" --json > "$TMP/decoder38.exact"     || fail "multi-output exact"
   [ "$(jq -r .optimal "$TMP/decoder38.exact")" = "54" ] || fail "decoder exact 54T"
   [ "$(jq -r .proof "$TMP/decoder38.exact")" = "true" ] || fail "decoder optimality proof"
   # Every output is one cube, so the exact model takes the analytic shortcut.
@@ -215,7 +216,7 @@ if [ -f "$CDL" ] && command -v yosys >/dev/null 2>&1 && command -v node >/dev/nu
   ]
 }
 JSON
-  "$BIN" multi path --spec "$ROOT/specs/decoder38.json" --tri-state --max-cost 40 --json     > "$TMP/decoder38.tri" || fail "tri-state 3-8 decoder"
+  "$BIN" multi path --spec "$SPEC/decoder38.json" --tri-state --max-cost 40 --json     > "$TMP/decoder38.tri" || fail "tri-state 3-8 decoder"
   [ "$(jq -r .total "$TMP/decoder38.tri")" = "16" ] || fail "tri 3-8 decoder 16T"
   [ "$(jq -r .verified "$TMP/decoder38.tri")" = "true" ] || fail "tri 3-8 verification"
   "$BIN" multi path --spec "$TMP/demux4.json" --tri-state --max-cost 40 --json     > "$TMP/demux4.tri" || fail "tri-state 1-to-4 demux"
@@ -227,7 +228,7 @@ JSON
   [ "$(jq -r '.graph.sources | length' "$TMP/demux4.static")" = "2" ] || fail "1-to-4 dual rails"
   [ "$(jq -r .mode "$TMP/demux4.static")" = "dual-rail" ] || fail "1-to-4 dual-rail mode"
   # The path search honours --max-cost; the static fallback must too.
-  if "$BIN" multi path --spec "$ROOT/specs/decoder38.json" --max-cost 1 --json \
+  if "$BIN" multi path --spec "$SPEC/decoder38.json" --max-cost 1 --json \
        > "$TMP/path-budget.json"; then
     fail "multi path ignored --max-cost"
   fi
@@ -241,9 +242,9 @@ JSON
   "$BIN" multi synth --spec "$TMP/alias.json" --out "$TMP/alias-out" --json > "$TMP/alias.out" || fail "aliased outputs"
   [ "$(jq -r .verified "$TMP/alias.out")" = "true" ] || fail "aliased verify"
   # Don't-care specs go through mapping and path search too.
-  "$BIN" multi synth --spec "$ROOT/specs/encoder42.json" --json > "$TMP/encoder.synth" || fail "encoder synth"
+  "$BIN" multi synth --spec "$SPEC/encoder42.json" --json > "$TMP/encoder.synth" || fail "encoder synth"
   [ "$(jq -r .verified "$TMP/encoder.synth")" = "true" ] || fail "encoder synth verify"
-  "$BIN" multi path --spec "$ROOT/specs/encoder42.json" --max-cost 64 --json > "$TMP/encoder.path" || fail "encoder path"
+  "$BIN" multi path --spec "$SPEC/encoder42.json" --max-cost 64 --json > "$TMP/encoder.path" || fail "encoder path"
   [ "$(jq -r .verified "$TMP/encoder.path")" = "true" ] || fail "encoder path verify"
   # Hierarchical RTL with a user atom: the 4-2 priority encoder stays a
   # blackbox, the glue is mapped to standard cells, and the composition is
@@ -341,7 +342,7 @@ VERILOG
   # A comment alone does not connect the second port in a SPICE simulator.
   grep -q "V__alias_Y1 Y1 Y0 0" "$TMP/alias-out/flattened.cdl" || fail "alias short missing"
   [ "$(jq -r '[.graph.nets[] | select(startswith("wire:"))] | length' "$TMP/demux4.static")" = "0" ] || fail "demux still has wire connectors"
-  "$BIN" multi path --spec "$ROOT/specs/decoder38.json" --max-cost 54 --json     > "$TMP/decoder38.static" || fail "3-8 dual-rail path"
+  "$BIN" multi path --spec "$SPEC/decoder38.json" --max-cost 54 --json     > "$TMP/decoder38.static" || fail "3-8 dual-rail path"
   [ "$(jq -r .total "$TMP/decoder38.static")" = "44" ] || fail "3-8 dual-rail 44T"
   [ "$(jq -r .proof_scope "$TMP/decoder38.static")" = "retained candidate path set" ] || fail "path proof scope"
   # The old emitter tied outputs together with zero-cost "wire" TGH edges.
@@ -354,7 +355,7 @@ VERILOG
   # Shipped spec: 16-hex seven-segment display (A is MSB).  The fan-in
   # contract is enforced by the tool itself -- a mapped cell with more inputs
   # than --max-fanin is a hard error -- so a passing run pins it.
-  "$BIN" multi synth --spec "$ROOT/specs/hex7seg.json" --max-fanin 2 --json \
+  "$BIN" multi synth --spec "$SPEC/hex7seg.json" --max-fanin 2 --json \
     > "$TMP/hex7seg.fanin2" || fail "hex7seg --max-fanin 2"
   [ "$(jq -r .verified "$TMP/hex7seg.fanin2")" = "true" ] || fail "hex7seg 2-input verify"
   # ABC's cell count varies between Yosys/ABC releases, so assert the fan-in
@@ -362,12 +363,12 @@ VERILOG
   # mapping.  This machine: 44 cells / 192T.
   total=$(jq -r .total "$TMP/hex7seg.fanin2")
   [ "$total" -le 230 ] || fail "hex7seg 2-input over budget ($total T)"
-  "$BIN" multi synth --spec "$ROOT/specs/hex7seg.json" --json \
+  "$BIN" multi synth --spec "$SPEC/hex7seg.json" --json \
     > "$TMP/hex7seg.default" || fail "hex7seg default fan-in"
   [ "$(jq -r .verified "$TMP/hex7seg.default")" = "true" ] || fail "hex7seg default verify"
   total=$(jq -r .total "$TMP/hex7seg.default")
   [ "$total" -le 200 ] || fail "hex7seg default over budget ($total T)"
-  "$BIN" multi exact --spec "$ROOT/specs/hex7seg.json" --json \
+  "$BIN" multi exact --spec "$SPEC/hex7seg.json" --json \
     > "$TMP/hex7seg.exact" || fail "hex7seg exact"
   [ "$(jq -r .optimal "$TMP/hex7seg.exact")" = "180" ] || fail "hex7seg exact 180T"
   [ "$(jq -r .proof "$TMP/hex7seg.exact")" = "true" ] || fail "hex7seg optimality proof"
@@ -388,10 +389,10 @@ VERILOG
 
   # The cap is inherited by yosys and dcstudy-z3: 1 GiB is plenty for this
   # spec, 64 MiB is not, and the failure has to stay a normal JSON error.
-  "$BIN" multi exact --spec "$ROOT/specs/hex7seg.json" --mem-limit 1024 --json \
+  "$BIN" multi exact --spec "$SPEC/hex7seg.json" --mem-limit 1024 --json \
     > "$TMP/mem-ok.json" || fail "1 GiB cap fits multi exact"
   [ "$(jq -r .verified "$TMP/mem-ok.json")" = "true" ] || fail "1 GiB cap verify"
-  if "$BIN" multi synth --spec "$ROOT/specs/hex7seg.json" --mem-limit 64 --json \
+  if "$BIN" multi synth --spec "$SPEC/hex7seg.json" --mem-limit 64 --json \
        > "$TMP/mem-fail.json" 2>/dev/null; then
     fail "64 MB cap should not fit multi synth"
   fi
