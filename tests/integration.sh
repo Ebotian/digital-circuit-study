@@ -172,6 +172,16 @@ JSON
 rc=0
 "$BIN" multi exact --spec "$TMP/allany.json" --json >/dev/null 2>&1 || rc=$?
 [ "$rc" = "2" ] || fail "all-don't-care output accepted"
+# Only "A=0 => Y=1" is required; the 2T inverter is a valid extension.
+cat > "$TMP/onlyhigh.json" <<'JSON'
+{"name":"onlyhigh","inputs":["A"],"outputs":[{"name":"Y","expr":"~A","any":"01"}]}
+JSON
+[ "$("$BIN" multi exact --spec "$TMP/onlyhigh.json" --json | jq -r .total)" = "2" ] || fail "only-high constraint"
+# Free rows must not leak the expression's arbitrary values into the cost.
+cat > "$TMP/free.json" <<'JSON'
+{"name":"free","inputs":["A","B"],"outputs":[{"name":"Y","expr":"A^B","any":"1011"}]}
+JSON
+[ "$("$BIN" multi exact --spec "$TMP/free.json" --json | jq -r .total)" = "2" ] || fail "free-row completion"
 pass "don't-care outputs (encoder)"
 
 # General multi-output synthesis: the 3-to-8 decoder is only a spec file.
@@ -235,6 +245,9 @@ JSON
   [ "$(jq -r .verified "$TMP/encoder.synth")" = "true" ] || fail "encoder synth verify"
   "$BIN" multi path --spec "$ROOT/specs/encoder42.json" --max-cost 64 --json > "$TMP/encoder.path" || fail "encoder path"
   [ "$(jq -r .verified "$TMP/encoder.path")" = "true" ] || fail "encoder path verify"
+  # Same free-row spec through the mapper and the path search: 2T as well.
+  [ "$("$BIN" multi synth --spec "$TMP/free.json" --json | jq -r .total)" = "2" ] || fail "free-row synth"
+  [ "$("$BIN" multi path --spec "$TMP/free.json" --max-cost 64 --json | jq -r .total)" = "2" ] || fail "free-row path"
   [ "$(jq -r '.truths.Y0' "$TMP/alias.out")" = "1110" ] || fail "aliased Y0"
   [ "$(jq -r '.truths.Y1' "$TMP/alias.out")" = "1110" ] || fail "aliased Y1"
   # The exported CDL must keep both ports and read back with both aliases.

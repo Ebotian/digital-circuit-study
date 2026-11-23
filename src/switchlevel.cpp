@@ -340,7 +340,9 @@ SwitchAnalysis analyze_switch(const Subckt& cell,
         // contention can be found with one query instead of enumerating.
         const FixedPoint& fp = fps[minterms[j]];
         std::vector<std::string> f0, f1;
-        if (fp.invariant_ok && !fp.conflict) {
+        // Values forced through an input (not a rail) make invariant_ok
+        // false, but they are still forced; only a conflict is unusable.
+        if (!fp.conflict) {
           for (std::size_t v = 0; v < fp.f0.size(); ++v) {
             if (fp.f0[v]) f0.push_back(ni.names[v]);
             if (fp.f1[v]) f1.push_back(ni.names[v]);

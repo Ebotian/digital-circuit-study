@@ -98,6 +98,54 @@ std::string cdl_from_subckt(const Subckt& c) {
   return out;
 }
 
+// Enumerate every non-empty cube over the available literals that is
+// contained in `allowed`; fn(cube) is called once per distinct cube.
+template <class Fn>
+void for_each_allowed_cube(const Bits& allowed, std::size_t n,
+                           std::uint64_t neg_allowed, Fn&& fn) {
+  std::uint64_t total = 1;
+  for (std::size_t i = 0; i < n; ++i) total *= 3;
+  std::set<std::pair<std::uint64_t, std::uint64_t>> seen;
+  for (std::uint64_t code = 0; code < total; ++code) {
+    std::uint64_t care = 0, value = 0, x = code;
+    bool valid = true;
+    for (std::size_t i = 0; i < n; ++i) {
+      const int d = static_cast<int>(x % 3);
+      x /= 3;
+      const std::uint64_t bit = std::uint64_t{1} << (n - 1 - i);
+      if (d == 0) continue;
+      if (d == 2 && !((neg_allowed >> i) & 1U)) {
+        valid = false;
+        break;
+      }
+      care |= bit;
+      if (d == 1) value |= bit;
+    }
+    if (!valid || care == 0) continue;
+    if (!seen.emplace(care, value).second) continue;
+    Cube c;
+    c.care = care;
+    c.value = value;
+    c.cover = cover_of(care, value, n);
+    if (!c.cover.subset_of(allowed)) continue;
+    fn(c);
+  }
+}
+
+// Minimum-literal cube inside `allowed`; `care == 0` when there is none.
+Cube cheapest_allowed_cube(const Bits& allowed, std::size_t n,
+                           std::uint64_t neg_allowed) {
+  Cube best;
+  int best_lits = std::numeric_limits<int>::max();
+  for_each_allowed_cube(allowed, n, neg_allowed, [&](const Cube& c) {
+    if (c.literals() < best_lits) {
+      best_lits = c.literals();
+      best = c;
+    }
+  });
+  return best;
+}
+
 }  // namespace
 
 bool exact_min_dnf_literals(const Bits& onset, std::size_t n,
@@ -121,37 +169,12 @@ bool exact_min_dnf_literals(const Bits& onset, std::size_t n,
     return true;
   }
 
-  // Enumerate every cube over the available literals.  A variable can be
-  // absent, positive, or (if neg_allowed) negative.
+  // Enumerate every cube over the available literals that lies inside the
+  // allowed rows and touches the must-on set.
   std::vector<Cube> cubes;
-  std::set<std::pair<std::uint64_t, std::uint64_t>> seen;
-  std::uint64_t total = 1;
-  for (std::size_t i = 0; i < n; ++i) total *= 3;
-  for (std::uint64_t code = 0; code < total; ++code) {
-    std::uint64_t care = 0, value = 0, x = code;
-    bool valid = true;
-    for (std::size_t i = 0; i < n; ++i) {
-      const int d = static_cast<int>(x % 3);
-      x /= 3;
-      const std::uint64_t bit = std::uint64_t{1} << (n - 1 - i);
-      if (d == 0) continue;
-      if (d == 2 && !((neg_allowed >> i) & 1U)) {
-        valid = false;
-        break;
-      }
-      care |= bit;
-      if (d == 1) value |= bit;
-    }
-    if (!valid || care == 0) continue;
-    if (!seen.emplace(care, value).second) continue;
-    Cube c;
-    c.care = care;
-    c.value = value;
-    c.cover = cover_of(care, value, n);
-    if (!c.cover.subset_of(allowed)) continue;
-    if (!c.cover.intersects(onset)) continue;
-    cubes.push_back(std::move(c));
-  }
+  for_each_allowed_cube(allowed, n, neg_allowed, [&](const Cube& c) {
+    if (c.cover.intersects(onset)) cubes.push_back(c);
+  });
   if (cubes.empty()) return false;
 
   CubeSearch cs(cubes, onset);
@@ -199,6 +222,14 @@ BoolFunc complete_with_cheapest_gate(const BoolFunc& f, const Bits& any) {
   for (std::uint64_t mask = 0; mask < masks; ++mask) {
     Sop sop;
     if (!exact_min_dnf_literals(onset, n, mask, sop, &any)) continue;
+    if (sop.terms.empty()) {
+      // A constant-0 PDN cannot be built from transistors.  Any cube inside
+      // the don't-care rows is a valid extension and keeps the gate real.
+      const Cube filler = cheapest_allowed_cube(onset | any, n, mask);
+      if (filler.care == 0) continue;
+      sop.terms.push_back(filler);
+      sop.literals += filler.literals();
+    }
     const int cost =
         2 * sop.literals +
         2 * static_cast<int>(__builtin_popcountll(mask));
@@ -312,8 +343,21 @@ StaticExactResult synthesize_static_exact_multi(const MultiProblem& p) {
                      if (sop.terms.empty() ||
                          (sop.terms.size() == 1 &&
                           sop.terms[0].care == 0)) {
-                       // Constant outputs need an ideal rail tie; the current
-                       // Subckt model only has transistor devices.
+                       // Constant outputs need an ideal rail tie; the Subckt
+                       // model only has transistors.  If there are don't-care
+                       // rows we can still pick a real cube inside them.
+                       if (!dc.none()) {
+                         const Cube filler =
+                             cheapest_allowed_cube(onset | dc, n, mask);
+                         if (filler.care != 0) {
+                           sop.terms.push_back(filler);
+                           sop.literals += filler.literals();
+                         }
+                       }
+                     }
+                     if (sop.terms.empty() ||
+                         (sop.terms.size() == 1 &&
+                          sop.terms[0].care == 0)) {
                        feasible = false;
                        break;
                      }

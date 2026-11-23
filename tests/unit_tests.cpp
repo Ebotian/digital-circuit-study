@@ -286,6 +286,82 @@ TEST_CASE("don't-care rows drive exact synthesis and verification") {
                                 y0.func.truth_string(), any));
 }
 
+TEST_CASE("don't-care completion does not depend on arbitrary values") {
+  // Only AB=01 is constrained (Y=1); the other three rows are free.  Both
+  // expressions must complete to the same 2T gate (a single literal's PDN),
+  // not fall back to whatever the expression happens to compute on free rows.
+  const std::vector<std::string> vars{"A", "B"};
+  Bits any(4);
+  any.set(0);
+  any.set(2);
+  any.set(3);  // "1011": only row 1 is a care row
+  const FuncSpec x = spec_from_expr("A^B", vars);
+  const FuncSpec notA = spec_from_expr("~A", vars);
+  MultiProblem px;
+  px.vars = vars;
+  px.names = {"Y"};
+  px.outputs = {{x.func, any}};
+  MultiProblem pn;
+  pn.vars = vars;
+  pn.names = {"Y"};
+  pn.outputs = {{notA.func, any}};
+  const auto rx = synthesize_static_exact_multi(px);
+  const auto rn = synthesize_static_exact_multi(pn);
+  REQUIRE(rx.ok);
+  REQUIRE(rn.ok);
+  REQUIRE(rx.total == 2);
+  REQUIRE(rn.total == 2);
+  REQUIRE(rx.truths[0] == rn.truths[0]);
+}
+
+TEST_CASE("only-high don't-care constraint keeps the inverter realizable") {
+  // Y=~A with only "A=0 => Y=1" required: A=1 is free, so the 2T inverter is
+  // a valid implementation.  The must-cover PDN set is empty; the search must
+  // pick a cube inside the don't-care rows instead of calling it constant.
+  const FuncSpec f = spec_from_expr("~A", {"A"});
+  Bits any(2);
+  any.set(1);  // row A=1 is free
+  MultiProblem p;
+  p.vars = {"A"};
+  p.names = {"Y"};
+  p.outputs = {{f.func, any}};
+  const auto r = synthesize_static_exact_multi(p);
+  REQUIRE(r.ok);
+  REQUIRE(r.verified);
+  REQUIRE(r.total == 2);
+  REQUIRE(r.inverter_cost == 0);
+}
+
+TEST_CASE("input-driven forcing still detects a contention") {
+  // A PMOS gated by A ties input B to Q, so at A=0 the fixed point forces Q
+  // through an input rather than a rail: invariant_ok is false, but the
+  // forcing data is still valid and must reach the solver.  Y's first row
+  // (A=0,B=1) is then a contention (floating F can pull it down while the
+  // pull-up is on), not a definite 1.
+  Subckt c;
+  c.name = "RACEQ";
+  c.ports = {"A", "B", "Y", "Q", "VDD", "VSS"};
+  c.pin_dir = {{"A", PinDir::Input},   {"B", PinDir::Input},
+               {"Y", PinDir::Output},  {"Q", PinDir::Output},
+               {"VDD", PinDir::Power}, {"VSS", PinDir::Ground}};
+  auto n = [](const std::string& name, const std::string& d,
+              const std::string& g, const std::string& s) {
+    return Device{name, d, g, s, "NMOS", false};
+  };
+  auto p = [](const std::string& name, const std::string& d,
+              const std::string& g, const std::string& s) {
+    return Device{name, d, g, s, "PMOS", true};
+  };
+  c.devices = {p("P1", "Y", "A", "VDD"), n("N1", "Y", "F", "VSS"),
+               n("N2", "F", "A", "VSS"), p("P2", "Q", "A", "B")};
+  const auto r = analyze_switch(c, {"A", "B"}, {"Y"}, true);
+  REQUIRE(r.rows.size() == 4);
+  REQUIRE(logic_symbol(r.rows[0].values[0]) == 'X');
+  REQUIRE(logic_symbol(r.rows[1].values[0]) == 'X');
+  REQUIRE(logic_symbol(r.rows[2].values[0]) == 'Z');
+  REQUIRE(logic_symbol(r.rows[3].values[0]) == 'Z');
+}
+
 TEST_CASE("floating gate on a channel terminal is still enumerated") {
   // M1 pulls Y up when A=0; M2 is gated by F; M3 can pull F low, but it is off
   // at A=0, so F floats there.  F=1 then fights the pull-up: the row is X, not
