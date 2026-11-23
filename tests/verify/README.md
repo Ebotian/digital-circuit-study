@@ -31,6 +31,7 @@ tests/verify/
 | 3-8 译码器 | spec | 逐输出开关级 miter | 54T，verified |
 | 4-2 编码器（any） | spec + any 掩码 | exact 的 dc 空间搜索 + 开关级 | 8T / 8T / 7T |
 | 1 位二选一选择器（mux2） | spec | exact / synth / path | 14T / 12T / 14T，verified |
+| 3 位四选一选择器（mux4_3bit） | RTL + 9× mux2 原子 + --ref | 结构 miter（2^14 全输入） | 9×12T = 108T，PASS |
 | 4-7 段译码器（hex7seg） | spec | synth（默认 / --max-fanin 2）+ exact | 31 cells/162T；44 cells/192T；180T |
 | 4-2 优先编码器 | spec | 逐输出开关级 miter | 16T，verified |
 | 16-4 优先编码器 | RTL + 原子 + --ref | 结构 miter（无真值表） | 172T = 4x16T + 108T，PASS |
