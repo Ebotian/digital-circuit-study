@@ -226,7 +226,8 @@ compose_from_library(const MultiProblem &spec,
     for (std::size_t m = 0; m < rows; ++m) {
       std::size_t idx = 0;
       for (std::size_t j = 0; j < ns; ++j)
-        idx = (idx << 1) | (*sigs[order.empty() ? j : order[j]])[m];
+        if ((*sigs[order.empty() ? j : order[j]])[m])
+          idx |= std::size_t{1} << j;
       if (seen[idx])
         continue;
       seen[idx] = true;
@@ -235,8 +236,10 @@ compose_from_library(const MultiProblem &spec,
     }
     MultiProblem h;
     h.title = "glue";
-    for (std::size_t j = 0; j < ns; ++j)
-      h.vars.push_back("s" + std::to_string(order.empty() ? j : order[j]));
+    for (std::size_t j = 0; j < ns; ++j) {
+      const std::size_t src = order.empty() ? (ns - 1 - j) : order[ns - 1 - j];
+      h.vars.push_back("s" + std::to_string(src));
+    }
     h.names = spec.names;
     for (std::size_t k = 0; k < spec.outputs.size(); ++k) {
       Bits bits(hrows);
