@@ -295,8 +295,8 @@ StaticExactResult synthesize_static_exact_multi(const MultiProblem &p) {
     return out;
   }
   const std::size_t n = vars.size();
-  if (n == 0 || n > 4) {
-    out.reason = "exact single-stage static CMOS supports 1..4 inputs";
+  if (n == 0 || n >= 63) {
+    out.reason = "exact single-stage static CMOS: 2^n rows are not addressable";
     return out;
   }
   for (const auto &f : funcs) {

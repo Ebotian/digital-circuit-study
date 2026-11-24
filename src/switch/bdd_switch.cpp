@@ -84,8 +84,8 @@ synthesize_bdd_switch_order(const BoolFunc &f,
                             const std::vector<int> &order) {
   BddSwitchDesign out;
   const std::size_t n = vars.size();
-  if (n == 0 || n > 4) {
-    out.reason = "BDD switch construction supports 1..4 inputs";
+  if (n == 0 || n >= 63) {
+    out.reason = "BDD switch construction: 2^n rows are not addressable";
     return out;
   }
   Bdd bdd;

@@ -271,8 +271,9 @@ std::string Branch::topo(const std::vector<std::string> &vars) const {
 
 std::vector<Branch> build_branches(const std::vector<std::string> &vars,
                                    const SpaceOptions &opt) {
-  if (vars.empty() || vars.size() > 4)
-    throw std::invalid_argument("pass-network space supports 1..4 variables");
+  if (vars.empty() || vars.size() >= 63)
+    throw std::invalid_argument(
+        "pass-network space: 2^n rows are not addressable");
   const Env e = make_env(vars);
   const std::uint32_t rows = std::uint32_t{1} << e.n;
   const auto chains = all_chains(e, opt.max_chain, opt.max_cost, opt.allow_tg);
@@ -282,6 +283,12 @@ std::vector<Branch> build_branches(const std::vector<std::string> &vars,
     sources.push_back(v);
     sources.push_back(v + "b");
   }
+  if (opt.max_ops != 0 && chains.size() * sources.size() > opt.max_ops)
+    throw std::runtime_error(
+        "branch space " + std::to_string(chains.size()) + " chains x " +
+        std::to_string(sources.size()) + " sources exceeds work budget " +
+        std::to_string(opt.max_ops) +
+        "; lower --max-chain/--max-cost or raise --max-ops");
 
   std::vector<Branch> out;
   out.reserve(chains.size() * sources.size());

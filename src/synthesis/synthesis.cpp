@@ -205,8 +205,8 @@ SynthesisResult synthesize_min(const std::vector<std::string> &vars,
                                const std::vector<int> &target,
                                const SpaceOptions &opt,
                                std::size_t max_solutions, bool canonical) {
-  if (vars.empty() || vars.size() > 4)
-    throw std::invalid_argument("synthesis supports 1..4 variables");
+  if (vars.empty() || vars.size() >= 63)
+    throw std::invalid_argument("synthesis: 2^n rows are not addressable");
   if (max_solutions == 0)
     throw std::invalid_argument("limit must be positive");
   const std::uint32_t rows = std::uint32_t{1} << vars.size();

@@ -190,8 +190,8 @@ synthesize_path_variables(const BoolFunc &f,
                           const std::vector<std::string> &vars,
                           const SpaceOptions &opt, bool tri_state) {
   PathSynthesisResult out;
-  if (vars.empty() || vars.size() > 4) {
-    out.reason = "path synthesis supports 1..4 inputs";
+  if (vars.empty() || vars.size() >= 63) {
+    out.reason = "path synthesis: 2^n rows are not addressable";
     return out;
   }
   std::vector<int> target;

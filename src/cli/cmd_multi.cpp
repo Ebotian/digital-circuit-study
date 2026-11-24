@@ -152,6 +152,7 @@ int cmd_multi_path(const Args &a, const MultiProblem &spec) {
   opt.max_cost = std::stoi(a.get("max-cost", "64"));
   opt.max_chain = std::stoi(a.get("max-chain", "4"));
   opt.allow_tg = !a.is("no-tg");
+  opt.max_ops = std::stoull(a.get("max-ops", "20000000"));
   const MultiPathSynthesisResult r =
       synthesize_path_variables_multi(spec, opt, a.is("tri-state"));
   const bool json = a.is("json");

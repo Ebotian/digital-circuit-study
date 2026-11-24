@@ -311,9 +311,8 @@ MultiPathSynthesisResult synthesize_dual_rail_multi(
   MultiPathSynthesisResult out;
   out.outputs = names;
   if (funcs.empty() || funcs.size() != names.size() || vars.empty() ||
-      vars.size() > 4) {
-    out.reason =
-        "dual-rail synthesis supports 1..4 inputs and matching outputs";
+      vars.size() >= 63) {
+    out.reason = "dual-rail synthesis: 2^n rows are not addressable";
     return out;
   }
 
@@ -335,6 +334,18 @@ MultiPathSynthesisResult synthesize_dual_rail_multi(
   // a filtered view; we never rebuild the chains inside the mask loop.
   const std::vector<Branch> universe = build_branches(vars, opt);
   const std::uint64_t masks = std::uint64_t{1} << vars.size();
+  if (opt.max_ops != 0) {
+    const std::uint64_t ops = masks * funcs.size() * universe.size();
+    if (ops > opt.max_ops) {
+      out.reason = "dual-rail work estimate " + std::to_string(ops) + " (2^" +
+                   std::to_string(vars.size()) + " masks x " +
+                   std::to_string(funcs.size()) + " outputs x " +
+                   std::to_string(universe.size()) +
+                   " branches) exceeds budget " + std::to_string(opt.max_ops) +
+                   "; raise --max-ops or lower --max-chain";
+      return out;
+    }
+  }
 
   struct Best {
     bool ok = false;
@@ -612,9 +623,8 @@ synthesize_path_variables_multi(const MultiProblem &p, const SpaceOptions &opt,
                                 bool tri_state) {
   MultiPathSynthesisResult out;
   out.outputs = p.names;
-  if (p.size() == 0 || p.vars.empty() || p.vars.size() > 4) {
-    out.reason =
-        "multi path synthesis supports 1..4 inputs and matching outputs";
+  if (p.size() == 0 || p.vars.empty() || p.vars.size() >= 63) {
+    out.reason = "multi path synthesis: 2^n rows are not addressable";
     return out;
   }
   if (p.has_dont_cares() && tri_state) {

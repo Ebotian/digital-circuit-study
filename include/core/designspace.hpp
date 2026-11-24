@@ -43,6 +43,9 @@ struct SpaceOptions {
   int max_chain = 4;
   int max_cost = 8;
   bool allow_tg = true;
+  // Work budget for search-based flows (0 = unlimited).  This bounds
+  // 2^n inverter masks x outputs x chain candidates, not the input count.
+  std::size_t max_ops = 20000000;
 };
 
 std::vector<Branch> build_branches(const std::vector<std::string> &vars,
