@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -449,6 +450,64 @@ compose_from_library(const MultiProblem &spec,
       for (const auto &o : cands[ci].outs)
         sigs.push_back(&o);
     cur = 0;
+  }
+
+  if (!partition_best) {
+    struct State {
+      std::vector<int> chosen;
+      long long conf = 0;
+      int cost = 0;
+    };
+    std::vector<State> beam{
+        {},
+    };
+    beam[0].conf = conflicts({});
+    const int width =
+        std::min(16, std::max(4, static_cast<int>(std::sqrt(cands.size()))));
+    std::optional<State> best_state;
+    for (int depth = 0; depth < 6 && !beam.empty(); ++depth) {
+      std::vector<State> next;
+      std::set<std::string> seen;
+      for (const auto &st : beam) {
+        for (std::size_t ci = 0; ci < cands.size(); ++ci) {
+          if (std::find(st.chosen.begin(), st.chosen.end(),
+                        static_cast<int>(ci)) != st.chosen.end())
+            continue;
+          State ns = st;
+          ns.chosen.push_back(static_cast<int>(ci));
+          ns.cost += atom_cost[cands[ci].atom];
+          std::vector<const std::vector<unsigned char> *> sv;
+          for (int x : ns.chosen)
+            for (const auto &o : cands[x].outs)
+              sv.push_back(&o);
+          ns.conf = conflicts(sv);
+          if (ns.conf == 0) {
+            if (!best_state || ns.cost < best_state->cost)
+              best_state = ns;
+            continue;
+          }
+          std::string key;
+          for (int x : ns.chosen)
+            key += std::to_string(x) + ",";
+          if (!seen.insert(key).second)
+            continue;
+          next.push_back(std::move(ns));
+        }
+      }
+      std::sort(next.begin(), next.end(), [](const State &a, const State &b) {
+        return a.conf != b.conf ? a.conf < b.conf : a.cost < b.cost;
+      });
+      if (static_cast<int>(next.size()) > width)
+        next.resize(width);
+      beam = std::move(next);
+    }
+    if (best_state) {
+      chosen = best_state->chosen;
+      for (int ci : chosen)
+        for (const auto &o : cands[ci].outs)
+          sigs.push_back(&o);
+      cur = 0;
+    }
   }
   while (cur > 0 && sigs.size() < 12) {
     int best = -1;
