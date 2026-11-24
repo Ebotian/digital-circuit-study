@@ -302,6 +302,14 @@ function renderGateLevelSvg(d: Design, vars: string[], title: string): string {
   const cells = d.cells || [];
   if (cells.length === 0) throw new Error("multi-stage design has no cells");
   const outs = d.outputs && d.outputs.length ? d.outputs : ["Y"];
+  const cellLabel = (type: string) => {
+    const map: Record<string, string> = {
+      "$or": "OR", "$and": "AND", "$not": "INV", "$mux": "MUX2",
+      "$xor": "XOR", "$xnor": "XNOR", "$nand": "NAND", "$nor": "NOR",
+      "$reduce_or": "OR-RED", "$reduce_and": "AND-RED",
+    };
+    return map[type] || type;
+  };
   const outPort = (c: { type: string; ports: Record<string, string> }) => {
     for (const p of ["ZN", "Z", "Q", "Y", "CO", "S"]) if (c.ports[p]) return p;
     const keys = Object.keys(c.ports);
@@ -438,6 +446,14 @@ function renderGateLevelSvgRails(d: Design, vars: string[], title: string): stri
   const cells = d.cells || [];
   if (cells.length === 0) return null;
   const outs = d.outputs && d.outputs.length ? d.outputs : ["Y"];
+  const cellLabel = (type: string) => {
+    const map: Record<string, string> = {
+      "$or": "OR", "$and": "AND", "$not": "INV", "$mux": "MUX2",
+      "$xor": "XOR", "$xnor": "XNOR", "$nand": "NAND", "$nor": "NOR",
+      "$reduce_or": "OR-RED", "$reduce_and": "AND-RED",
+    };
+    return map[type] || type;
+  };
   const outPort = (c: { type: string; ports: Record<string, string> }) => {
     for (const p of ["ZN", "Z", "Q", "Y", "CO", "S"]) if (c.ports[p]) return p;
     const keys = Object.keys(c.ports);
@@ -598,6 +614,14 @@ function renderGateLevelSvgLocalBus(d: Design, vars: string[], title: string): s
   const cells = d.cells || [];
   if (cells.length === 0) throw new Error("multi-stage design has no cells");
   const outs = d.outputs && d.outputs.length ? d.outputs : ["Y"];
+  const cellLabel = (type: string) => {
+    const map: Record<string, string> = {
+      "$or": "OR", "$and": "AND", "$not": "INV", "$mux": "MUX2",
+      "$xor": "XOR", "$xnor": "XNOR", "$nand": "NAND", "$nor": "NOR",
+      "$reduce_or": "OR-RED", "$reduce_and": "AND-RED",
+    };
+    return map[type] || type;
+  };
   const outPort = (c: { type: string; ports: Record<string, string> }) => {
     for (const p of ["ZN", "Z", "Q", "Y", "CO", "S"]) if (c.ports[p]) return p;
     const keys = Object.keys(c.ports);
@@ -904,6 +928,14 @@ function renderGateLevelSvgBus(d: Design, vars: string[], title: string): string
   const cells = d.cells || [];
   if (cells.length === 0) throw new Error("multi-stage design has no cells");
   const outs = d.outputs && d.outputs.length ? d.outputs : ["Y"];
+  const cellLabel = (type: string) => {
+    const map: Record<string, string> = {
+      "$or": "OR", "$and": "AND", "$not": "INV", "$mux": "MUX2",
+      "$xor": "XOR", "$xnor": "XNOR", "$nand": "NAND", "$nor": "NOR",
+      "$reduce_or": "OR-RED", "$reduce_and": "AND-RED",
+    };
+    return map[type] || type;
+  };
   const outPort = (c: { type: string; ports: Record<string, string> }) => {
     for (const p of ["ZN", "Z", "Q", "Y", "CO", "S"]) if (c.ports[p]) return p;
     const keys = Object.keys(c.ports);
@@ -1132,6 +1164,14 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
   const cells = d.cells || [];
   if (cells.length === 0) throw new Error("multi-stage design has no cells");
   const outs = d.outputs && d.outputs.length ? d.outputs : ["Y"];
+  const cellLabel = (type: string) => {
+    const map: Record<string, string> = {
+      "$or": "OR", "$and": "AND", "$not": "INV", "$mux": "MUX2",
+      "$xor": "XOR", "$xnor": "XNOR", "$nand": "NAND", "$nor": "NOR",
+      "$reduce_or": "OR-RED", "$reduce_and": "AND-RED",
+    };
+    return map[type] || type;
+  };
   const outPort = (c: { type: string; ports: Record<string, string> }) => {
     for (const p of ["ZN", "Z", "Q", "Y", "CO", "S"]) if (c.ports[p]) return p;
     const keys = Object.keys(c.ports);
@@ -1365,7 +1405,7 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
     const posi = pos.get(i)!;
     parts.push('<rect x="' + posi.x + '" y="' + posi.y + '" width="' + boxW +
       '" height="' + boxH + '" rx="7" class="box"/>');
-    parts.push(text(posi.x + boxW / 2, posi.y + 22, c.type, "small", "middle"));
+    parts.push(text(posi.x + boxW / 2, posi.y + 22, cellLabel(c.type), "small", "middle"));
     const ins = inputsOf(c);
     ins.forEach((p, j) => {
       const sy = posi.y + 10 + (boxH - 20) * (j + 1) / (ins.length + 1);

@@ -1,3 +1,4 @@
+#include "cli/cmd_render.hpp"
 #include "cli/cli_common.hpp"
 #include "cli/cli_includes.hpp"
 #include "cli/cmd_design.hpp"
