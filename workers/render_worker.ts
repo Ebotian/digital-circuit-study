@@ -1195,6 +1195,7 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
         .filter((p) => c.directions?.[p] === "input").sort();
     return Object.keys(c.ports).filter((p) => p !== outPort(c)).sort();
   };
+
   const producer = new Map<string, number>();
   cells.forEach((c, i) => {
     for (const p of outPorts(c)) if (c.ports[p]) producer.set(c.ports[p], i);
@@ -1209,23 +1210,34 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
       }
     }
   }
-  const levels = new Map<number, number[]>();
-  cells.forEach((_, i) => {
-    const list = levels.get(level[i]) || [];
-    list.push(i);
-    levels.set(level[i], list);
+
+  const boxW = 150;
+  const cellH = cells.map((c) => Math.max(56,
+    18 + Math.max(inputsOf(c).length, outPorts(c).length) * 15));
+  const gapX = 80;
+  const gapY = 46;
+  const cols = Math.max(3, Math.ceil(Math.sqrt(cells.length)));
+  const order = cells.map((_, i) => i).sort((a, b) =>
+    level[a] !== level[b] ? level[a] - level[b] : a - b);
+  const rows = Math.ceil(cells.length / cols);
+  const rowH: number[] = new Array(rows).fill(56);
+  order.forEach((cell, k) => {
+    const r = Math.floor(k / cols);
+    rowH[r] = Math.max(rowH[r], cellH[cell]);
   });
-  const maxLevel0 = Math.max(...level, 0);
-  cells.forEach((c, i) => {
-    if (outPorts(c).some((p) => outs.indexOf(c.ports[p]) >= 0))
-      level[i] = maxLevel0;
+  const rowY: number[] = [];
+  let cy = 120;
+  for (let r = 0; r < rows; r++) {
+    rowY[r] = cy;
+    cy += rowH[r] + gapY;
+  }
+  const pos = new Map<number, { x: number; y: number }>();
+  order.forEach((cell, k) => {
+    const r = Math.floor(k / cols);
+    pos.set(cell, { x: 70 + (k % cols) * (boxW + gapX), y: rowY[r] });
   });
-  const maxLevel = Math.max(...level, 0);
-  const boxW = 130;
-  const maxPins = Math.max(1, ...cells.map((c) =>
-    Math.max(inputsOf(c).length, outPorts(c).length)));
-  const boxH = Math.max(52, 18 + maxPins * 15);
-  const rowStep = boxH + 38;
+  const width = Math.max(760, 70 + cols * (boxW + gapX) + 50);
+  const height = Math.max(360, cy + 40);
 
   const netSource = new Map<string,
     { kind: "cell" | "input"; index: number; port?: string }>();
@@ -1243,61 +1255,6 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
     });
   });
 
-  // One vertical track per net inside the gap after its source level.  The
-  // gap widens with the number of tracks, so parallel nets never share an x.
-  const gapSlots = new Map<number, number>();
-  const slotOf = new Map<string, number>();
-  const nextSlot = new Map<number, number>();
-  for (const [net, src] of netSource) {
-    if (src.kind !== "cell" || outs.indexOf(net) >= 0) continue;
-    const gap = level[src.index];
-    const slot = nextSlot.get(gap) ?? 0;
-    nextSlot.set(gap, slot + 1);
-    gapSlots.set(gap, slot + 1);
-    slotOf.set(net, slot);
-  }
-  const firstX = 90;
-  const levelX: number[] = [];
-  let cursor = firstX;
-  for (let l = 0; l <= maxLevel; l++) {
-    levelX[l] = cursor;
-    cursor += boxW + Math.max(70, 20 + 12 * (gapSlots.get(l) ?? 0));
-  }
-  const width = Math.max(760, cursor + 90);
-  const xOf = (i: number) => levelX[level[i]];
-  const rows = new Map<number, number>();
-  const yOf = (i: number) => {
-    const row = rows.get(level[i]) ?? 0;
-    rows.set(level[i], row + 1);
-    return 110 + row * rowStep;
-  };
-  const pos = new Map<number, { x: number; y: number }>();
-  cells.forEach((_, i) => pos.set(i, { x: xOf(i), y: yOf(i) }));
-  const maxY = Math.max(...cells.map((_, i) => pos.get(i)!.y + boxH));
-  const height = Math.max(320, maxY + 90);
-
-  const parts: string[] = [];
-  parts.push('<svg viewBox="0 0 ' + width + " " + height + '" xmlns="http://www.w3.org/2000/svg">');
-  parts.push('<rect width="' + width + '" height="' + height + '" fill="#fff"/>');
-  parts.push("<style>");
-  parts.push(style());
-  parts.push("  .box{fill:#f7f8fa;stroke:#1c1c1e;stroke-width:2}");
-  parts.push("  text.lbl,text.small{stroke:#fff;stroke-width:3;paint-order:stroke;stroke-linejoin:round}");
-  parts.push("  .j{fill:#1c1c1e}");
-  parts.push("  .pintxt{font-family:-apple-system,Segoe UI,Noto Sans CJK SC,sans-serif;font-size:10px;fill:#505056}");
-  parts.push("  .pinline{stroke:#8a8a90;stroke-width:1.2}");
-  parts.push("  .netlbl{font-family:-apple-system,Segoe UI,Noto Sans CJK SC,sans-serif;font-size:9.5px;fill:#3a3a40;stroke:#fff;stroke-width:2.5;paint-order:stroke}");
-  parts.push("</style>");
-  parts.push(text(40, 38, title + " · " + d.cost + "T", "title"));
-  parts.push(text(40, 62, "multi-stage static CMOS · gate-level netlist"));
-  parts.push(text(40, 84,
-    "net labels: " + vars.join("  ") +
-      " · multi-fanout nets are labeled at the pins; single-fanout nets are drawn", "netlbl"));
-
-  const wire = (dPath: string) =>
-    parts.push('<path d="' + dPath + '" fill="none" stroke="#1c1c1e" stroke-width="1.6"/>');
-  const dot = (x: number, y: number) =>
-    parts.push('<circle cx="' + x + '" cy="' + y + '" r="3.2" class="j"/>');
   const displayName = new Map<string, string>();
   let anonNet = 0;
   const disp = (net: string) => {
@@ -1314,124 +1271,72 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
     displayName.set(net, name);
     return name;
   };
-
-  const isLabeled = (net: string) => {
-    const src = netSource.get(net);
-    if (!src) return false;
-    if (src.kind === "input") return true; // primary inputs: pin labels
-    return (netSinks.get(net)?.length ?? 0) > 1; // multi-fanout: pin labels
-  };
-  const busOf = (net: string) => {
-    const src = netSource.get(net)!;
-    if (src.kind === "input") return 0;
-    const gap = level[src.index];
-    return levelX[gap] + boxW + 10 + (slotOf.get(net) ?? 0) * 12;
-  };
   const pinY = (cell: number, pin: string, output: boolean) => {
     const list = output ? outPorts(cells[cell]) : inputsOf(cells[cell]);
     const j = Math.max(0, list.indexOf(pin));
-    return pos.get(cell)!.y + 10 + (boxH - 20) * (j + 1) / (list.length + 1);
+    return pos.get(cell)!.y + 10 +
+      (cellH[cell] - 20) * (j + 1) / (list.length + 1);
   };
-  const srcPoint = (net: string) => {
-    const src = netSource.get(net);
-    if (!src) return null;
-    if (src.kind === "input") return null;
+
+  const parts: string[] = [];
+  parts.push('<svg viewBox="0 0 ' + width + " " + height + '" xmlns="http://www.w3.org/2000/svg">');
+  parts.push('<rect width="' + width + '" height="' + height + '" fill="#fff"/>');
+  parts.push("<style>");
+  parts.push(style());
+  parts.push("  .box{fill:#f7f8fa;stroke:#1c1c1e;stroke-width:2}");
+  parts.push("  text.lbl,text.small{stroke:#fff;stroke-width:3;paint-order:stroke;stroke-linejoin:round}");
+  parts.push("  .pintxt{font-family:-apple-system,Segoe UI,Noto Sans CJK SC,sans-serif;font-size:10px;fill:#505056}");
+  parts.push("  .pinline{stroke:#8a8a90;stroke-width:1.2}");
+  parts.push("  .netlbl{font-family:-apple-system,Segoe UI,Noto Sans CJK SC,sans-serif;font-size:9.5px;fill:#3a3a40;stroke:#fff;stroke-width:2.5;paint-order:stroke}");
+  parts.push("</style>");
+  parts.push(text(40, 38, title + " · " + d.cost + "T", "title"));
+  parts.push(text(40, 62, "multi-stage static CMOS · gate-level netlist"));
+  parts.push(text(40, 84,
+    "all connections use matching pin labels · inputs: " + vars.join(" ") +
+      " · outputs: " + outs.join(" "), "netlbl"));
+
+  // Every net is a label: source pin on the driving cell, sink label on every
+  // load.  No wire is routed, so cell placement cannot change connectivity.
+  const seenSource = new Set<string>();
+  for (const [net, src] of netSource) {
+    if (src.kind !== "cell") continue;
+    if (!netSinks.has(net) && outs.indexOf(net) < 0) continue;
+    if (seenSource.has(net)) continue;
+    seenSource.add(net);
     const p = pos.get(src.index)!;
     const port = src.port || outPorts(cells[src.index])[0];
-    return { x: p.x + boxW, y: pinY(src.index, port, true) };
-  };
-  const sinkPoint = (cell: number, pin: string) => {
-    const p = pos.get(cell)!;
-    return { x: p.x, y: pinY(cell, pin, false) };
-  };
-
-  // Primary inputs and high-fanout nets use standard net labels at the pins.
-  vars.forEach((v) => {
-    const sinks = netSinks.get(v) || [];
-    for (const k of sinks) {
-      const p = sinkPoint(k.cell, k.pin);
-      parts.push(line(p.x - 18, p.y, p.x, p.y, "pinline"));
-      parts.push(text(p.x - 22, p.y + 3, disp(v), "netlbl", "end"));
-    }
-  });
+    const oy = pinY(src.index, port, true);
+    parts.push(line(p.x + boxW, oy, p.x + boxW + 18, oy, "pinline"));
+    parts.push(text(p.x + boxW + 20, oy - 5, disp(net), "netlbl"));
+  }
   for (const [net, sinks] of netSinks) {
-    if (!isLabeled(net) || vars.indexOf(net) >= 0) continue;
-    const src = netSource.get(net);
-    if (src?.kind === "cell") {
-      const p = pos.get(src.index)!;
-      const port = src.port || outPorts(cells[src.index])[0];
-      const oy = pinY(src.index, port, true);
-      parts.push(line(p.x + boxW, oy, p.x + boxW + 18, oy, "pinline"));
-      parts.push(text(p.x + boxW + 20, oy - 5, disp(net), "netlbl"));
-    }
     for (const k of sinks) {
-      const p = sinkPoint(k.cell, k.pin);
-      parts.push(line(p.x - 18, p.y, p.x, p.y, "pinline"));
-      parts.push(text(p.x - 22, p.y + 3, disp(net), "netlbl", "end"));
+      const p = pos.get(k.cell)!;
+      const sy = pinY(k.cell, k.pin, false);
+      parts.push(line(p.x - 18, sy, p.x, sy, "pinline"));
+      parts.push(text(p.x - 22, sy + 3, disp(net), "netlbl", "end"));
     }
   }
 
-  // Wires first for local nets.  Each net owns one vertical trunk; branches
-  // are marked with junction dots, crossings keep none.
-  for (const [net, sinks] of netSinks) {
-    if (outs.indexOf(net) >= 0 || isLabeled(net)) continue;
-    const src = netSource.get(net);
-    if (!src || sinks.length === 0) continue;
-    const busX = busOf(net);
-    const sp = srcPoint(net)!;
-    const pts = sinks.map((k) => sinkPoint(k.cell, k.pin));
-    const ys = [sp.y, ...pts.map((p) => p.y)];
-    const top = Math.min(...ys);
-    const bot = Math.max(...ys);
-    if (src.kind === "cell")
-      wire("M " + sp.x + " " + sp.y + " H " + busX);
-    // Input labels sit above their own rail (drawn below), so there is no
-    // label lead-in crossing the neighbouring rails.
-
-    wire("M " + busX + " " + top + " V " + bot);
-    for (const p of pts) wire("M " + busX + " " + p.y + " H " + p.x);
-    const junction = (y: number) => {
-      if (y > top + 0.1 && y < bot - 0.1) dot(busX, y);
-    };
-    if (src.kind === "cell") junction(sp.y);
-    const sameY = new Map<number, number>();
-    for (const p of pts) {
-      junction(p.y);
-      sameY.set(p.y, (sameY.get(p.y) ?? 0) + 1);
-    }
-    for (const [y, n] of sameY) if (n > 1) dot(busX, y);
-  }
   cells.forEach((c, i) => {
-    const posi = pos.get(i)!;
-    parts.push('<rect x="' + posi.x + '" y="' + posi.y + '" width="' + boxW +
-      '" height="' + boxH + '" rx="7" class="box"/>');
-    parts.push(text(posi.x + boxW / 2, posi.y + 22, cellLabel(c.type), "small", "middle"));
+    const p = pos.get(i)!;
+    parts.push('<rect x="' + p.x + '" y="' + p.y + '" width="' + boxW +
+      '" height="' + cellH[i] + '" rx="7" class="box"/>');
+    parts.push(text(p.x + boxW / 2, p.y + 22, cellLabel(c.type), "small", "middle"));
     const ins = inputsOf(c);
-    ins.forEach((p, j) => {
-      const sy = posi.y + 10 + (boxH - 20) * (j + 1) / (ins.length + 1);
-      parts.push(line(posi.x, sy, posi.x + 10, sy, "pinline"));
-      parts.push(text(posi.x + 14, sy + 4, p, "pintxt"));
+    ins.forEach((pin, j) => {
+      const sy = p.y + 10 + (cellH[i] - 20) * (j + 1) / (ins.length + 1);
+      parts.push(line(p.x, sy, p.x + 10, sy, "pinline"));
+      parts.push(text(p.x + 14, sy + 4, pin, "pintxt"));
     });
     for (const op of outPorts(c)) {
       const oy = pinY(i, op, true);
-      parts.push(line(posi.x + boxW - 10, oy, posi.x + boxW, oy, "pinline"));
-      parts.push(text(posi.x + boxW - 14, oy + 4, op, "pintxt", "end"));
+      parts.push(line(p.x + boxW - 10, oy, p.x + boxW, oy, "pinline"));
+      parts.push(text(p.x + boxW - 14, oy + 4, op, "pintxt", "end"));
     }
   });
-  outs.forEach((net) => {
-    const src = producer.get(net);
-    if (src === undefined) return;
-    const c = cells[src];
-    const port = outPorts(c).find((p) => c.ports[p] === net) || outPorts(c)[0];
-    const p = pos.get(src)!;
-    const sy = pinY(src, port, true);
-    parts.push(line(p.x + boxW, sy, p.x + boxW + 55, sy, "w"));
-    parts.push(text(p.x + boxW + 68, sy + 6, net, "lbl"));
-  });
-  parts.push(text(55, height - 26,
-    "gate-level view · each cell is a static complementary CMOS standard cell"));
-  parts.push(text(55, height - 8,
-    "● junction · multi-fanout nets use matching labels · crossing without a dot is not connected"));
+  parts.push(text(55, height - 28,
+    "gate-level view · every net is identified by matching labels; no wires are routed"));
   parts.push("</svg>");
   return parts.join("\n");
 }
@@ -1478,12 +1383,8 @@ function renderDesignSvg(d: Design, vars: string[], title: string): { svg: strin
   if (d.kind === "gate-boxes")
     return { svg: renderGateLevelSvgBoxes(d, vars, title), inverters: [] };
   if (d.kind === "static-cmos-multi") {
-    let svg = "";
-    if (d.outputs && d.outputs.length > 1)
-      svg = renderGateLevelSvgRails(d, vars, title) || renderGateLevelSvgLocalBus(d, vars, title);
-    else
-      svg = renderGateLevelSvg(d, vars, title);
-    return { svg, inverters: [] };
+    // Standard net-label schematic: placement never implies connectivity.
+    return { svg: renderGateLevelSvgBoxes(d, vars, title), inverters: [] };
   }
   if (d.branches.length === 0) throw new Error("design has no branches");
   d = foldTgBranches(d);

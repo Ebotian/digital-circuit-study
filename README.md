@@ -393,7 +393,7 @@ multi-output static CMOS: decoder3to8
 
 `multi compose` 直接从 spec 构造网络：对每个输出建 reduced ordered BDD，每个非平凡节点实例化一个 `mux2` 原子（`S?B:A`），再交给 `--rtl --atoms` 流程映射、计成本和证明。
 
-`--out DIR --png` 会同时把层次化网表交给 Yosys/Graphviz 自动出图（`DIR/top.svg`、`top.png`、`index.html`），不需要手动跑 `yosys show`/`dot`。任意网表也可以直接渲染：
+`--out DIR --png` 会同时出原生门级图（`DIR/scheme-0.svg`、`scheme-0.png`、`index.html`），不需要手动跑 `yosys show`/`dot`。任意网表也可以直接渲染（优先原生盒子，失败才回退 Graphviz）：
 
 ```bash
 ./build/dcstudy render --netlist out/compose.v --atoms out/mux2.v --png --out out/render

@@ -73,4 +73,4 @@ make render
 
 按 `INSTANCE_CASES` 为每个实例生成 `out/render/<name>/`：spec 实例走
 `multi synth --spec --out --png`，组合实例走 `multi compose`，RTL+原子实例走
-`render --netlist`。该目标默认不参与 `make all`/`make ci`，只作为本地看图入口。
+`render --netlist`（原生门级盒子，输出 `scheme-0.*`）。该目标默认不参与 `make all`/`make ci`，只作为本地看图入口。

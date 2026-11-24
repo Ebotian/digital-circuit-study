@@ -182,7 +182,11 @@ bool render_netlist_native(const std::vector<std::string> &files,
       bit_name[k] =
           bits.size() == 1 ? name : name + "[" + std::to_string(i) + "]";
     }
-    (input ? vars : outs).push_back(name);
+    if (bits.size() == 1)
+      (input ? vars : outs).push_back(name);
+    else
+      for (std::size_t i = 0; i < bits.size(); ++i)
+        (input ? vars : outs).push_back(name + "[" + std::to_string(i) + "]");
   };
   if (mod.contains("ports")) {
     for (const auto &[name, pj] : mod.at("ports").object()) {
@@ -366,19 +370,26 @@ int cmd_render(int argc, char **argv) {
     const std::string out = a.get("out", "out/render");
     const std::string top = a.get("top", "top");
     std::string err;
-    if (!render_netlist_files(files, top, out, a.is("png"), err))
-      throw CliError(err);
+    const bool native =
+        render_netlist_native(files, top, out, a.is("png"), err);
+    if (!native) {
+      std::string graph_err;
+      if (!render_netlist_files(files, top, out, a.is("png"), graph_err))
+        throw CliError(err + "; graphviz fallback: " + graph_err);
+    }
+    const std::string svg = native ? "scheme-0.svg" : top + ".svg";
+    const std::string png = native ? "scheme-0.png" : top + ".png";
     if (json) {
       Json j;
       j["ok"] = true;
       j["command"] = "render.netlist";
       j["out"] = out;
-      j["svg"] = out + "/" + top + ".svg";
+      j["svg"] = out + "/" + svg;
       if (a.is("png"))
-        j["png"] = out + "/" + top + ".png";
+        j["png"] = out + "/" + png;
       std::cout << j.dump() << "\n";
     } else {
-      std::cout << "rendered netlist to " << out << "/" << top << ".svg\n";
+      std::cout << "rendered netlist to " << out << "/" << svg << "\n";
     }
     return 0;
   }
