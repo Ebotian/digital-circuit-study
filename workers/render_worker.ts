@@ -1133,7 +1133,7 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
     gapSlots.set(gap, slot + 1);
     slotOf.set(net, slot);
   }
-  const firstX = 70 + vars.length * 34 + 30;
+  const firstX = 90;
   const levelX: number[] = [];
   let cursor = firstX;
   for (let l = 0; l <= maxLevel; l++) {
@@ -1163,28 +1163,52 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
   parts.push("  .j{fill:#1c1c1e}");
   parts.push("  .pintxt{font-family:-apple-system,Segoe UI,Noto Sans CJK SC,sans-serif;font-size:10px;fill:#505056}");
   parts.push("  .pinline{stroke:#8a8a90;stroke-width:1.2}");
+  parts.push("  .netlbl{font-family:-apple-system,Segoe UI,Noto Sans CJK SC,sans-serif;font-size:9.5px;fill:#3a3a40;stroke:#fff;stroke-width:2.5;paint-order:stroke}");
   parts.push("</style>");
   parts.push(text(40, 38, title + " · " + d.cost + "T", "title"));
   parts.push(text(40, 62,
     "multi-stage static complementary CMOS · SEL=0 hex 0-F · SEL=1 decimal 0-9 (10-15 blank)"));
+  parts.push(text(40, 84,
+    "net labels: " + vars.join("  ") +
+      " · multi-fanout nets are labeled at the pins; single-fanout nets are drawn", "netlbl"));
 
   const wire = (dPath: string) =>
     parts.push('<path d="' + dPath + '" fill="none" stroke="#1c1c1e" stroke-width="1.6"/>');
   const dot = (x: number, y: number) =>
     parts.push('<circle cx="' + x + '" cy="' + y + '" r="3.2" class="j"/>');
-  const inputBusX = (i: number) => 70 + i * 34;
-  const inputTopY = 92;
+  const displayName = new Map<string, string>();
+  let anonNet = 0;
+  const disp = (net: string) => {
+    const hit = displayName.get(net);
+    if (hit) return hit;
+    if (vars.indexOf(net) >= 0 || outs.indexOf(net) >= 0) {
+      displayName.set(net, net);
+      return net;
+    }
+    const m = /new_(n\d+)$/.exec(net);
+    let name = m ? m[1] : "n" + (++anonNet);
+    while ([...displayName.values()].indexOf(name) >= 0)
+      name = "n" + (++anonNet);
+    displayName.set(net, name);
+    return name;
+  };
+
+  const isLabeled = (net: string) => {
+    const src = netSource.get(net);
+    if (!src) return false;
+    if (src.kind === "input") return true; // primary inputs: pin labels
+    return (netSinks.get(net)?.length ?? 0) > 1; // multi-fanout: pin labels
+  };
   const busOf = (net: string) => {
     const src = netSource.get(net)!;
-    if (src.kind === "input") return inputBusX(src.index);
+    if (src.kind === "input") return 0;
     const gap = level[src.index];
     return levelX[gap] + boxW + 10 + (slotOf.get(net) ?? 0) * 12;
   };
   const srcPoint = (net: string) => {
     const src = netSource.get(net);
     if (!src) return null;
-    if (src.kind === "input")
-      return { x: inputBusX(src.index), y: inputTopY };
+    if (src.kind === "input") return null;
     const p = pos.get(src.index)!;
     return { x: p.x + boxW, y: p.y + boxH / 2 };
   };
@@ -1195,13 +1219,35 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
     return { x: p.x, y: p.y + 10 + (boxH - 20) * (j + 1) / (ins.length + 1) };
   };
 
-  vars.forEach((v, i) =>
-    parts.push(text(inputBusX(i), inputTopY - 8, v, "lbl", "middle")));
-
-  // Wires first.  Each net owns one vertical trunk; branches are marked with
-  // junction dots, crossings keep none.
+  // Primary inputs and high-fanout nets use standard net labels at the pins.
+  vars.forEach((v) => {
+    const sinks = netSinks.get(v) || [];
+    for (const k of sinks) {
+      const p = sinkPoint(k.cell, k.pin);
+      parts.push(line(p.x - 18, p.y, p.x, p.y, "pinline"));
+      parts.push(text(p.x - 22, p.y + 3, disp(v), "netlbl", "end"));
+    }
+  });
   for (const [net, sinks] of netSinks) {
-    if (outs.indexOf(net) >= 0) continue;
+    if (!isLabeled(net) || vars.indexOf(net) >= 0) continue;
+    const src = netSource.get(net);
+    if (src?.kind === "cell") {
+      const p = pos.get(src.index)!;
+      const oy = p.y + boxH / 2;
+      parts.push(line(p.x + boxW, oy, p.x + boxW + 18, oy, "pinline"));
+      parts.push(text(p.x + boxW + 20, oy - 5, disp(net), "netlbl"));
+    }
+    for (const k of sinks) {
+      const p = sinkPoint(k.cell, k.pin);
+      parts.push(line(p.x - 18, p.y, p.x, p.y, "pinline"));
+      parts.push(text(p.x - 22, p.y + 3, disp(net), "netlbl", "end"));
+    }
+  }
+
+  // Wires first for local nets.  Each net owns one vertical trunk; branches
+  // are marked with junction dots, crossings keep none.
+  for (const [net, sinks] of netSinks) {
+    if (outs.indexOf(net) >= 0 || isLabeled(net)) continue;
     const src = netSource.get(net);
     if (!src || sinks.length === 0) continue;
     const busX = busOf(net);
@@ -1254,7 +1300,7 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
   parts.push(text(55, height - 26,
     "gate-level view · each cell is a static complementary CMOS standard cell"));
   parts.push(text(55, height - 8,
-    "● junction    crossing without a dot is not connected"));
+    "● junction · multi-fanout nets use matching labels · crossing without a dot is not connected"));
   parts.push("</svg>");
   return parts.join("\n");
 }
