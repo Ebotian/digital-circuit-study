@@ -242,6 +242,7 @@ compose_from_library(const MultiProblem &spec,
       tvars[v][m] = (m >> (n - 1 - v)) & 1u;
 
   std::vector<Cand> cands;
+  std::set<std::string> cand_sig;
   int glue_mux_cost = 12; // used only if the library has no measured mux2
   std::vector<int> atom_cost(library.size(), -1);
   for (std::size_t ai = 0; ai < library.size(); ++ai) {
@@ -283,7 +284,33 @@ compose_from_library(const MultiProblem &spec,
         for (std::size_t o = 0; o < atom.outputs.size(); ++o)
           c.outs[o][m] = atom.outputs[o].func.value(idx) ? 1 : 0;
       }
-      cands.push_back(std::move(c));
+      auto add_candidate = [&](Cand &&cand) {
+        std::string key = std::to_string(cand.atom) + ":";
+        for (const auto &o : cand.outs)
+          key.append(reinterpret_cast<const char *>(o.data()), o.size());
+        if (cand_sig.insert(std::move(key)).second)
+          cands.push_back(std::move(cand));
+      };
+      add_candidate(std::move(c));
+      // permutations for small atoms (k<=3); k=4 stayed identity because the
+      // 24x candidate growth outweighed the search benefit on the current set.
+      if (k <= 3) {
+        auto perm = comb;
+        while (std::next_permutation(perm.begin(), perm.end())) {
+          Cand pc;
+          pc.atom = static_cast<int>(ai);
+          pc.vars = perm;
+          pc.outs.assign(atom.outputs.size(), std::vector<unsigned char>(rows));
+          for (std::size_t m = 0; m < rows; ++m) {
+            std::uint32_t idx = 0;
+            for (std::size_t j = 0; j < k; ++j)
+              idx = (idx << 1) | tvars[perm[j]][m];
+            for (std::size_t o = 0; o < atom.outputs.size(); ++o)
+              pc.outs[o][m] = atom.outputs[o].func.value(idx) ? 1 : 0;
+          }
+          add_candidate(std::move(pc));
+        }
+      }
       // next combination
       std::size_t i = k;
       while (i > 0) {
