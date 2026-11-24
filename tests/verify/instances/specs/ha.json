@@ -1,0 +1,17 @@
+{
+ "name": "ha",
+ "inputs": [
+  "A",
+  "B"
+ ],
+ "outputs": [
+  {
+   "name": "S",
+   "expr": "A^B"
+  },
+  {
+   "name": "C",
+   "expr": "A&B"
+  }
+ ]
+}
