@@ -1133,7 +1133,7 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
     gapSlots.set(gap, slot + 1);
     slotOf.set(net, slot);
   }
-  const firstX = 70 + vars.length * 20 + 30;
+  const firstX = 70 + vars.length * 34 + 30;
   const levelX: number[] = [];
   let cursor = firstX;
   for (let l = 0; l <= maxLevel; l++) {
@@ -1161,7 +1161,8 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
   parts.push("  .box{fill:#f7f8fa;stroke:#1c1c1e;stroke-width:2}");
   parts.push("  text.lbl,text.small{stroke:#fff;stroke-width:3;paint-order:stroke;stroke-linejoin:round}");
   parts.push("  .j{fill:#1c1c1e}");
-  parts.push("  .pin{font-family:-apple-system,Segoe UI,Noto Sans CJK SC,sans-serif;font-size:10px;fill:#505056}");
+  parts.push("  .pintxt{font-family:-apple-system,Segoe UI,Noto Sans CJK SC,sans-serif;font-size:10px;fill:#505056}");
+  parts.push("  .pinline{stroke:#8a8a90;stroke-width:1.2}");
   parts.push("</style>");
   parts.push(text(40, 38, title + " · " + d.cost + "T", "title"));
   parts.push(text(40, 62,
@@ -1171,8 +1172,8 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
     parts.push('<path d="' + dPath + '" fill="none" stroke="#1c1c1e" stroke-width="1.6"/>');
   const dot = (x: number, y: number) =>
     parts.push('<circle cx="' + x + '" cy="' + y + '" r="3.2" class="j"/>');
-  const inputBusX = (i: number) => 70 + i * 18;
-  const inputY = (i: number) => 98 + i * 26;
+  const inputBusX = (i: number) => 70 + i * 34;
+  const inputTopY = 92;
   const busOf = (net: string) => {
     const src = netSource.get(net)!;
     if (src.kind === "input") return inputBusX(src.index);
@@ -1183,7 +1184,7 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
     const src = netSource.get(net);
     if (!src) return null;
     if (src.kind === "input")
-      return { x: inputBusX(src.index), y: inputY(src.index) };
+      return { x: inputBusX(src.index), y: inputTopY };
     const p = pos.get(src.index)!;
     return { x: p.x + boxW, y: p.y + boxH / 2 };
   };
@@ -1193,6 +1194,9 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
     const p = pos.get(cell)!;
     return { x: p.x, y: p.y + 10 + (boxH - 20) * (j + 1) / (ins.length + 1) };
   };
+
+  vars.forEach((v, i) =>
+    parts.push(text(inputBusX(i), inputTopY - 8, v, "lbl", "middle")));
 
   // Wires first.  Each net owns one vertical trunk; branches are marked with
   // junction dots, crossings keep none.
@@ -1208,10 +1212,9 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
     const bot = Math.max(...ys);
     if (src.kind === "cell")
       wire("M " + sp.x + " " + sp.y + " H " + busX);
-    else {
-      wire("M 45 " + sp.y + " H " + busX);
-      parts.push(text(10, sp.y + 5, net, "lbl"));
-    }
+    // Input labels sit above their own rail (drawn below), so there is no
+    // label lead-in crossing the neighbouring rails.
+
     wire("M " + busX + " " + top + " V " + bot);
     for (const p of pts) wire("M " + busX + " " + p.y + " H " + p.x);
     const junction = (y: number) => {
@@ -1233,10 +1236,13 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
     const ins = inputsOf(c);
     ins.forEach((p, j) => {
       const sy = posi.y + 10 + (boxH - 20) * (j + 1) / (ins.length + 1);
-      parts.push(text(posi.x + 12, sy + 4, p, "pin"));
+      parts.push(line(posi.x, sy, posi.x + 10, sy, "pinline"));
+      parts.push(text(posi.x + 14, sy + 4, p, "pintxt"));
     });
     const op = outPort(c);
-    parts.push(text(posi.x + boxW - 8, posi.y + boxH / 2 + 4, op, "pin", "end"));
+    const oy = posi.y + boxH / 2;
+    parts.push(line(posi.x + boxW - 10, oy, posi.x + boxW, oy, "pinline"));
+    parts.push(text(posi.x + boxW - 14, oy + 4, op, "pintxt", "end"));
   });
   outs.forEach((net) => {
     const src = producer.get(net);
