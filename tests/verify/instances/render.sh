@@ -44,7 +44,6 @@ for c in "$@"; do
     decoder38) spec "$c" "$ROOT/tests/verify/instances/specs/decoder38.json" ;;
     encoder42) spec "$c" "$ROOT/tests/verify/instances/specs/encoder42.json" ;;
     eq4) spec "$c" "$ROOT/tests/verify/instances/specs/eq4.json" ;;
-    fa1) spec "$c" "$ROOT/tests/verify/instances/specs/fa1.json" ;;
     hex7seg) spec "$c" "$ROOT/tests/verify/instances/specs/hex7seg.json" ;;
     hex7seg_sel) spec "$c" "$ROOT/tests/verify/instances/specs/hex7seg_sel.json" ;;
     pe42) spec "$c" "$ROOT/tests/verify/instances/specs/pe42.json" ;;
@@ -52,6 +51,24 @@ for c in "$@"; do
     xor2) spec "$c" "$ROOT/tests/verify/instances/specs/xor2.json" ;;
     xnor2) spec "$c" "$ROOT/tests/verify/instances/specs/xnor2.json" ;;
     mux2) spec "$c" "$ROOT/tests/verify/instances/specs/mux2.json" ;;
+    fa1)
+      # Two views of the same top device: spec synth and the ha-based
+      # hierarchy (2x ha + OR) under fa1/ha/.
+      spec "$c" "$ROOT/tests/verify/instances/specs/fa1.json"
+      local_tmp=$(mktemp -d)
+      HA=$("$BIN" multi synth --spec "$ROOT/tests/verify/instances/specs/ha.json" \
+        --emit-atom ha --json)
+      jq -r .atom_verilog <<<"$HA" >"$local_tmp/ha.v"
+      FJ=$("$BIN" multi synth --rtl "$ROOT/tests/verify/instances/rtl/fa_ha.v" \
+        --atoms "$local_tmp/ha.v" --ref "$ROOT/tests/verify/instances/rtl/gold_fa.v" \
+        --json)
+      cost=$(jq -r .total <<<"$FJ")
+      mkdir -p "$OUT/$c/ha"
+      "$BIN" render --netlist "$ROOT/tests/verify/instances/rtl/fa_ha.v" \
+        --atoms "$local_tmp/ha.v" --top top --title fa1 --cost "$cost" \
+        --out "$OUT/$c/ha" --png >/dev/null
+      rm -rf "$local_tmp"
+      pass "render $c/ha (ha composition, ${cost}T)" ;;
     mux4_3bit) compose "$c" "$ROOT/tests/verify/instances/specs/mux4_3bit.json" ;;
     prio8)
       compose "$c" "$ROOT/bench/fixtures/prio8.json" \
