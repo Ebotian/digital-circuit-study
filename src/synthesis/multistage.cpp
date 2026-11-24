@@ -45,7 +45,7 @@ std::string shell_quote(const std::string &s) {
     else
       out += c;
   }
-  out += "'";
+  out += '\'';
   return out;
 }
 
@@ -166,7 +166,7 @@ std::string cdl_from_subckt(const Subckt &c) {
     }
     out += " " + p + ":" + d;
   }
-  out += "\n";
+  out += '\n';
   for (const auto &[alias, canon] : c.aliases)
     out += "*.ALIAS " + alias + " " + canon + "\n";
   for (const auto &dev : c.devices) {
@@ -296,10 +296,10 @@ synthesize_multistage_static_multi_impl(const MultiProblem &p, int max_fanin) {
       "read_verilog -sv rtl.v; synth -top top; abc -liberty " + lib + " " +
       dont_use +
       "; opt_clean; write_json net.json; write_verilog -noattr net.v";
-  const std::string cmd = "cd " + shell_quote(dir.path().string()) +
-                          " && timeout " + std::to_string(kYosysTimeoutSeconds) +
-        " yosys -Q -p " + shell_quote(script) +
-                          " > " + shell_quote(log.string()) + " 2>&1";
+  const std::string cmd =
+      "cd " + shell_quote(dir.path().string()) + " && timeout " +
+      std::to_string(kYosysTimeoutSeconds) + " yosys -Q -p " +
+      shell_quote(script) + " > " + shell_quote(log.string()) + " 2>&1";
   const int rc = std::system(cmd.c_str());
   const int code = (rc != -1 && WIFEXITED(rc)) ? WEXITSTATUS(rc) : -1;
   const std::string ylog = read_file(log);
@@ -557,7 +557,7 @@ std::string render_params(const Json &cell) {
   std::string out;
   for (const auto &[k, v] : cell.at("parameters").object()) {
     if (!out.empty())
-      out += ",";
+      out += ',';
     out += k + "=" + (v.is_string() ? v.as_string() : v.dump());
   }
   return out;
@@ -621,9 +621,9 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
   auto run_yosys = [&](const std::string &script,
                        const std::string &log_name) -> std::string {
     const std::string cmd =
-        "cd " + shell_quote(dir.path().string()) +
-        " && timeout " + std::to_string(kYosysTimeoutSeconds) +
-        " yosys -Q -p " + shell_quote(script) + " > " +
+        "cd " + shell_quote(dir.path().string()) + " && timeout " +
+        std::to_string(kYosysTimeoutSeconds) + " yosys -Q -p " +
+        shell_quote(script) + " > " +
         shell_quote((dir.path() / log_name).string()) + " 2>&1";
     const int rc = std::system(cmd.c_str());
     const int code = (rc != -1 && WIFEXITED(rc)) ? WEXITSTATUS(rc) : -1;

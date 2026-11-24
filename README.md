@@ -91,6 +91,7 @@ make smoke-filc      # 可选:用 Fil-C 跑 Z3-free 内核(约 15 s;旧名 filc-
 make format          # clice 默认风格格式化(需要 clice)
 make format-check    # 只检查, CI 用
 make lint            # clice lint(有 finding 即失败)
+make tidy            # clang-tidy(tools/clang-tidy.yaml 记录刻意排除项)
 make ci              # format-check + lint + test + verify-all
 # 扩展质量门禁(make ci-full 全跑)
 make asan            # ASan/UBSan 构建 + ctest

@@ -25,7 +25,7 @@ std::string edge_key(const std::string &source,
   std::string key = source + "#";
   for (std::size_t i = 0; i <= up_to; ++i) {
     key += switch_name(chain[i].kind);
-    key += "(";
+    key += '(';
     key += chain[i].lit;
     key += ");";
   }
@@ -195,6 +195,7 @@ synthesize_path_variables(const BoolFunc &f,
     return out;
   }
   std::vector<int> target;
+  target.reserve(f.num_minterms());
   for (std::uint32_t m = 0; m < f.num_minterms(); ++m)
     target.push_back(tri_state ? (f.value(m) ? 1 : -1) : (f.value(m) ? 1 : 0));
   const auto all = usable_branches(vars, target, opt);

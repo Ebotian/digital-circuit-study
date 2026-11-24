@@ -15,6 +15,7 @@ std::string z3_helper_path();
 
 // Send one JSON request and parse the JSON response.  Throws on transport,
 // timeout, helper error, or an {"ok":false} response.
-Json z3_call(const Json &request, int timeout_seconds = kDefaultWorkerTimeoutSeconds);
+Json z3_call(const Json &request,
+             int timeout_seconds = kDefaultWorkerTimeoutSeconds);
 
 } // namespace dcstudy

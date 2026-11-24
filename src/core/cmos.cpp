@@ -163,7 +163,7 @@ std::string Sop::expression(const std::vector<std::string> &vars,
     if (!out.empty())
       out += " | ";
     if (c.care == 0) {
-      out += "1";
+      out += '1';
       continue;
     }
     std::string term;
@@ -176,7 +176,7 @@ std::string Sop::expression(const std::vector<std::string> &vars,
       if (!term.empty())
         term += " & ";
       if (!one)
-        term += "~";
+        term += '~';
       term += vars.at(i);
     }
     out += "(" + term + ")";

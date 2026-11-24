@@ -16,7 +16,7 @@ static std::string shq(const std::string &s) {
     else
       out += c;
   }
-  out += "'";
+  out += '\'';
   return out;
 }
 

@@ -30,7 +30,7 @@ inline int parallel_jobs() {
       const int n = std::stoi(s);
       if (n > 0)
         return std::min(n, 64);
-    } catch (...) {
+    } catch (...) { // NOLINT(bugprone-empty-catch)
     }
   }
   return hardware_jobs();

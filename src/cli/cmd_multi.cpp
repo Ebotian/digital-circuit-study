@@ -107,6 +107,7 @@ int cmd_multi_template(const Args &a, const MultiProblem &spec) {
     const BoolFunc f =
         spec.any(k).none() ? spec.outputs[k].func : spec.completed(k);
     std::vector<int> t;
+    t.reserve(f.num_minterms());
     for (std::uint32_t m = 0; m < f.num_minterms(); ++m)
       t.push_back(f.value(m) ? 1 : 0);
     targets.push_back(std::move(t));

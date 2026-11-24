@@ -71,9 +71,11 @@ SwitchSolution z3_solve_switch(const SwitchProblem &p) {
   const std::size_t vdd = ni.get(p.vdd);
   const std::size_t vss = ni.get(p.vss);
   std::vector<std::size_t> input_idx;
+  input_idx.reserve(p.inputs.size());
   for (const auto &s : p.inputs)
     input_idx.push_back(ni.get(s));
   std::vector<std::size_t> out_idx;
+  out_idx.reserve(p.outputs.size());
   for (const auto &s : p.outputs)
     out_idx.push_back(ni.get(s));
 

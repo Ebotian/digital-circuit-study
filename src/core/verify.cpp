@@ -68,7 +68,7 @@ std::string shell_quote_str(const std::string &s) {
     else
       out += c;
   }
-  out += "'";
+  out += '\'';
   return out;
 }
 
@@ -78,8 +78,8 @@ std::string shell_quote(const fs::path &p) {
 
 int run_shell(const std::string &command, const fs::path &log) {
   const std::string full = "timeout " + std::to_string(kVerifyTimeoutSeconds) +
-                          " bash -c " + shell_quote_str(command) +
-                           " > " + shell_quote(log) + " 2>&1";
+                           " bash -c " + shell_quote_str(command) + " > " +
+                           shell_quote(log) + " 2>&1";
   const int rc = std::system(full.c_str());
   if (rc == -1)
     return -1;

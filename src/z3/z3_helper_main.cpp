@@ -13,7 +13,7 @@
 
 using namespace dcstudy;
 
-int main() {
+static int run() {
   try {
     const std::string input((std::istreambuf_iterator<char>(std::cin)),
                             std::istreambuf_iterator<char>());
@@ -101,6 +101,14 @@ int main() {
     err["ok"] = false;
     err["error"] = "unknown exception";
     std::cout << err.dump(0) << "\n";
+    return 1;
+  }
+}
+
+int main() {
+  try {
+    return run();
+  } catch (...) {
     return 1;
   }
 }

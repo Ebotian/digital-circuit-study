@@ -141,6 +141,7 @@ synthesize_bdd_switch_order(const BoolFunc &f,
   out.ok = true;
 
   std::vector<int> target;
+  target.reserve(f.num_minterms());
   for (std::uint32_t m = 0; m < f.num_minterms(); ++m)
     target.push_back(f.value(m) ? 1 : 0);
   const DriverProfile p = analyze_switch_graph(g, vars, target);

@@ -65,6 +65,9 @@ lint: $(CCDB)
 	@clice lint -j 0 | tee $(BUILD)/clice-lint.txt
 	@grep -q ": 0 findings" $(BUILD)/clice-lint.txt
 
+tidy: $(CCDB)
+	@run-clang-tidy -p $(BUILD) -j 0 -config-file=$(CURDIR)/tools/clang-tidy.yaml src tests
+
 bench: $(BUILD)/dcstudy
 	bench/run.sh --suite all
 

@@ -104,7 +104,7 @@ TEST_CASE("exact SOP of NAND2 and unrealisable XOR", "[core]") {
   const CmosDesign dn = synthesize_cmos(nor.func, nor.vars);
   REQUIRE(dn.realizable);
   REQUIRE(dn.total == 4);
-  REQUIRE(dn.pull_down.expression(nor.vars).find("~") == std::string::npos);
+  REQUIRE(dn.pull_down.expression(nor.vars).find('~') == std::string::npos);
 
   const FuncSpec x = spec_from_expr("A^B");
   const CmosDesign dx = synthesize_cmos(x.func, x.vars);
@@ -194,6 +194,8 @@ TEST_CASE("glue table matches its declared signal order", "[core]") {
   }
   const auto h = glue_from_signals(spec, sig);
   REQUIRE(h.has_value());
+  if (!h)
+    return;
   REQUIRE(h->vars.size() == 5);
   // DC completion makes the glue independent of unreachable coordinates, so
   // the value is defined for every index, not only the care rows.
@@ -201,7 +203,7 @@ TEST_CASE("glue table matches its declared signal order", "[core]") {
     int sv[5] = {0, 0, 0, 0, 0};
     for (std::size_t j = 0; j < 5; ++j) {
       const int k = std::stoi(h->vars[j].substr(1));
-      sv[k] = (idx >> (4 - j)) & 1;
+      sv[k] = static_cast<int>((idx >> (4 - j)) & 1);
     }
     const bool expected = sv[4] ? (sv[0] != 0) : (sv[2] != 0);
     CHECK((h->outputs[0].func.value(static_cast<std::uint32_t>(idx)) != 0) ==

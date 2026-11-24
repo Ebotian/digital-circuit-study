@@ -562,7 +562,7 @@ std::vector<DriverProfile> analyze_designs_drivers_batch(
     try {
       if (graphblas_batch(graphs, offsets, total, designs, vars, targets, out))
         return out;
-    } catch (const std::exception &) {
+    } catch (const std::exception &) { // NOLINT(bugprone-empty-catch)
       // Fall back to the local Boolean closure if the worker is unavailable.
     }
   }

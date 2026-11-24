@@ -28,6 +28,7 @@ using namespace dcstudy;
 
 inline std::vector<int> target_of(const FuncSpec &s) {
   std::vector<int> t;
+  t.reserve(s.func.num_minterms());
   for (std::uint32_t m = 0; m < s.func.num_minterms(); ++m)
     t.push_back(s.func.value(m) ? 1 : 0);
   return t;

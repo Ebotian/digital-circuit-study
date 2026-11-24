@@ -218,7 +218,7 @@ std::string subckt_to_cdl(const Subckt &c) {
     }();
     out += " " + p + ":" + dir;
   }
-  out += "\n";
+  out += '\n';
   for (const auto &d : c.devices) {
     const std::string bulk = d.pmos ? "VDD" : "VSS";
     out += d.name + " " + d.drain + " " + d.gate + " " + d.source + " " + bulk +

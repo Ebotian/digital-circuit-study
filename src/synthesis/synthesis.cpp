@@ -66,7 +66,7 @@ automorphisms(const std::vector<std::string> &vars,
       if (!out.empty())
         return out;
     }
-  } catch (const std::exception &) {
+  } catch (const std::exception &) { // NOLINT(bugprone-empty-catch)
     // Fall through to the n! enumeration below (also works without a helper).
   }
   return enumerate_automorphisms(vars, target);
@@ -86,6 +86,7 @@ std::string permute_lit(const std::string &lit,
 
 std::string branch_key(const Branch &b) {
   std::vector<std::pair<int, std::string>> chain;
+  chain.reserve(b.chain.size());
   for (const auto &el : b.chain)
     chain.emplace_back(static_cast<int>(el.kind), el.lit);
   std::sort(chain.begin(), chain.end());
@@ -118,13 +119,14 @@ std::string canonical_key(const Design &d, const std::vector<std::size_t> &perm,
   for (const auto &b : d.branches) {
     std::string s = permute_lit(b.source, perm, vars) + "|";
     std::vector<std::pair<int, std::string>> chain;
+    chain.reserve(b.chain.size());
     for (const auto &el : b.chain)
       chain.emplace_back(static_cast<int>(el.kind),
                          permute_lit(el.lit, perm, vars));
     std::sort(chain.begin(), chain.end());
     for (const auto &[kind, lit] : chain) {
       s += switch_name(static_cast<SwKind>(kind));
-      s += "(";
+      s += '(';
       s += lit;
       s += ");";
     }
@@ -195,7 +197,7 @@ std::string Design::inverter_names(const std::vector<std::string> &vars) const {
   std::string out;
   for (auto i : inv_vars) {
     if (!out.empty())
-      out += ",";
+      out += ',';
     out += vars.at(i);
   }
   return out.empty() ? "none" : out;
@@ -294,6 +296,7 @@ SynthesisResult synthesize_min(const std::vector<std::string> &vars,
       return best_key;
     }
     std::vector<std::string> parts;
+    parts.reserve(d.branches.size());
     for (const auto &b : d.branches)
       parts.push_back(b.topo(vars));
     std::sort(parts.begin(), parts.end());

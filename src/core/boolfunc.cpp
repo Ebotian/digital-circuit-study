@@ -272,7 +272,7 @@ std::string BoolFunc::sop(const std::vector<std::string> &vars) const {
       if (!term.empty())
         term += " & ";
       if (!one)
-        term += "~";
+        term += '~';
       term += vars.at(i);
     }
     out += (n_ == 1 ? term : "(" + term + ")");

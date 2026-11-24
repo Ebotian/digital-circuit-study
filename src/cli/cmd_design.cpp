@@ -285,6 +285,7 @@ int cmd_design_template(const Args &a, const FuncSpec &spec) {
     return 1;
   }
   std::vector<int> target;
+  target.reserve(spec.func.num_minterms());
   for (std::uint32_t m = 0; m < spec.func.num_minterms(); ++m)
     target.push_back(spec.func.value(m) ? 1 : 0);
   const NetworkTemplate t = template_from_graph(b.graph, b.inverters);

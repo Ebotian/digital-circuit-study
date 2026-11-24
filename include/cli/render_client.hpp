@@ -10,6 +10,7 @@
 namespace dcstudy {
 
 std::string render_helper_path();
-Json render_call(const Json &request, int timeout_seconds = kDefaultWorkerTimeoutSeconds);
+Json render_call(const Json &request,
+                 int timeout_seconds = kDefaultWorkerTimeoutSeconds);
 
 } // namespace dcstudy

@@ -155,6 +155,7 @@ SynthSolution z3_solve_synth(const SynthProblem &p) {
   }
 
   std::vector<z3::expr> cost_terms;
+  cost_terms.reserve(nb + inv.size());
   for (std::size_t i = 0; i < nb; ++i)
     cost_terms.push_back(ctx.int_val(p.costs[i]) * x[i]);
   for (std::size_t j = 0; j < inv.size(); ++j)

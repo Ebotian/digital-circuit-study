@@ -26,7 +26,7 @@ std::string edge_key(const std::string &source,
   std::string key = source + "#";
   for (std::size_t i = 0; i <= up_to; ++i) {
     key += switch_name(chain[i].kind);
-    key += "(";
+    key += '(';
     key += chain[i].lit;
     key += ");";
   }
@@ -498,6 +498,7 @@ MultiPathSynthesisResult synthesize_dual_rail_multi(
   truth_targets.reserve(funcs.size());
   for (const auto &f : funcs) {
     std::vector<int> t;
+    t.reserve(rows);
     for (std::uint32_t m = 0; m < rows; ++m)
       t.push_back(f.value(m) ? 1 : 0);
     truth_targets.push_back(std::move(t));
@@ -514,6 +515,7 @@ MultiPathSynthesisResult synthesize_dual_rail_multi(
     const int one = g.add_net("1");
     g.source_ids = {zero, one};
     std::vector<int> output_nodes;
+    output_nodes.reserve(names.size());
     for (const auto &n : names)
       output_nodes.push_back(g.add_net("Y" + n));
     g.outputs = output_nodes;
@@ -645,6 +647,7 @@ synthesize_path_variables_multi(const MultiProblem &p, const SpaceOptions &opt,
   std::vector<AllPath> all;
   for (std::size_t o = 0; o < work.size(); ++o) {
     std::vector<int> target;
+    target.reserve(work[o].num_minterms());
     for (std::uint32_t m = 0; m < work[o].num_minterms(); ++m)
       target.push_back(tri_state ? (work[o].value(m) ? 1 : -1)
                                  : (work[o].value(m) ? 1 : 0));
@@ -721,6 +724,7 @@ synthesize_path_variables_multi(const MultiProblem &p, const SpaceOptions &opt,
   const int one = g.add_net("1");
   g.source_ids = {zero, one};
   std::vector<int> output_nodes;
+  output_nodes.reserve(names.size());
   for (std::size_t o = 0; o < names.size(); ++o)
     output_nodes.push_back(g.add_net("Y" + names[o]));
   g.outputs = output_nodes;
@@ -791,6 +795,7 @@ synthesize_path_variables_multi(const MultiProblem &p, const SpaceOptions &opt,
     const int src = r.add_net(rail);
     r.source_ids = {src};
     std::vector<int> routs;
+    routs.reserve(names.size());
     for (const auto &n : names)
       routs.push_back(r.add_net("Y" + n));
     r.outputs = routs;
@@ -883,10 +888,10 @@ synthesize_path_variables_multi(const MultiProblem &p, const SpaceOptions &opt,
     if (!profiles.empty()) {
       out.reason += " first=";
       for (const auto &r0 : profiles[0].rows) {
-        out.reason += "[";
+        out.reason += '[';
         for (const auto &s : r0.sources)
           out.reason += s + ",";
-        out.reason += "]";
+        out.reason += ']';
       }
     }
   }
