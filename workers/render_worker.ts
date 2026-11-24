@@ -1215,7 +1215,7 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
   const boxW = 150;
   const cellH = cells.map((c) => Math.max(56,
     18 + Math.max(inputsOf(c).length, outPorts(c).length) * 15));
-  const gapX = 80;
+  const gapX = 120;
   const gapY = 46;
   const cols = Math.max(3, Math.ceil(Math.sqrt(cells.length)));
   const order = cells.map((_, i) => i).sort((a, b) =>
@@ -1295,7 +1295,9 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
   parts.push(text(40, 62, "multi-stage static CMOS · gate-level netlist"));
   parts.push(text(40, 84,
     "all connections use matching pin labels · inputs: " + vars.join(" ") +
-      " · outputs: " + outs.join(" "), "netlbl"));
+      (outs.length <= 8 ? " · outputs: " + outs.join(" ")
+                        : " · outputs: " + outs.length + " signals (see pins)"),
+    "netlbl"));
 
   // Every net is a label: source pin on the driving cell, sink label on every
   // load.  No wire is routed, so cell placement cannot change connectivity.

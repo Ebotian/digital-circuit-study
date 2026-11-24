@@ -63,15 +63,23 @@ render_compose() {
   pass "render $name/$variant (compose + atoms)"
 }
 render_atoms() {
-  local name=$1 variant=$2 dir=$3 atom_spec=$4 top=$5 ref=$6
+  local name=$1 variant=$2 dir=$3
+  shift 3
+  local atom_specs=() spec top ref tmp atom cost json
+  while [ $# -gt 2 ] && [[ "$1" == *.json ]]; do
+    atom_specs+=("$1"); shift
+  done
+  top=$1; ref=$2
   mkdir -p "$dir"
-  local tmp atom cost json
   tmp=$(mktemp -d)
   trap 'rm -rf "$tmp"' RETURN
-  atom=$(basename "$atom_spec" .json)
-  json=$("$BIN" multi synth --spec "$(path_of "$atom_spec")" \
-    --emit-atom "$atom" --json)
-  jq -r .atom_verilog <<<"$json" >"$tmp/atoms.v"
+  : >"$tmp/atoms.v"
+  for spec in "${atom_specs[@]}"; do
+    atom=$(basename "$spec" .json)
+    json=$("$BIN" multi synth --spec "$(path_of "$spec")" \
+      --emit-atom "$atom" --json)
+    jq -r .atom_verilog <<<"$json" >>"$tmp/atoms.v"
+  done
   json=$("$BIN" multi synth --rtl "$(path_of "$top")" \
     --atoms "$tmp/atoms.v" --ref "$(path_of "$ref")" --json)
   cost=$(jq -r .total <<<"$json")
@@ -79,9 +87,14 @@ render_atoms() {
     --atoms "$tmp/atoms.v" --top top --title "$name" --cost "$cost" \
     --out "$dir" --png >/dev/null
   printf '%s\n' "$json" >"$dir/result.json"
-  render_atom_spec "$atom" "$dir" "$(path_of "$atom_spec")"
+  for spec in "${atom_specs[@]}"; do
+    atom=$(basename "$spec" .json)
+    render_atom_spec "$atom" "$dir" "$(path_of "$spec")"
+  done
+  rm -rf "$tmp"
   pass "render $name/$variant (atoms, ${cost}T)"
 }
+
 render_rtl() {
   local name=$1 variant=$2 dir=$3 top=$4 ref=$5
   shift 5
@@ -152,8 +165,8 @@ while read -r name variant kind rest; do
     synth) render_synth "$name" "$variant" "$dir" "$@" ;;
     compose) render_compose "$name" "$variant" "$dir" "$@" ;;
     atoms)
-      [ $# -eq 3 ] || fail "atoms manifest row needs: atom_spec top ref"
-      render_atoms "$name" "$variant" "$dir" "$1" "$2" "$3" ;;
+      [ $# -ge 3 ] || fail "atoms manifest row needs: atom_spec... top ref"
+      render_atoms "$name" "$variant" "$dir" "$@" ;;
     rtl)
       [ $# -ge 3 ] || fail "rtl manifest row needs: top atom... ref"
       top=$1; shift; ref=${!#}
