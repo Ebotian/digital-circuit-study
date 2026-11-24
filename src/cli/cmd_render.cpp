@@ -8,6 +8,89 @@ using namespace dcstudy;
 
 namespace dcstudy {
 
+static std::string shq(const std::string &s) {
+  std::string out = "'";
+  for (char c : s) {
+    if (c == '\'')
+      out += "'\\''";
+    else
+      out += c;
+  }
+  out += "'";
+  return out;
+}
+
+bool render_netlist_files(const std::vector<std::string> &files,
+                          const std::string &top, const std::string &out,
+                          bool png, std::string &err) {
+  if (files.empty()) {
+    err = "netlist render: no input files";
+    return false;
+  }
+  for (const char *tool : {"yosys", "dot"}) {
+    if (std::system(
+            (std::string("command -v ") + tool + " >/dev/null 2>&1").c_str()) !=
+        0) {
+      err = std::string("netlist render needs ") + tool + " in PATH";
+      return false;
+    }
+  }
+  if (png && std::system("command -v rsvg-convert >/dev/null 2>&1") != 0) {
+    err = "netlist render --png needs rsvg-convert in PATH";
+    return false;
+  }
+  std::error_code ec;
+  fs::create_directories(out, ec);
+  // Yosys' -p parser does not strip shell quotes, and paths with spaces
+  // would be split. Stage the inputs under simple names in the output dir.
+  std::string script;
+  for (std::size_t i = 0; i < files.size(); ++i) {
+    const std::string staged = "netlist_in_" + std::to_string(i) + ".v";
+    std::error_code cec;
+    fs::copy_file(files[i], fs::path(out) / staged,
+                  fs::copy_options::overwrite_existing, cec);
+    if (cec) {
+      err = "cannot stage " + files[i] + ": " + cec.message();
+      return false;
+    }
+    script += "read_verilog -sv " + staged + "; ";
+  }
+  script += "prep -top " + top + "; show -format dot -prefix " + top + " " +
+            top + ";";
+  const std::string log = (fs::path(out) / "render.log").string();
+  const std::string ycmd = "cd " + shq(out) + " && timeout 180 yosys -Q -p " +
+                           shq(script) + " > " + shq(log) + " 2>&1";
+  if (std::system(ycmd.c_str()) != 0) {
+    err = "yosys show failed; see " + log;
+    return false;
+  }
+  const std::string dot = (fs::path(out) / (top + ".dot")).string();
+  const std::string svg = (fs::path(out) / (top + ".svg")).string();
+  const std::string dcmd = "timeout 120 dot -Tsvg " + shq(dot) + " -o " +
+                           shq(svg) + " >> " + shq(log) + " 2>&1";
+  if (std::system(dcmd.c_str()) != 0) {
+    err = "graphviz failed; see " + log;
+    return false;
+  }
+  std::string img = top + ".svg";
+  if (png) {
+    const std::string pcmd = "timeout 120 rsvg-convert -w 2400 " + shq(svg) +
+                             " -o " +
+                             shq((fs::path(out) / (top + ".png")).string()) +
+                             " >> " + shq(log) + " 2>&1";
+    if (std::system(pcmd.c_str()) != 0) {
+      err = "rsvg-convert failed; see " + log;
+      return false;
+    }
+    img = top + ".png";
+  }
+  std::ofstream html(fs::path(out) / "index.html");
+  html << "<!doctype html><meta charset=\"utf-8\"><title>" << top
+       << "</title>\n<h1>" << top << "</h1>\n<img src=\"" << img
+       << "\" style=\"max-width:100%\">\n";
+  return true;
+}
+
 int cmd_render_static(const Args &a, const FuncSpec &spec,
                       const SpaceOptions &opt, bool json) {
   const CmosDesign d = synthesize_cmos(spec.func, spec.vars);
@@ -106,6 +189,29 @@ int cmd_render_static(const Args &a, const FuncSpec &spec,
 int cmd_render(int argc, char **argv) {
   const Args a = parse_args(argc, argv, 2);
   const bool json = a.is("json");
+  if (a.has("netlist")) {
+    std::vector<std::string> files{a.need("netlist")};
+    if (a.has("atoms"))
+      files.push_back(a.need("atoms"));
+    const std::string out = a.get("out", "out/render");
+    const std::string top = a.get("top", "top");
+    std::string err;
+    if (!render_netlist_files(files, top, out, a.is("png"), err))
+      throw CliError(err);
+    if (json) {
+      Json j;
+      j["ok"] = true;
+      j["command"] = "render.netlist";
+      j["out"] = out;
+      j["svg"] = out + "/" + top + ".svg";
+      if (a.is("png"))
+        j["png"] = out + "/" + top + ".png";
+      std::cout << j.dump() << "\n";
+    } else {
+      std::cout << "rendered netlist to " << out << "/" << top << ".svg\n";
+    }
+    return 0;
+  }
   const FuncSpec spec = get_spec(a);
   if (spec.vars.size() > 4)
     throw CliError("render supports at most 4 variables");

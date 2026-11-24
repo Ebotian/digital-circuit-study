@@ -36,7 +36,8 @@ Commands:
   multi compose  --spec FILE [--out DIR] [--json]  (BDD -> 2:1 mux network)
   multi path     --spec FILE [--max-cost N] [--max-chain N] [--tri-state] [--json]
   multi template --spec FILE [--json]
-  render         --expr EXPR | --tt BITS [--max-cost N] [--limit N]
+  render         --expr EXPR | --tt BITS | --netlist FILE [--atoms FILE]
+                 [--top NAME] [--max-cost N] [--limit N]
                  [--canonical] [--out DIR] [--png] [--no-logic]
                  [--static-cmos]
 

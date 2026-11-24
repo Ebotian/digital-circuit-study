@@ -1,5 +1,6 @@
 #include "cli/cli_common.hpp"
 #include "cli/cli_includes.hpp"
+#include "cli/cmd_render.hpp"
 
 namespace fs = std::filesystem;
 using namespace dcstudy;
@@ -291,6 +292,12 @@ int cmd_multi_compose(const Args &a, const MultiProblem &spec,
     std::ofstream(out_dir + "/mux2.v") << r.atom_rtl;
     std::ofstream(out_dir + "/netlist.v") << r.synth.verilog;
     std::ofstream(out_dir + "/netlist.json") << r.synth.json;
+    if (a.is("png")) {
+      std::string err;
+      if (!render_netlist_files({out_dir + "/compose.v", out_dir + "/mux2.v"},
+                                "top", out_dir, true, err))
+        throw CliError(err);
+    }
   }
   if (json) {
     Json j;
