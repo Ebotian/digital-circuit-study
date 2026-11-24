@@ -45,18 +45,14 @@ for c in "$@"; do
     encoder42) spec "$c" "$ROOT/tests/verify/instances/specs/encoder42.json" ;;
     hex7seg) spec "$c" "$ROOT/tests/verify/instances/specs/hex7seg.json" ;;
     hex7seg_sel) spec "$c" "$ROOT/tests/verify/instances/specs/hex7seg_sel.json" ;;
-    prio42) spec "$c" "$ROOT/tests/verify/instances/specs/pe42.json" ;;
+    pe42) spec "$c" "$ROOT/tests/verify/instances/specs/pe42.json" ;;
     nor2) spec "$c" "$ROOT/tests/verify/instances/specs/nor2.json" ;;
     xor2) spec "$c" "$ROOT/tests/verify/instances/specs/xor2.json" ;;
     xnor2) spec "$c" "$ROOT/tests/verify/instances/specs/xnor2.json" ;;
     mux2) spec "$c" "$ROOT/tests/verify/instances/specs/mux2.json" ;;
     mux4_3bit) compose "$c" "$ROOT/tests/verify/instances/specs/mux4_3bit.json" ;;
-    compose_mux4_3bit) compose "$c" "$ROOT/tests/verify/instances/specs/mux4_3bit.json" ;;
-    compose_prio8)
+    prio8)
       compose "$c" "$ROOT/bench/fixtures/prio8.json" \
-        --library "$ROOT/tests/verify/instances/specs/library.json" ;;
-    compose_library)
-      compose "$c" "$ROOT/tests/verify/instances/specs/pe42.json" \
         --library "$ROOT/tests/verify/instances/specs/library.json" ;;
     prio16)
       rtl "$c" "$ROOT/tests/verify/instances/rtl/top16.v" \

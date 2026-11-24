@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Automatic library composition: 8-3 priority encoder from pe42/or4/mux2.
+# 8-3 priority encoder, built by library composition from pe42/or4/mux2.
 . "$(dirname "$0")/../../lib.sh"
 J=$("$BIN" multi compose --spec "$ROOT/bench/fixtures/prio8.json" \
       --library "$(dirname "$0")/../specs/library.json" --json)
@@ -11,4 +11,4 @@ J=$("$BIN" multi compose --spec "$ROOT/bench/fixtures/prio8.json" \
   || fail "compose prio8 mux2 count"
 [ "$(jq -r '[.atoms[] | select(.module=="or4") | .instances] | add' <<<"$J")" = "1" ] \
   || fail "compose prio8 or4 count"
-pass "compose_prio8  8-3 = 2x pe42 + or4 + 2x mux2 = 66T, miter PASS"
+pass "prio8       8-3 = 2x pe42 + or4 + 2x mux2 = 66T, miter PASS"
