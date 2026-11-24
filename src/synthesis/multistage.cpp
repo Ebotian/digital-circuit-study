@@ -759,7 +759,8 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
       write_text(dir.path() / "miter.v", miter);
       run_yosys("read_verilog -sv atoms.v; read_verilog -sv top.v; "
                 "read_verilog -sv ref.v; read_verilog -sv miter.v; "
-                "prep -top miter; flatten; delete t:$scopeinfo; opt -full; sat "
+                "prep -top miter; flatten; memory; delete t:$scopeinfo; opt "
+                "-full; sat "
                 "-verify -prove mismatch 0 miter",
                 "ref.log");
       out.verified = true;

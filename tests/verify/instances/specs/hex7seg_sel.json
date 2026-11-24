@@ -1,0 +1,40 @@
+{
+ "name": "hex7seg_sel",
+ "outputs": [
+  {
+   "name": "a",
+   "expr": "(~D3 & ~D2 & ~D1 & ~D0 & ~SEL) | (~D3 & ~D2 & ~D1 & ~D0 & SEL) | (~D3 & ~D2 & D1 & ~D0 & ~SEL) | (~D3 & ~D2 & D1 & ~D0 & SEL) | (~D3 & ~D2 & D1 & D0 & ~SEL) | (~D3 & ~D2 & D1 & D0 & SEL) | (~D3 & D2 & ~D1 & D0 & ~SEL) | (~D3 & D2 & ~D1 & D0 & SEL) | (~D3 & D2 & D1 & ~D0 & ~SEL) | (~D3 & D2 & D1 & ~D0 & SEL) | (~D3 & D2 & D1 & D0 & ~SEL) | (~D3 & D2 & D1 & D0 & SEL) | (D3 & ~D2 & ~D1 & ~D0 & ~SEL) | (D3 & ~D2 & ~D1 & ~D0 & SEL) | (D3 & ~D2 & ~D1 & D0 & ~SEL) | (D3 & ~D2 & ~D1 & D0 & SEL) | (D3 & ~D2 & D1 & ~D0 & ~SEL) | (D3 & D2 & ~D1 & ~D0 & ~SEL) | (D3 & D2 & D1 & ~D0 & ~SEL) | (D3 & D2 & D1 & D0 & ~SEL)"
+  },
+  {
+   "name": "b",
+   "expr": "(~D3 & ~D2 & ~D1 & ~D0 & ~SEL) | (~D3 & ~D2 & ~D1 & ~D0 & SEL) | (~D3 & ~D2 & ~D1 & D0 & ~SEL) | (~D3 & ~D2 & ~D1 & D0 & SEL) | (~D3 & ~D2 & D1 & ~D0 & ~SEL) | (~D3 & ~D2 & D1 & ~D0 & SEL) | (~D3 & ~D2 & D1 & D0 & ~SEL) | (~D3 & ~D2 & D1 & D0 & SEL) | (~D3 & D2 & ~D1 & ~D0 & ~SEL) | (~D3 & D2 & ~D1 & ~D0 & SEL) | (~D3 & D2 & D1 & D0 & ~SEL) | (~D3 & D2 & D1 & D0 & SEL) | (D3 & ~D2 & ~D1 & ~D0 & ~SEL) | (D3 & ~D2 & ~D1 & ~D0 & SEL) | (D3 & ~D2 & ~D1 & D0 & ~SEL) | (D3 & ~D2 & ~D1 & D0 & SEL) | (D3 & ~D2 & D1 & ~D0 & ~SEL) | (D3 & D2 & ~D1 & D0 & ~SEL)"
+  },
+  {
+   "name": "c",
+   "expr": "(~D3 & ~D2 & ~D1 & ~D0 & ~SEL) | (~D3 & ~D2 & ~D1 & ~D0 & SEL) | (~D3 & ~D2 & ~D1 & D0 & ~SEL) | (~D3 & ~D2 & ~D1 & D0 & SEL) | (~D3 & ~D2 & D1 & D0 & ~SEL) | (~D3 & ~D2 & D1 & D0 & SEL) | (~D3 & D2 & ~D1 & ~D0 & ~SEL) | (~D3 & D2 & ~D1 & ~D0 & SEL) | (~D3 & D2 & ~D1 & D0 & ~SEL) | (~D3 & D2 & ~D1 & D0 & SEL) | (~D3 & D2 & D1 & ~D0 & ~SEL) | (~D3 & D2 & D1 & ~D0 & SEL) | (~D3 & D2 & D1 & D0 & ~SEL) | (~D3 & D2 & D1 & D0 & SEL) | (D3 & ~D2 & ~D1 & ~D0 & ~SEL) | (D3 & ~D2 & ~D1 & ~D0 & SEL) | (D3 & ~D2 & ~D1 & D0 & ~SEL) | (D3 & ~D2 & ~D1 & D0 & SEL) | (D3 & ~D2 & D1 & ~D0 & ~SEL) | (D3 & ~D2 & D1 & D0 & ~SEL) | (D3 & D2 & ~D1 & D0 & ~SEL)"
+  },
+  {
+   "name": "d",
+   "expr": "(~D3 & ~D2 & ~D1 & ~D0 & ~SEL) | (~D3 & ~D2 & ~D1 & ~D0 & SEL) | (~D3 & ~D2 & D1 & ~D0 & ~SEL) | (~D3 & ~D2 & D1 & ~D0 & SEL) | (~D3 & ~D2 & D1 & D0 & ~SEL) | (~D3 & ~D2 & D1 & D0 & SEL) | (~D3 & D2 & ~D1 & D0 & ~SEL) | (~D3 & D2 & ~D1 & D0 & SEL) | (~D3 & D2 & D1 & ~D0 & ~SEL) | (~D3 & D2 & D1 & ~D0 & SEL) | (D3 & ~D2 & ~D1 & ~D0 & ~SEL) | (D3 & ~D2 & ~D1 & ~D0 & SEL) | (D3 & ~D2 & ~D1 & D0 & ~SEL) | (D3 & ~D2 & ~D1 & D0 & SEL) | (D3 & ~D2 & D1 & D0 & ~SEL) | (D3 & D2 & ~D1 & ~D0 & ~SEL) | (D3 & D2 & ~D1 & D0 & ~SEL) | (D3 & D2 & D1 & ~D0 & ~SEL)"
+  },
+  {
+   "name": "e",
+   "expr": "(~D3 & ~D2 & ~D1 & ~D0 & ~SEL) | (~D3 & ~D2 & ~D1 & ~D0 & SEL) | (~D3 & ~D2 & D1 & ~D0 & ~SEL) | (~D3 & ~D2 & D1 & ~D0 & SEL) | (~D3 & D2 & D1 & ~D0 & ~SEL) | (~D3 & D2 & D1 & ~D0 & SEL) | (D3 & ~D2 & ~D1 & ~D0 & ~SEL) | (D3 & ~D2 & ~D1 & ~D0 & SEL) | (D3 & ~D2 & D1 & ~D0 & ~SEL) | (D3 & ~D2 & D1 & D0 & ~SEL) | (D3 & D2 & ~D1 & ~D0 & ~SEL) | (D3 & D2 & ~D1 & D0 & ~SEL) | (D3 & D2 & D1 & ~D0 & ~SEL) | (D3 & D2 & D1 & D0 & ~SEL)"
+  },
+  {
+   "name": "f",
+   "expr": "(~D3 & ~D2 & ~D1 & ~D0 & ~SEL) | (~D3 & ~D2 & ~D1 & ~D0 & SEL) | (~D3 & D2 & ~D1 & ~D0 & ~SEL) | (~D3 & D2 & ~D1 & ~D0 & SEL) | (~D3 & D2 & ~D1 & D0 & ~SEL) | (~D3 & D2 & ~D1 & D0 & SEL) | (~D3 & D2 & D1 & ~D0 & ~SEL) | (~D3 & D2 & D1 & ~D0 & SEL) | (D3 & ~D2 & ~D1 & ~D0 & ~SEL) | (D3 & ~D2 & ~D1 & ~D0 & SEL) | (D3 & ~D2 & ~D1 & D0 & ~SEL) | (D3 & ~D2 & ~D1 & D0 & SEL) | (D3 & ~D2 & D1 & ~D0 & ~SEL) | (D3 & ~D2 & D1 & D0 & ~SEL) | (D3 & D2 & ~D1 & ~D0 & ~SEL) | (D3 & D2 & D1 & ~D0 & ~SEL) | (D3 & D2 & D1 & D0 & ~SEL)"
+  },
+  {
+   "name": "g",
+   "expr": "(~D3 & ~D2 & D1 & ~D0 & ~SEL) | (~D3 & ~D2 & D1 & ~D0 & SEL) | (~D3 & ~D2 & D1 & D0 & ~SEL) | (~D3 & ~D2 & D1 & D0 & SEL) | (~D3 & D2 & ~D1 & ~D0 & ~SEL) | (~D3 & D2 & ~D1 & ~D0 & SEL) | (~D3 & D2 & ~D1 & D0 & ~SEL) | (~D3 & D2 & ~D1 & D0 & SEL) | (~D3 & D2 & D1 & ~D0 & ~SEL) | (~D3 & D2 & D1 & ~D0 & SEL) | (D3 & ~D2 & ~D1 & ~D0 & ~SEL) | (D3 & ~D2 & ~D1 & ~D0 & SEL) | (D3 & ~D2 & ~D1 & D0 & ~SEL) | (D3 & ~D2 & ~D1 & D0 & SEL) | (D3 & ~D2 & D1 & ~D0 & ~SEL) | (D3 & ~D2 & D1 & D0 & ~SEL) | (D3 & D2 & ~D1 & D0 & ~SEL) | (D3 & D2 & D1 & ~D0 & ~SEL) | (D3 & D2 & D1 & D0 & ~SEL)"
+  }
+ ],
+ "inputs": [
+  "D3",
+  "D2",
+  "D1",
+  "D0",
+  "SEL"
+ ]
+}
