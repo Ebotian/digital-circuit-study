@@ -19,7 +19,7 @@ FILC_SOURCES := src/cli/main.cpp src/switch/bdd_switch.cpp src/core/boolfunc.cpp
                 src/cli/z3_client.cpp src/cli/render_client.cpp \
                 src/z3/z3_protocol.cpp
 
-.PHONY: all build test format format-check lint ci ci-full asan werror coverage test-gcc fuzz shellcheck pylint tslint smoke smoke-cli smoke-filc filc filc-smoke verify verify-all integration clean
+.PHONY: all build test bench bench-save bench-micro bench-perf bench-profile bench-size format format-check lint ci ci-full asan werror coverage test-gcc fuzz shellcheck pylint tslint smoke smoke-cli smoke-filc filc filc-smoke verify verify-all integration clean
 
 all: build
 
@@ -62,6 +62,27 @@ ci: format-check lint werror test verify-all
 lint: $(CCDB)
 	@clice lint -j 0 | tee $(BUILD)/clice-lint.txt
 	@grep -q ": 0 findings" $(BUILD)/clice-lint.txt
+
+bench: $(BUILD)/dcstudy
+	bench/run.sh --suite all
+
+bench-save: $(BUILD)/dcstudy
+	bench/run.sh --suite all --save
+
+bench-micro:
+	bench/micro.sh
+
+bench-perf: $(BUILD)/dcstudy
+	perf stat -e cycles:u,instructions:u,branches:u,branch-misses:u,cache-misses:u \
+	  $(BUILD)/dcstudy multi exact --spec tests/verify/instances/specs/hex7seg.json --json
+
+bench-profile: $(BUILD)/dcstudy
+	valgrind --tool=callgrind --callgrind-out-file=$(BUILD)/callgrind.out \
+	  $(BUILD)/dcstudy multi compose --spec tests/verify/instances/specs/mux4_3bit.json --json
+	callgrind_annotate $(BUILD)/callgrind.out | head -30
+
+bench-size: $(BUILD)/dcstudy
+	bloaty $(BUILD)/dcstudy -d sections
 
 smoke: smoke-cli
 	@if command -v $(FILC) >/dev/null 2>&1; then \

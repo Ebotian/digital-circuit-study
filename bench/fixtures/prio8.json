@@ -1,0 +1,5 @@
+{"name":"prio8","inputs":["A7","A6","A5","A4","A3","A2","A1","A0"],
+ "outputs":[
+  {"name":"Y2","expr":"A7|A6|A5|A4"},
+  {"name":"Y1","expr":"A7|A6|(~(A7|A6|A5|A4)&(A3|A2))"},
+  {"name":"Y0","expr":"A7|(~A6&A5)|(~(A7|A6|A5|A4)&(A3|(~A2&A1)))"}]}

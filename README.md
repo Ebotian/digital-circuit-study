@@ -101,6 +101,12 @@ make fuzz            # libFuzzer: JSON/表达式(FUZZ_TIME=30)
 make shellcheck      # 15 个 shell 脚本
 make pylint          # mypy on workers/render_worker.py
 make ci-full         # ci + 以上全部(tslint 需 workers/node_modules)
+make bench           # 基准: core/exact/compose/synth (hyperfine)
+make bench-save      # 更新 bench/baselines/
+make bench-micro     # BoolFunc/Bits 进程内微基准
+make bench-perf      # perf stat (用户态计数器)
+make bench-profile   # callgrind on multi compose
+make bench-size      # bloaty 段体积
 
 > GitHub CI 只跑不依赖重型库的部分：Release/-Werror、ASan、gcc、覆盖率、fuzz、shellcheck、mypy，以及 clice format/lint（从 [clice-io/clice](https://github.com/clice-io/clice) 的 v1.0.0 release 安装；`-DDCSTUDY_BUILD_Z3_HELPER=OFF`，Z3 用例自动 skip）。Yosys/Verilator/PDK、Fil-C 仍走本地 `make ci-full`。
 ```

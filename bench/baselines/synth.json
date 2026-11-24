@@ -1,0 +1,104 @@
+{
+  "schema_version": 2,
+  "metadata": {
+    "hyperfine_version": "2.0.0",
+    "start_time": "2026-11-24T02:43:42Z",
+    "platform": {
+      "os": "Linux",
+      "architecture": "x86_64"
+    }
+  },
+  "primary_metric": "time_wall_clock",
+  "results": [
+    {
+      "command": "/home/ebt/digital-circuit-study/build/dcstudy multi synth --spec /home/ebt/digital-circuit-study/tests/verify/instances/specs/decoder38.json --json",
+      "summary": {
+        "branch_misses": {
+          "count": 40,
+          "mean": 4254165.9,
+          "stddev": 29977.646834488747,
+          "median": 4253501.0,
+          "min": 4211977.0,
+          "max": 4331980.0
+        },
+        "cache_misses": {
+          "count": 40,
+          "mean": 2139873.65,
+          "stddev": 84004.71677128063,
+          "median": 2127016.5,
+          "min": 2013107.0,
+          "max": 2352595.0
+        },
+        "cache_references": {
+          "count": 40,
+          "mean": 25501707.875,
+          "stddev": 305110.62449487176,
+          "median": 25461791.0,
+          "min": 24992039.0,
+          "max": 26840876.0
+        },
+        "cpu_cycles": {
+          "count": 40,
+          "mean": 681738836.775,
+          "stddev": 7721912.9585978845,
+          "median": 682242161.5,
+          "min": 669243926.0,
+          "max": 712217899.0
+        },
+        "instructions": {
+          "count": 40,
+          "mean": 1565439832.85,
+          "stddev": 51359.10489801823,
+          "median": 1565438929.5,
+          "min": 1565355637.0,
+          "max": 1565556145.0
+        },
+        "memory_peak_resident": {
+          "unit": "byte",
+          "count": 40,
+          "mean": 36296601.6,
+          "stddev": 106629.16802201289,
+          "median": 36306944.0,
+          "min": 36028416.0,
+          "max": 36487168.0
+        },
+        "time_cpu": {
+          "unit": "second",
+          "count": 40,
+          "mean": 0.19591050000000004,
+          "stddev": 0.0036000988875307277,
+          "median": 0.1968585,
+          "min": 0.18490600000000001,
+          "max": 0.20129
+        },
+        "time_system": {
+          "unit": "second",
+          "count": 40,
+          "mean": 0.06996577499999998,
+          "stddev": 0.007119168611383473,
+          "median": 0.068772,
+          "min": 0.058171999999999995,
+          "max": 0.085587
+        },
+        "time_user": {
+          "unit": "second",
+          "count": 40,
+          "mean": 0.12594472499999995,
+          "stddev": 0.006992552077994236,
+          "median": 0.12604749999999998,
+          "min": 0.110662,
+          "max": 0.137923
+        },
+        "time_wall_clock": {
+          "unit": "second",
+          "count": 40,
+          "mean": 0.07275845230000003,
+          "stddev": 0.0009449706281562182,
+          "median": 0.072661646,
+          "min": 0.071166911,
+          "max": 0.075069758
+        }
+      }
+    }
+  ]
+}

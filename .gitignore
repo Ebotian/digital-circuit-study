@@ -24,3 +24,6 @@ compile_commands.json
 
 # 独立质量门禁构建目录
 build-*/
+
+# 基准运行产物(基线保留)
+bench/results/

@@ -1,0 +1,194 @@
+{
+  "schema_version": 2,
+  "metadata": {
+    "hyperfine_version": "2.0.0",
+    "start_time": "2026-11-24T02:43:15Z",
+    "platform": {
+      "os": "Linux",
+      "architecture": "x86_64"
+    }
+  },
+  "primary_metric": "time_wall_clock",
+  "results": [
+    {
+      "command": "/home/ebt/digital-circuit-study/build/dcstudy multi exact --spec /home/ebt/digital-circuit-study/tests/verify/instances/specs/encoder42.json --json",
+      "summary": {
+        "branch_misses": {
+          "count": 252,
+          "mean": 519120.14285714284,
+          "stddev": 12030.064591808981,
+          "median": 514514.0,
+          "min": 504274.0,
+          "max": 580790.0
+        },
+        "cache_misses": {
+          "count": 252,
+          "mean": 310915.6468253968,
+          "stddev": 13228.495256049066,
+          "median": 308842.5,
+          "min": 291580.0,
+          "max": 354835.0
+        },
+        "cache_references": {
+          "count": 252,
+          "mean": 4044527.742063492,
+          "stddev": 60559.89836307482,
+          "median": 4034765.5,
+          "min": 3943575.0,
+          "max": 4253399.0
+        },
+        "cpu_cycles": {
+          "count": 252,
+          "mean": 82282484.40476191,
+          "stddev": 1708609.3438800364,
+          "median": 82263280.5,
+          "min": 77956994.0,
+          "max": 87502942.0
+        },
+        "instructions": {
+          "count": 252,
+          "mean": 198410722.8888889,
+          "stddev": 9584.328829038737,
+          "median": 198412553.5,
+          "min": 198366760.0,
+          "max": 198430446.0
+        },
+        "memory_peak_resident": {
+          "unit": "byte",
+          "count": 252,
+          "mean": 35139193.9047619,
+          "stddev": 257033.30043693722,
+          "median": 35115008.0,
+          "min": 34635776.0,
+          "max": 35917824.0
+        },
+        "time_cpu": {
+          "unit": "second",
+          "count": 252,
+          "mean": 0.0230371626984127,
+          "stddev": 0.00045272334115104853,
+          "median": 0.0230425,
+          "min": 0.021849999999999998,
+          "max": 0.02419
+        },
+        "time_system": {
+          "unit": "second",
+          "count": 252,
+          "mean": 0.00727120634920635,
+          "stddev": 0.0018847376932586153,
+          "median": 0.007251499999999999,
+          "min": 0.002508,
+          "max": 0.011918999999999999
+        },
+        "time_user": {
+          "unit": "second",
+          "count": 252,
+          "mean": 0.015765956349206346,
+          "stddev": 0.0018975918315178295,
+          "median": 0.015764,
+          "min": 0.010425,
+          "max": 0.020971999999999998
+        },
+        "time_wall_clock": {
+          "unit": "second",
+          "count": 252,
+          "mean": 0.012050889325396823,
+          "stddev": 0.00025388557188020245,
+          "median": 0.0120463785,
+          "min": 0.011381227,
+          "max": 0.012889328
+        }
+      }
+    },
+    {
+      "command": "/home/ebt/digital-circuit-study/build/dcstudy multi exact --spec /home/ebt/digital-circuit-study/tests/verify/instances/specs/hex7seg.json --json",
+      "summary": {
+        "branch_misses": {
+          "count": 17,
+          "mean": 23424466.647058822,
+          "stddev": 122661.99511968915,
+          "median": 23430556.0,
+          "min": 23202957.0,
+          "max": 23690690.0
+        },
+        "cache_misses": {
+          "count": 17,
+          "mean": 11319603.352941176,
+          "stddev": 189897.4483714635,
+          "median": 11270625.0,
+          "min": 11134606.0,
+          "max": 11954331.0
+        },
+        "cache_references": {
+          "count": 17,
+          "mean": 109494150.94117647,
+          "stddev": 4296621.6975404415,
+          "median": 107098448.0,
+          "min": 105265822.0,
+          "max": 116737971.0
+        },
+        "cpu_cycles": {
+          "count": 17,
+          "mean": 3813334179.9411764,
+          "stddev": 46083594.36315687,
+          "median": 3800911464.0,
+          "min": 3756205689.0,
+          "max": 3906420320.0
+        },
+        "instructions": {
+          "count": 17,
+          "mean": 10877908276.058823,
+          "stddev": 11143.34280787518,
+          "median": 10877906067.0,
+          "min": 10877886873.0,
+          "max": 10877930151.0
+        },
+        "memory_peak_resident": {
+          "unit": "byte",
+          "count": 17,
+          "mean": 51091817.4117647,
+          "stddev": 212410.57292395394,
+          "median": 51113984.0,
+          "min": 50720768.0,
+          "max": 51462144.0
+        },
+        "time_cpu": {
+          "unit": "second",
+          "count": 17,
+          "mean": 0.8081198235294117,
+          "stddev": 0.009025915640776363,
+          "median": 0.806195,
+          "min": 0.794903,
+          "max": 0.8285609999999999
+        },
+        "time_system": {
+          "unit": "second",
+          "count": 17,
+          "mean": 0.07020158823529413,
+          "stddev": 0.0069310307049062275,
+          "median": 0.070121,
+          "min": 0.052376,
+          "max": 0.08316799999999999
+        },
+        "time_user": {
+          "unit": "second",
+          "count": 17,
+          "mean": 0.7379182352941177,
+          "stddev": 0.010468578876388914,
+          "median": 0.738211,
+          "min": 0.725557,
+          "max": 0.7673059999999999
+        },
+        "time_wall_clock": {
+          "unit": "second",
+          "count": 17,
+          "mean": 0.1663568158235294,
+          "stddev": 0.006594634282198292,
+          "median": 0.16155269500000002,
+          "min": 0.160113118,
+          "max": 0.17666562700000002
+        }
+      }
+    }
+  ]
+}
