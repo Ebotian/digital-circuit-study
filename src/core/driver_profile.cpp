@@ -145,14 +145,26 @@ BoolMatrix power_closure(const BoolMatrix &c, std::size_t n, int &steps) {
   return reach;
 }
 
+struct DriverQuery {
+  std::size_t offset;
+  std::uint32_t m;
+};
+
+struct DriverFlags {
+  bool &valid;
+  bool &all_single;
+  int &max_drivers;
+};
+
 template <typename Reach>
-// Internal helper; call sites reviewed.
-DriverRow // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-extract_row_t(const Graph &g, const Reach &reach, std::size_t offset,
-              std::uint32_t m, const std::vector<std::string> &vars,
-              const std::vector<int> &target,
-              bool &valid, // NOLINT(bugprone-easily-swappable-parameters)
-              bool &all_single, int &max_drivers) {
+DriverRow extract_row_t(const Graph &g, const Reach &reach, DriverQuery q,
+                        const std::vector<std::string> &vars,
+                        const std::vector<int> &target, DriverFlags flags) {
+  const std::size_t offset = q.offset;
+  const std::uint32_t m = q.m;
+  bool &valid = flags.valid;
+  bool &all_single = flags.all_single;
+  int &max_drivers = flags.max_drivers;
   DriverRow row;
   std::map<std::string, bool> strong_for;
   for (const auto &p : g.paths) {
@@ -239,8 +251,8 @@ bool graphblas_batch(const std::vector<Graph> &graphs,
       const std::size_t base = static_cast<std::size_t>(m) * total + offsets[k];
       const auto &target = targets.size() == 1 ? targets[0] : targets.at(k);
       out[k].rows[m] =
-          extract_row_t(graphs[k], sr, base, m, vars, target, out[k].valid,
-                        out[k].all_single, out[k].max_drivers);
+          extract_row_t(graphs[k], sr, DriverQuery{base, m}, vars, target,
+                        {out[k].valid, out[k].all_single, out[k].max_drivers});
       out[k].driver_count[m] = static_cast<int>(out[k].rows[m].sources.size());
       out[k].power_steps = static_cast<int>(full_total);
     }
@@ -528,8 +540,8 @@ DriverProfile analyze_design_drivers(const Design &d,
     fill_matrix(c, g, m, vars, 0);
     out.power_steps += static_cast<int>(g.names.size());
     BoolMatrix reach = power_closure(c, g.names.size(), out.power_steps);
-    out.rows[m] = extract_row_t(g, reach, 0, m, vars, target, out.valid,
-                                out.all_single, out.max_drivers);
+    out.rows[m] = extract_row_t(g, reach, DriverQuery{0, m}, vars, target,
+                                {out.valid, out.all_single, out.max_drivers});
     out.driver_count[m] = static_cast<int>(out.rows[m].sources.size());
   }
   return out;
@@ -584,9 +596,9 @@ std::vector<DriverProfile> analyze_designs_drivers_batch(
     BoolMatrix reach = power_closure(c, total, steps);
     for (std::size_t k = 0; k < designs.size(); ++k) {
       const auto &target = targets.size() == 1 ? targets[0] : targets.at(k);
-      out[k].rows[m] =
-          extract_row_t(graphs[k], reach, offsets[k], m, vars, target,
-                        out[k].valid, out[k].all_single, out[k].max_drivers);
+      out[k].rows[m] = extract_row_t(
+          graphs[k], reach, DriverQuery{offsets[k], m}, vars, target,
+          {out[k].valid, out[k].all_single, out[k].max_drivers});
       out[k].driver_count[m] = static_cast<int>(out[k].rows[m].sources.size());
       out[k].power_steps += steps;
     }

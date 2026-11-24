@@ -18,13 +18,16 @@ std::uint64_t full_mask(std::size_t n) {
              : ((std::uint64_t{1} << n) - 1);
 }
 
-// Internal helper; call sites reviewed.
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-Bits cover_of(std::uint64_t care, std::uint64_t value, std::size_t n) {
+struct CubeMask {
+  std::uint64_t care;
+  std::uint64_t value;
+};
+
+Bits cover_of(CubeMask cube, std::size_t n) {
   const std::uint32_t N = std::uint32_t{1} << n;
   Bits cover(N);
   for (std::uint32_t m = 0; m < N; ++m)
-    if ((static_cast<std::uint64_t>(m) & care) == value)
+    if ((static_cast<std::uint64_t>(m) & cube.care) == cube.value)
       cover.set(m);
   return cover;
 }
@@ -41,7 +44,7 @@ std::vector<Cube> prime_implicants(const Bits &onset, std::size_t n) {
   for (std::uint32_t m = 0; m < onset.size(); ++m)
     if (onset.test(m))
       cubes.push_back(Cube{all, static_cast<std::uint64_t>(m),
-                           cover_of(all, static_cast<std::uint64_t>(m), n)});
+                           cover_of({all, static_cast<std::uint64_t>(m)}, n)});
 
   // Combine cubes that differ in exactly one constrained variable, level by
   // level (Quine-McCluskey).  Keep every generated implicant; primes are the
@@ -66,7 +69,7 @@ std::vector<Cube> prime_implicants(const Bits &onset, std::size_t n) {
         const std::uint64_t value = a.value & care;
         if (!seen.emplace(care, value).second)
           continue;
-        next.push_back(Cube{care, value, cover_of(care, value, n)});
+        next.push_back(Cube{care, value, cover_of({care, value}, n)});
         changed = true;
       }
     }

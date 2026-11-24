@@ -50,11 +50,13 @@ Env make_env(const std::vector<std::string> &vars) {
   return e;
 }
 
-// Internal helper; call sites reviewed.
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-int bit_of(const Env &e, std::size_t var, std::uint32_t minterm) {
+struct Minterm {
+  std::uint32_t value;
+};
+
+int bit_of(const Env &e, std::size_t var, Minterm minterm) {
   const std::size_t p = e.n - 1 - var;
-  return int((minterm >> p) & 1U);
+  return int((minterm.value >> p) & 1U);
 }
 
 LitInfo lit_info(const Env &e, const std::string &lit) {
@@ -66,7 +68,7 @@ LitInfo lit_info(const Env &e, const std::string &lit) {
 
 int lit_value(const Env &e, const std::string &lit, std::uint32_t minterm) {
   const auto info = lit_info(e, lit);
-  int v = bit_of(e, info.var, minterm);
+  int v = bit_of(e, info.var, Minterm{minterm});
   return info.inverted ? 1 - v : v;
 }
 
@@ -147,18 +149,16 @@ std::string behavior_key(const std::vector<Behavior> &bh, std::uint32_t req) {
   return key;
 }
 
-// Internal helper; call sites reviewed.
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-std::vector<std::vector<ChainElem>> all_chains(const Env &e, int max_chain,
-                                               int max_cost, bool allow_tg) {
+std::vector<std::vector<ChainElem>> all_chains(const Env &e,
+                                               const SpaceOptions &opt) {
   std::vector<std::vector<ChainElem>> out;
   std::vector<ChainElem> cur;
   const int nlit = static_cast<int>(e.lits.size());
   std::vector<std::pair<SwKind, std::string>> atoms;
   for (int i = 0; i < nlit; ++i) {
-    for (auto k : {SwKind::N, SwKind::P, allow_tg ? SwKind::TGL : SwKind::N,
-                   allow_tg ? SwKind::TGH : SwKind::N}) {
-      if (!allow_tg && (k == SwKind::TGL || k == SwKind::TGH))
+    for (auto k : {SwKind::N, SwKind::P, opt.allow_tg ? SwKind::TGL : SwKind::N,
+                   opt.allow_tg ? SwKind::TGH : SwKind::N}) {
+      if (!opt.allow_tg && (k == SwKind::TGL || k == SwKind::TGH))
         continue;
       atoms.emplace_back(k, e.vars[std::size_t(i) / 2] + (i % 2 ? "b" : ""));
     }
@@ -182,12 +182,12 @@ std::vector<std::vector<ChainElem>> all_chains(const Env &e, int max_chain,
   int cost = 0;
   auto rec = [&](auto &&self, std::size_t from) -> void {
     out.push_back(cur);
-    if (static_cast<int>(cur.size()) >= max_chain)
+    if (static_cast<int>(cur.size()) >= opt.max_chain)
       return;
     for (std::size_t i = from; i < atoms.size(); ++i) {
       const auto &[k, lit] = atoms[i];
       const int c = switch_cost(k);
-      if (cost + c > max_cost)
+      if (cost + c > opt.max_cost)
         continue;
       cur.push_back(ChainElem{k, lit, c});
       cost += c;
@@ -230,12 +230,10 @@ const char *switch_name(SwKind k) {
   return "?";
 }
 
-// Internal helper; call sites reviewed.
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-bool Branch::covers_strong(std::size_t minterm, int target) const {
-  if (minterm >= behavior.size())
+bool Branch::covers_strong(MintermIndex minterm, std::int8_t target) const {
+  if (minterm.value >= behavior.size())
     return false;
-  const auto &b = behavior[minterm];
+  const auto &b = behavior[minterm.value];
   return b.conducts && b.strong && b.value == target;
 }
 
@@ -284,7 +282,7 @@ std::vector<Branch> build_branches(const std::vector<std::string> &vars,
         "pass-network space: 2^n rows are not addressable");
   const Env e = make_env(vars);
   const std::uint32_t rows = std::uint32_t{1} << e.n;
-  const auto chains = all_chains(e, opt.max_chain, opt.max_cost, opt.allow_tg);
+  const auto chains = all_chains(e, opt);
 
   std::vector<std::string> sources = {"0", "1"};
   for (const auto &v : vars) {

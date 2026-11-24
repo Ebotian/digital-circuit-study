@@ -17,13 +17,16 @@
 namespace dcstudy {
 namespace {
 
-// Internal helper; call sites reviewed.
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-Bits cover_of(std::uint64_t care, std::uint64_t value, std::size_t n) {
+struct CubeMask {
+  std::uint64_t care;
+  std::uint64_t value;
+};
+
+Bits cover_of(CubeMask cube, std::size_t n) {
   const std::uint32_t N = std::uint32_t{1} << n;
   Bits cover(N);
   for (std::uint32_t m = 0; m < N; ++m)
-    if ((static_cast<std::uint64_t>(m) & care) == value)
+    if ((static_cast<std::uint64_t>(m) & cube.care) == cube.value)
       cover.set(m);
   return cover;
 }
@@ -120,11 +123,15 @@ std::string cdl_from_subckt(const Subckt &c) {
 
 // Enumerate every non-empty cube over the available literals that is
 // contained in `allowed`; fn(cube) is called once per distinct cube.
+struct CubeSpace {
+  std::size_t n;
+  std::uint64_t neg_allowed;
+};
+
 template <class Fn>
-// Internal helper; call sites reviewed.
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-void for_each_allowed_cube(const Bits &allowed, std::size_t n,
-                           std::uint64_t neg_allowed, Fn &&fn) {
+void for_each_allowed_cube(const Bits &allowed, CubeSpace space, Fn &&fn) {
+  const std::size_t n = space.n;
+  const std::uint64_t neg_allowed = space.neg_allowed;
   std::uint64_t total = 1;
   for (std::size_t i = 0; i < n; ++i)
     total *= 3;
@@ -153,7 +160,7 @@ void for_each_allowed_cube(const Bits &allowed, std::size_t n,
     Cube c;
     c.care = care;
     c.value = value;
-    c.cover = cover_of(care, value, n);
+    c.cover = cover_of({care, value}, n);
     if (!c.cover.subset_of(allowed))
       continue;
     fn(c);
@@ -165,7 +172,7 @@ Cube cheapest_allowed_cube(const Bits &allowed, std::size_t n,
                            std::uint64_t neg_allowed) {
   Cube best;
   int best_lits = std::numeric_limits<int>::max();
-  for_each_allowed_cube(allowed, n, neg_allowed, [&](const Cube &c) {
+  for_each_allowed_cube(allowed, {n, neg_allowed}, [&](const Cube &c) {
     if (c.literals() < best_lits) {
       best_lits = c.literals();
       best = c;
@@ -201,7 +208,7 @@ bool exact_min_dnf_literals(const Bits &onset, std::size_t n,
   // Enumerate every cube over the available literals that lies inside the
   // allowed rows and touches the must-on set.
   std::vector<Cube> cubes;
-  for_each_allowed_cube(allowed, n, neg_allowed, [&](const Cube &c) {
+  for_each_allowed_cube(allowed, {n, neg_allowed}, [&](const Cube &c) {
     if (c.cover.intersects(onset))
       cubes.push_back(c);
   });

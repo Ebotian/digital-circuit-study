@@ -7,6 +7,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "core/boolfunc.hpp"
@@ -38,11 +39,9 @@ struct Args {
 
   bool has(const std::string &k) const { return opt.count(k) || flag.count(k); }
   bool is(const std::string &k) const { return flag.count(k) != 0; }
-  // Internal helper; call sites reviewed.
-  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-  std::string get(const std::string &k, const std::string &def = {}) const {
+  std::string get(const std::string &k, std::string_view def = {}) const {
     auto it = opt.find(k);
-    return it == opt.end() ? def : it->second;
+    return it == opt.end() ? std::string(def) : it->second;
   }
   std::string need(const std::string &k) const {
     auto it = opt.find(k);

@@ -166,7 +166,8 @@ bool valid_design(const Design &d, const std::vector<int> &target,
   for (std::size_t m = 0; m < target.size(); ++m) {
     bool ok = false;
     for (const auto &b : d.branches) {
-      if (b.covers_strong(m, target[m])) {
+      if (b.covers_strong(MintermIndex{m},
+                          static_cast<std::int8_t>(target[m]))) {
         ok = true;
         break;
       }
@@ -268,7 +269,8 @@ SynthesisResult synthesize_min(const std::vector<std::string> &vars,
     (void)inserted;
     problem.groups.push_back(it->second);
     for (std::uint32_t m = 0; m < rows; ++m) {
-      if (branches[i].covers_strong(m, target[m]))
+      if (branches[i].covers_strong(MintermIndex{m},
+                                    static_cast<std::int8_t>(target[m])))
         problem.covers[m].push_back(static_cast<int>(i));
       if (branches[i].behavior.at(m).conducts)
         problem.conducts[m].push_back(static_cast<int>(i));

@@ -46,6 +46,16 @@ struct PathInfo {
   std::vector<int> edges;
 };
 
+struct DriverSnapshot {
+  std::vector<std::pair<int, std::string>> driver;
+  std::vector<std::pair<int, bool>> strong;
+};
+
+struct PathState {
+  int edge_cost = 0;
+  std::uint32_t inv_mask = 0;
+};
+
 struct Search {
   const std::vector<AllPath> &all;
   const std::vector<PathInfo> &paths;
@@ -160,14 +170,11 @@ struct Search {
     }
   }
 
-  void add_path(int pi, std::vector<std::pair<int, std::string>> &old_driver,
-                std::vector<std::pair<int, bool>> &old_strong,
-                int &old_edges, // NOLINT(bugprone-easily-swappable-parameters)
-                std::uint32_t &old_mask) {
+  void add_path(int pi, DriverSnapshot &snap, PathState &state) {
     const auto &p = paths[static_cast<std::size_t>(pi)];
     const auto &b = all[static_cast<std::size_t>(p.path)].branch;
-    old_edges = edge_cost;
-    old_mask = inv_mask;
+    state.edge_cost = edge_cost;
+    state.inv_mask = inv_mask;
     for (int e : p.edges) {
       if (edge_count[static_cast<std::size_t>(e)]++ == 0)
         edge_cost += edge_info[static_cast<std::size_t>(e)].cost;
@@ -177,31 +184,26 @@ struct Search {
       if (!b.behavior[static_cast<std::size_t>(m)].conducts)
         continue;
       const int k = idx(p.output, m);
-      old_driver.emplace_back(k, driver[static_cast<std::size_t>(k)]);
-      old_strong.emplace_back(k, strong_cover[static_cast<std::size_t>(k)]);
+      snap.driver.emplace_back(k, driver[static_cast<std::size_t>(k)]);
+      snap.strong.emplace_back(k, strong_cover[static_cast<std::size_t>(k)]);
       driver[static_cast<std::size_t>(k)] = b.source;
       if (b.behavior[static_cast<std::size_t>(m)].strong)
         strong_cover[static_cast<std::size_t>(k)] = true;
     }
   }
 
-  void
-  remove_path(int pi,
-              const std::vector<std::pair<int, std::string>> &old_driver,
-              const std::vector<std::pair<int, bool>> &old_strong,
-              int old_edges, // NOLINT(bugprone-easily-swappable-parameters)
-              std::uint32_t old_mask) {
+  void remove_path(int pi, const DriverSnapshot &snap, const PathState &state) {
     const auto &p = paths[static_cast<std::size_t>(pi)];
-    for (auto it = old_driver.rbegin(); it != old_driver.rend(); ++it)
+    for (auto it = snap.driver.rbegin(); it != snap.driver.rend(); ++it)
       driver[static_cast<std::size_t>(it->first)] = it->second;
-    for (auto it = old_strong.rbegin(); it != old_strong.rend(); ++it)
+    for (auto it = snap.strong.rbegin(); it != snap.strong.rend(); ++it)
       strong_cover[static_cast<std::size_t>(it->first)] = it->second;
     for (int e : p.edges) {
       if (--edge_count[static_cast<std::size_t>(e)] == 0)
         edge_cost -= edge_info[static_cast<std::size_t>(e)].cost;
     }
-    edge_cost = old_edges;
-    inv_mask = old_mask;
+    edge_cost = state.edge_cost;
+    inv_mask = state.inv_mask;
   }
 
   bool compatible(const PathInfo &p) const {
@@ -270,19 +272,15 @@ struct Search {
         continue;
       if (!compatible(paths[pi]))
         continue;
-      std::vector<std::pair<int, std::string>> old_driver;
-      std::vector<std::pair<int, bool>> old_strong;
-      int old_edges = 0;
-      std::uint32_t old_mask = 0;
-      add_path(static_cast<int>(pi), old_driver, old_strong, old_edges,
-               old_mask);
+      DriverSnapshot snap;
+      PathState state;
+      add_path(static_cast<int>(pi), snap, state);
       chosen[pi] = true;
       selected.push_back(static_cast<int>(pi));
       search();
       selected.pop_back();
       chosen[pi] = false;
-      remove_path(static_cast<int>(pi), old_driver, old_strong, old_edges,
-                  old_mask);
+      remove_path(static_cast<int>(pi), snap, state);
     }
   }
 };

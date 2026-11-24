@@ -57,9 +57,14 @@ struct Bdd {
     return id;
   }
 
-  // Internal helper; call sites reviewed.
-  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-  int build_range(const unsigned char *base, std::size_t size, int level) {
+  struct TableRange {
+    const unsigned char *base;
+    std::size_t size;
+  };
+
+  int build_range(TableRange range, int level) {
+    const unsigned char *base = range.base;
+    const std::size_t size = range.size;
     bool same = true;
     for (std::size_t i = 1; i < size; ++i)
       if (base[i] != base[0]) {
@@ -69,15 +74,12 @@ struct Bdd {
     if (same)
       return base[0] ? 1 : 0;
     const std::size_t half = size / 2;
-    return mk(level, build_range(base, half, level + 1),
-              build_range(base + half, half, level + 1));
+    return mk(level, build_range({base, half}, level + 1),
+              build_range({base + half, half}, level + 1));
   }
 
-  // Internal helper; call sites reviewed.
-  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-  int build(const std::vector<unsigned char> &table, int n, int level) {
-    (void)n;
-    return build_range(table.data(), table.size(), level);
+  int build(const std::vector<unsigned char> &table, int level) {
+    return build_range({table.data(), table.size()}, level);
   }
 };
 
@@ -112,7 +114,7 @@ int bdd_mux_count(const MultiProblem &h) {
     std::vector<unsigned char> table(rows);
     for (std::size_t m = 0; m < rows; ++m)
       table[m] = po.func.value(static_cast<std::uint32_t>(m)) ? 1 : 0;
-    (void)bdd.build(table, static_cast<int>(h.vars.size()), 0);
+    (void)bdd.build(table, 0);
   }
   int count = 0;
   for (std::size_t id = 2; id < bdd.nodes.size(); ++id) {
@@ -144,10 +146,21 @@ std::string atom_module_rtl(const MultiProblem &atom) {
 
 // Complete a partially-specified truth table: subtrees without care rows are
 // filled to match their sibling, so the BDD collapses free coordinates.
-// Internal helper; call sites reviewed.
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-bool fill_dc(unsigned char *val, const unsigned char *care, std::size_t size,
-             int level) {
+struct MaskBuffers {
+  unsigned char *val;
+  const unsigned char *care;
+};
+
+struct DcRange {
+  std::size_t size;
+  int level;
+};
+
+bool fill_dc(MaskBuffers buffers, DcRange range) {
+  unsigned char *val = buffers.val;
+  const unsigned char *care = buffers.care;
+  const std::size_t size = range.size;
+  const int level = range.level;
   (void)level;
   bool any = false;
   bool same = true;
@@ -171,8 +184,8 @@ bool fill_dc(unsigned char *val, const unsigned char *care, std::size_t size,
     return true;
   }
   const std::size_t half = size / 2;
-  const bool lo = fill_dc(val, care, half, level + 1);
-  const bool hi = fill_dc(val + half, care + half, half, level + 1);
+  const bool lo = fill_dc({val, care}, {half, level + 1});
+  const bool hi = fill_dc({val + half, care + half}, {half, level + 1});
   if (!lo && hi)
     std::copy(val + half, val + size, val);
   if (!hi && lo)
@@ -214,7 +227,7 @@ glue_from_signals(const MultiProblem &spec,
   for (std::size_t idx = 0; idx < hrows; ++idx)
     care[idx] = seen[idx] ? 1 : 0;
   for (std::size_t k = 0; k < spec.outputs.size(); ++k)
-    fill_dc(ht[k].data(), care.data(), hrows, 0);
+    fill_dc({ht[k].data(), care.data()}, {hrows, 0});
 
   MultiProblem h;
   h.title = "glue";
@@ -880,7 +893,7 @@ ComposeResult compose_mux2(const MultiProblem &spec,
     std::vector<unsigned char> table(rows);
     for (std::size_t m = 0; m < rows; ++m)
       table[m] = po.func.value(static_cast<std::uint32_t>(m)) ? 1 : 0;
-    roots.push_back(bdd.build(table, static_cast<int>(spec.vars.size()), 0));
+    roots.push_back(bdd.build(table, 0));
   }
 
   // A BDD node whose function is a single literal is just that signal: no mux

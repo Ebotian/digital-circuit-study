@@ -60,11 +60,18 @@ struct FixedPoint {
   bool invariant_ok = true;
 };
 
-FixedPoint run_fixpoint(
-    const Subckt &cell, const NetIndex &ni,
-    const std::vector<std::size_t> &input_idx,
-    std::uint32_t minterm, // NOLINT(bugprone-easily-swappable-parameters)
-    std::size_t vdd, std::size_t vss, bool graphblas) {
+struct FixPointPoint {
+  std::uint32_t minterm;
+  std::size_t vdd;
+  std::size_t vss;
+};
+
+FixedPoint run_fixpoint(const Subckt &cell, const NetIndex &ni,
+                        const std::vector<std::size_t> &input_idx,
+                        FixPointPoint point, bool graphblas) {
+  const std::uint32_t minterm = point.minterm;
+  const std::size_t vdd = point.vdd;
+  const std::size_t vss = point.vss;
   const std::size_t n = ni.names.size();
   FixedPoint fp;
   fp.f0.assign(n, 0);
@@ -301,7 +308,7 @@ SwitchAnalysis analyze_switch(const Subckt &cell,
   for (std::uint32_t m = 0; m < rows; ++m) {
     minterms.push_back(m);
     fps.push_back(
-        run_fixpoint(cell, ni, input_idx, m, vdd_i, vss_i, graphblas));
+        run_fixpoint(cell, ni, input_idx, {m, vdd_i, vss_i}, graphblas));
     if (!fps.back().floating_gates.empty() || !fps.back().invariant_ok)
       need_exact = true;
   }

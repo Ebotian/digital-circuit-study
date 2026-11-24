@@ -548,21 +548,30 @@ std::map<std::string, PortSpec> module_ports(const Json &module) {
 
 // Reject name/direction/width mismatches before any miter is built: a silent
 // pad or truncation would prove only a subset of the RTL inputs.
-// Internal helper; call sites reviewed.
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-void require_same_ports(const std::map<std::string, PortSpec> &got,
-                        const std::map<std::string, PortSpec> &want,
-                        const std::string &what) {
+using PortMap = std::map<std::string, PortSpec>;
+
+struct ActualPorts {
+  const PortMap &ports;
+};
+
+struct ExpectedPorts {
+  const PortMap &ports;
+};
+
+void require_same_ports(ActualPorts actual, ExpectedPorts expected,
+                        std::string_view what) {
+  const PortMap &got = actual.ports;
+  const PortMap &want = expected.ports;
   for (const auto &[name, w] : want) {
     const auto it = got.find(name);
     if (it == got.end()) {
-      std::string msg = what;
+      std::string msg{what};
       msg += ": missing port ";
       msg += name;
       throw std::runtime_error(msg);
     }
     if (it->second.dir != w.dir || it->second.width != w.width) {
-      std::string msg = what;
+      std::string msg{what};
       msg += ": port ";
       msg += name;
       msg += " is ";
@@ -579,7 +588,7 @@ void require_same_ports(const std::map<std::string, PortSpec> &got,
   }
   for (const auto &[name, g] : got)
     if (!want.count(name)) {
-      std::string msg = what;
+      std::string msg{what};
       msg += ": unexpected port ";
       msg += name;
       throw std::runtime_error(msg);
@@ -598,13 +607,11 @@ std::string render_params(const Json &cell) {
   return out;
 }
 
-// Internal helper; call sites reviewed.
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-std::string chparam_cmd(const std::string &module, const std::string &params) {
+std::string chparam_cmd(const std::string &module, std::string_view params) {
   if (params.empty())
     return "";
   std::string out;
-  std::istringstream ss(params);
+  std::istringstream ss{std::string(params)};
   std::string item;
   while (std::getline(ss, item, ',')) {
     const auto eq = item.find('=');
@@ -791,8 +798,9 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
       const Json rroot = Json::parse(read_file(dir.path() / "ref.json"));
       if (!rroot.contains("modules") || !rroot.at("modules").contains(ref_mod))
         throw std::runtime_error("ref module not found: " + ref_mod);
-      require_same_ports(module_ports(rroot.at("modules").at(ref_mod)),
-                         module_ports(root.at("modules").at("top")), "ref");
+      require_same_ports(
+          ActualPorts{module_ports(rroot.at("modules").at(ref_mod))},
+          ExpectedPorts{module_ports(root.at("modules").at("top"))}, "ref");
       const Json &ports = root.at("modules").at("top").at("ports");
       std::string header, wires, conns, cmps;
       int n_in = 0, n_out = 0;
@@ -879,8 +887,9 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
         want[v] = {"input", 1};
       for (const auto &n : spec.names)
         want[n] = {"output", 1};
-      require_same_ports(module_ports(root.at("modules").at("top")), want,
-                         "spec");
+      require_same_ports(
+          ActualPorts{module_ports(root.at("modules").at("top"))},
+          ExpectedPorts{want}, "spec");
     }
     if (spec.has_dont_cares())
       throw std::runtime_error("--rtl does not support don't-care masks yet");

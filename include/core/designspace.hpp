@@ -27,6 +27,10 @@ struct Behavior {
   int value = 0;
 };
 
+struct MintermIndex {
+  std::size_t value;
+};
+
 struct Branch {
   std::string source;
   std::vector<ChainElem> chain;
@@ -34,7 +38,7 @@ struct Branch {
   std::uint32_t req_mask = 0; // bit i => inverter for variable i is needed
   std::vector<Behavior> behavior;
 
-  bool covers_strong(std::size_t minterm, int target) const;
+  bool covers_strong(MintermIndex minterm, std::int8_t target) const;
   bool usable(const std::vector<int> &target) const;
   std::string topo(const std::vector<std::string> &vars) const;
 };

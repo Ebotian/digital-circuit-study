@@ -16,24 +16,23 @@ TEST_CASE("joint switch-graph check rejects outputs sharing a node",
     g.source_ids = {zero, one};
     g.outputs = {y0, y1};
     g.output = y0;
-    // Internal helper; call sites reviewed.
-    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-    auto add = [&](int from, int to, SwKind kind, const std::string &lit) {
+    auto add = [&](std::pair<int, int> edge, SwKind kind,
+                   const std::string &lit) {
       SwitchGraphEdge e;
-      e.from = from;
-      e.to = to;
+      e.from = edge.first;
+      e.to = edge.second;
       e.kind = kind;
       e.lit = lit;
       e.strong = true;
       e.cost = 1;
       g.edges.push_back(std::move(e));
     };
-    add(one, y0, SwKind::P, "A");   // Y0 = 1 when A = 0
-    add(one, y1, SwKind::P, "Ab");  // Y1 = 1 when A = 1
-    add(zero, u0, SwKind::N, "A");  // pulls low when A = 1
-    add(zero, u1, SwKind::N, "Ab"); // pulls low when A = 0
-    add(u0, y0, SwKind::TGH, "1");
-    add(u1, y1, SwKind::TGH, "1");
+    add({one, y0}, SwKind::P, "A");   // Y0 = 1 when A = 0
+    add({one, y1}, SwKind::P, "Ab");  // Y1 = 1 when A = 1
+    add({zero, u0}, SwKind::N, "A");  // pulls low when A = 1
+    add({zero, u1}, SwKind::N, "Ab"); // pulls low when A = 0
+    add({u0, y0}, SwKind::TGH, "1");
+    add({u1, y1}, SwKind::TGH, "1");
     return g;
   };
   const std::vector<std::vector<int>> targets{{1, 0}, {0, 1}};
