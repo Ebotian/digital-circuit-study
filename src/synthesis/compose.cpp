@@ -132,6 +132,42 @@ std::string atom_module_rtl(const MultiProblem &atom) {
 
 } // namespace
 
+// Complete a partially-specified truth table: subtrees without care rows are
+// filled to match their sibling, so the BDD collapses free coordinates.
+bool fill_dc(unsigned char *val, const unsigned char *care, std::size_t size,
+             int level) {
+  (void)level;
+  bool any = false;
+  bool same = true;
+  unsigned char first = 0;
+  for (std::size_t i = 0; i < size; ++i) {
+    if (!care[i])
+      continue;
+    if (!any) {
+      any = true;
+      first = val[i];
+    } else if (val[i] != first) {
+      same = false;
+    }
+  }
+  if (!any) {
+    std::fill(val, val + size, 0);
+    return false;
+  }
+  if (same) {
+    std::fill(val, val + size, first);
+    return true;
+  }
+  const std::size_t half = size / 2;
+  const bool lo = fill_dc(val, care, half, level + 1);
+  const bool hi = fill_dc(val + half, care + half, half, level + 1);
+  if (!lo && hi)
+    std::copy(val + half, val + size, val);
+  if (!hi && lo)
+    std::copy(val, val + half, val + half);
+  return true;
+}
+
 std::optional<MultiProblem>
 glue_from_signals(const MultiProblem &spec,
                   const std::vector<std::vector<unsigned char>> &signals,
@@ -160,8 +196,14 @@ glue_from_signals(const MultiProblem &spec,
       ht[k][idx] =
           spec.outputs[k].func.value(static_cast<std::uint32_t>(m)) ? 1 : 0;
   }
-  // Unreachable signal tuples are don't-cares.  They are left at 0 for now;
-  // a care-aware completion is the next step (it decides the BDD size).
+  // Unreachable signal tuples are don't-cares: complete them so the BDD can
+  // collapse free coordinates (otherwise they look like real constraints).
+  std::vector<unsigned char> care(hrows, 0);
+  for (std::size_t idx = 0; idx < hrows; ++idx)
+    care[idx] = seen[idx] ? 1 : 0;
+  for (std::size_t k = 0; k < spec.outputs.size(); ++k)
+    fill_dc(ht[k].data(), care.data(), hrows, 0);
+
   MultiProblem h;
   h.title = "glue";
   for (std::size_t j = 0; j < ns; ++j) {
@@ -284,39 +326,11 @@ compose_from_library(const MultiProblem &spec,
       [&](const std::vector<const std::vector<unsigned char> *> &sigs,
           const std::vector<std::size_t> &order = {})
       -> std::optional<MultiProblem> {
-    const std::size_t ns = sigs.size();
-    if (ns > 12)
-      return std::nullopt;
-    const std::size_t hrows = std::size_t{1} << ns;
-    std::vector<std::vector<unsigned char>> ht(
-        spec.outputs.size(), std::vector<unsigned char>(hrows, 0));
-    std::vector<bool> seen(hrows, false);
-    for (std::size_t m = 0; m < rows; ++m) {
-      std::size_t idx = 0;
-      for (std::size_t j = 0; j < ns; ++j)
-        if ((*sigs[order.empty() ? j : order[j]])[m])
-          idx |= std::size_t{1} << j;
-      if (seen[idx])
-        continue;
-      seen[idx] = true;
-      for (std::size_t k = 0; k < spec.outputs.size(); ++k)
-        ht[k][idx] = tgt_rows[k * rows + m];
-    }
-    MultiProblem h;
-    h.title = "glue";
-    for (std::size_t j = 0; j < ns; ++j) {
-      const std::size_t src = order.empty() ? (ns - 1 - j) : order[ns - 1 - j];
-      h.vars.push_back("s" + std::to_string(src));
-    }
-    h.names = spec.names;
-    for (std::size_t k = 0; k < spec.outputs.size(); ++k) {
-      Bits bits(hrows);
-      for (std::size_t j = 0; j < hrows; ++j)
-        if (ht[k][j])
-          bits.set(j);
-      h.outputs.push_back({BoolFunc(ns, bits), Bits{}});
-    }
-    return h;
+    std::vector<std::vector<unsigned char>> tables;
+    tables.reserve(sigs.size());
+    for (const auto *s : sigs)
+      tables.push_back(*s);
+    return glue_from_signals(spec, tables, order);
   };
 
   auto best_h = [&](const std::vector<const std::vector<unsigned char> *> &sigs)

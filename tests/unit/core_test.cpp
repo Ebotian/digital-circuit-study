@@ -195,12 +195,16 @@ TEST_CASE("glue table matches its declared signal order", "[core]") {
   const auto h = glue_from_signals(spec, sig);
   REQUIRE(h.has_value());
   REQUIRE(h->vars.size() == 5);
-  for (std::size_t m = 0; m < rows; ++m) {
-    std::size_t idx = 0;
-    for (std::size_t j = 0; j < 5; ++j)
-      if (sig[j][m])
-        idx |= std::size_t{1} << j;
+  // DC completion makes the glue independent of unreachable coordinates, so
+  // the value is defined for every index, not only the care rows.
+  for (std::size_t idx = 0; idx < 32; ++idx) {
+    int sv[5] = {0, 0, 0, 0, 0};
+    for (std::size_t j = 0; j < 5; ++j) {
+      const int k = std::stoi(h->vars[j].substr(1));
+      sv[k] = (idx >> (4 - j)) & 1;
+    }
+    const bool expected = sv[4] ? (sv[0] != 0) : (sv[2] != 0);
     CHECK((h->outputs[0].func.value(static_cast<std::uint32_t>(idx)) != 0) ==
-          (spec.outputs[0].func.value(static_cast<std::uint32_t>(m)) != 0));
+          expected);
   }
 }
