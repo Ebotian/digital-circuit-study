@@ -504,28 +504,97 @@ compose_from_library(const MultiProblem &spec,
         spec_key[std::string(
             reinterpret_cast<const char *>(tgt_rows.data() + o * rows), rows)] =
             static_cast<int>(o);
-      std::vector<int> hits;
+      struct Hit {
+        int ci;
+        unsigned mask;
+      };
+      std::vector<Hit> hits;
+      std::set<std::pair<int, std::string>> hit_seen;
       for (std::size_t ci = 0; ci < cands.size(); ++ci) {
         if (cands[ci].atom != static_cast<int>(ai))
           continue;
+        unsigned mask = 0;
         bool all = true;
-        std::vector<int> matched;
         for (const auto &o : cands[ci].outs) {
           auto it = spec_key.find(
               std::string(reinterpret_cast<const char *>(o.data()), rows));
-          if (it == spec_key.end()) {
+          if (it == spec_key.end() || (mask & (1u << it->second))) {
             all = false;
             break;
           }
-          matched.push_back(it->second);
+          mask |= 1u << it->second;
         }
-        if (all)
-          hits.push_back(static_cast<int>(ci));
+        if (!all)
+          continue;
+        std::vector<std::size_t> key_vars = cands[ci].vars;
+        std::sort(key_vars.begin(), key_vars.end());
+        std::string key(reinterpret_cast<const char *>(key_vars.data()),
+                        key_vars.size() * sizeof(std::size_t));
+        if (hit_seen.emplace(static_cast<int>(mask), key).second)
+          hits.push_back({static_cast<int>(ci), mask});
       }
+      const unsigned full_mask = (1u << spec.outputs.size()) - 1u;
+      // Expand each hit over its don't-care inputs: an atom output may not
+      // depend on every input (pe42 ignores a0), so the same function can
+      // occupy any k-set containing its essential vars. The unused slots are
+      // filled with the vars left over by the other groups.
+      std::vector<Hit> expanded;
+      for (const auto &hh : hits) {
+        const Cand &c = cands[hh.ci];
+        std::vector<int> free_pos;
+        std::vector<std::size_t> essential;
+        for (std::size_t j = 0; j < k; ++j) {
+          bool dep = false;
+          const std::uint32_t bit = 1u << (n - 1 - c.vars[j]);
+          for (std::size_t m = 0; m < rows && !dep; ++m)
+            for (const auto &o : c.outs)
+              if (o[m] != o[m ^ bit]) {
+                dep = true;
+                break;
+              }
+          if (dep)
+            essential.push_back(c.vars[j]);
+          else
+            free_pos.push_back(static_cast<int>(j));
+        }
+        if (!free_pos.empty()) {
+          std::vector<std::size_t> free_vars;
+          for (std::size_t v = 0; v < n; ++v)
+            if (std::find(essential.begin(), essential.end(), v) ==
+                essential.end())
+              free_vars.push_back(v);
+          std::vector<std::size_t> pick(free_pos.size());
+          std::function<void(std::size_t, std::size_t)> rec =
+              [&](std::size_t at, std::size_t from) {
+                if (at == pick.size()) {
+                  Cand nc = c;
+                  for (std::size_t t = 0; t < pick.size(); ++t)
+                    nc.vars[free_pos[t]] = pick[t];
+                  cands.push_back(std::move(nc));
+                  expanded.push_back(
+                      {static_cast<int>(cands.size() - 1), hh.mask});
+                  return;
+                }
+                for (std::size_t v = from; v < free_vars.size(); ++v) {
+                  pick[at] = free_vars[v];
+                  rec(at + 1, v + 1);
+                }
+              };
+          rec(0, 0);
+        } else {
+          expanded.push_back(hh);
+        }
+      }
+      hits = std::move(expanded);
       for (std::size_t i = 0; i < hits.size() && !partition_best; ++i)
         for (std::size_t j = i + 1; j < hits.size() && !partition_best; ++j)
           for (std::size_t l = j + 1; l < hits.size() && !partition_best; ++l) {
-            std::vector<int> plan{hits[i], hits[j], hits[l]};
+            if ((hits[i].mask & hits[j].mask) ||
+                (hits[i].mask & hits[l].mask) || (hits[j].mask & hits[l].mask))
+              continue;
+            if ((hits[i].mask | hits[j].mask | hits[l].mask) != full_mask)
+              continue;
+            std::vector<int> plan{hits[i].ci, hits[j].ci, hits[l].ci};
             std::vector<bool> used(n, false);
             bool ok = true;
             int cost = 0;
