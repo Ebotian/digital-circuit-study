@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <set>
 #include <stdexcept>
@@ -12,7 +13,9 @@ namespace dcstudy {
 namespace {
 
 std::uint64_t full_mask(std::size_t n) {
-  return n >= 64 ? ~std::uint64_t{0} : ((std::uint64_t{1} << n) - 1);
+  return n >= std::numeric_limits<std::uint64_t>::digits
+             ? ~std::uint64_t{0}
+             : ((std::uint64_t{1} << n) - 1);
 }
 
 Bits cover_of(std::uint64_t care, std::uint64_t value, std::size_t n) {
@@ -96,7 +99,7 @@ struct CoverSearch {
   const std::vector<Cube> &primes;
   const Bits &onset;
   std::vector<std::vector<std::size_t>> by_minterm;
-  int best_cost = 1 << 30;
+  int best_cost = std::numeric_limits<int>::max() / 2;
   std::vector<std::size_t> best;
   std::map<std::vector<std::uint64_t>, int> seen;
 
@@ -221,7 +224,7 @@ Sop exact_min_sop(const Bits &onset, std::size_t n) {
   int base = 0;
   for (std::size_t i : chosen)
     base += primes[i].literals();
-  cs.best_cost = 1 << 30;
+  cs.best_cost = std::numeric_limits<int>::max() / 2;
   cs.search(uncovered, base, chosen);
   if (cs.best.empty())
     throw std::runtime_error("exact cover failed (no prime cover)");

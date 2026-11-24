@@ -1,5 +1,7 @@
 #include "synthesis/multi_path.hpp"
 
+#include "core/limits.hpp"
+
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -96,7 +98,7 @@ struct Search {
         break;
       int best_pi = -1;
       int best_gain = 0;
-      long long best_delta = (1LL << 60);
+      long long best_delta = std::numeric_limits<long long>::max() / 2;
       for (std::size_t pi = 0; pi < paths.size(); ++pi) {
         const auto &p = paths[pi];
         int gain = 0;
@@ -284,7 +286,7 @@ struct Search {
 
 std::string branch_key(const Branch &b) {
   std::string key;
-  key.reserve(b.behavior.size() * 3 + 16);
+  key.reserve(b.behavior.size() * 3); // 3 chars per row is an upper bound
   for (const auto &bh : b.behavior) {
     key += bh.conducts ? (bh.strong ? 'S' : 'c') : '.';
     key += static_cast<char>('0' + bh.value);
@@ -311,7 +313,7 @@ MultiPathSynthesisResult synthesize_dual_rail_multi(
   MultiPathSynthesisResult out;
   out.outputs = names;
   if (funcs.empty() || funcs.size() != names.size() || vars.empty() ||
-      vars.size() >= 63) {
+      vars.size() >= kMaxAddressableVars) {
     out.reason = "dual-rail synthesis: 2^n rows are not addressable";
     return out;
   }
@@ -427,7 +429,8 @@ MultiPathSynthesisResult synthesize_dual_rail_multi(
     }
     if (r.paths.empty())
       return r;
-    if (r.paths.size() > 8192)
+    constexpr std::size_t kMaxMultiPathSolutions = 8192;
+    if (r.paths.size() > kMaxMultiPathSolutions)
       return r;
 
     Search search(r.all, r.paths, r.edges, rail_targets, opt.max_cost);
@@ -625,7 +628,7 @@ synthesize_path_variables_multi(const MultiProblem &p, const SpaceOptions &opt,
                                 bool tri_state) {
   MultiPathSynthesisResult out;
   out.outputs = p.names;
-  if (p.size() == 0 || p.vars.empty() || p.vars.size() >= 63) {
+  if (p.size() == 0 || p.vars.empty() || p.vars.size() >= kMaxAddressableVars) {
     out.reason = "multi path synthesis: 2^n rows are not addressable";
     return out;
   }

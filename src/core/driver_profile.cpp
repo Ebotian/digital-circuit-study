@@ -206,6 +206,13 @@ void collect_edges(std::vector<std::pair<int, int>> &edges, const Graph &g,
                            static_cast<int>(offset + j));
 }
 
+// Heuristic crossovers from prior profiling: worker startup dominates below
+// 256 cells; above 20000 cells the explicit edge list grows large enough that
+// the local closure is competitive again.  Re-measure with bench/ if either
+// side changes.
+constexpr std::size_t kGraphblasMinCells = 256;
+constexpr std::size_t kGraphblasMaxCells = 20000;
+
 bool graphblas_batch(const std::vector<Graph> &graphs,
                      const std::vector<std::size_t> &offsets, std::size_t total,
                      const std::vector<Design> &designs,
@@ -214,7 +221,7 @@ bool graphblas_batch(const std::vector<Graph> &graphs,
                      std::vector<DriverProfile> &out) {
   const std::uint32_t rows = std::uint32_t{1} << vars.size();
   const std::size_t full_total = total * static_cast<std::size_t>(rows);
-  if (full_total == 0 || full_total > 20000)
+  if (full_total == 0 || full_total > kGraphblasMaxCells)
     return false;
   std::vector<std::pair<int, int>> edges;
   for (std::uint32_t m = 0; m < rows; ++m)
@@ -558,7 +565,7 @@ std::vector<DriverProfile> analyze_designs_drivers_batch(
   const char *gb_env = std::getenv("DCSTUDY_DRIVER_GRAPHBLAS");
   const bool force_gb = gb_env && std::string(gb_env) == "1";
   const std::size_t full_total = total * static_cast<std::size_t>(rows);
-  if (force_gb || full_total >= 256) {
+  if (force_gb || full_total >= kGraphblasMinCells) {
     try {
       if (graphblas_batch(graphs, offsets, total, designs, vars, targets, out))
         return out;

@@ -14,6 +14,9 @@
 #include <variant>
 #include <vector>
 
+// JSON numbers, UTF-8 (RFC 3629) and UTF-16 surrogate ranges are fixed by
+// the protocols; these literals are not tunable policy values.
+// NOLINTBEGIN(readability-magic-numbers)
 namespace dcstudy {
 
 class Json {
@@ -432,3 +435,4 @@ inline Json Json::parse(const std::string &text) {
 }
 
 } // namespace dcstudy
+// NOLINTEND(readability-magic-numbers)

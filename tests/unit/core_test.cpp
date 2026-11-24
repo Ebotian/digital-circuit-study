@@ -9,7 +9,7 @@ TEST_CASE("series-chain enumeration is order-canonical", "[core]") {
   // means the candidate explosion is back.
   SpaceOptions opt;
   opt.max_chain = 4;
-  opt.max_cost = 8;
+  opt.max_cost = kDefaultMaxCost;
   opt.allow_tg = true;
   const auto branches = build_branches({"A", "B", "C", "D"}, opt);
   REQUIRE(branches.size() == 588890);
@@ -46,7 +46,9 @@ TEST_CASE("default memory cap keeps exactly 2 GiB free", "[core]") {
 }
 
 TEST_CASE("parallel_for covers every index", "[core]") {
-  std::vector<int> seen(37, 0);
+  // Odd, non-power-of-two count exercises the uneven chunk split.
+  constexpr std::size_t kOddIndexCount = 37;
+  std::vector<int> seen(kOddIndexCount, 0);
   parallel_for(seen.size(), 4, [&](std::size_t i) { seen[i] = 1; });
   for (int v : seen)
     REQUIRE(v == 1);
@@ -165,7 +167,9 @@ TEST_CASE("emitted dut is Verilog", "[core]") {
   REQUIRE_Z3_HELPER();
   const FuncSpec s = spec_from_expr("A^B");
   SpaceOptions opt;
-  opt.max_cost = 6;
+  // XOR needs 6T in the static-gate model; bound the search exactly there.
+  constexpr int kXorSearchCost = 6;
+  opt.max_cost = kXorSearchCost;
   const auto r = synthesize_min(s.vars, target_of(s), opt, 1, false);
   REQUIRE(r.feasible);
   const std::string dut = emit_dut(r.designs[0], s.vars);
@@ -181,9 +185,10 @@ TEST_CASE("glue table matches its declared signal order", "[core]") {
   const FuncSpec f = spec_from_expr("(A&B)|(~A&C)", {"A", "B", "C"});
   spec.outputs.push_back({f.func, Bits{}});
 
-  const std::size_t rows = 8;
+  const std::size_t rows = std::size_t{1} << spec.vars.size();
+  const std::size_t ns = 5;
   std::vector<std::vector<unsigned char>> sig(
-      5, std::vector<unsigned char>(rows, 0));
+      ns, std::vector<unsigned char>(rows, 0));
   for (std::size_t m = 0; m < rows; ++m) {
     const unsigned a = (m >> 2) & 1, b = (m >> 1) & 1, c = m & 1;
     sig[0][m] = b; // s0
@@ -196,14 +201,15 @@ TEST_CASE("glue table matches its declared signal order", "[core]") {
   REQUIRE(h.has_value());
   if (!h)
     return;
-  REQUIRE(h->vars.size() == 5);
+  REQUIRE(h->vars.size() == ns);
   // DC completion makes the glue independent of unreachable coordinates, so
   // the value is defined for every index, not only the care rows.
-  for (std::size_t idx = 0; idx < 32; ++idx) {
-    int sv[5] = {0, 0, 0, 0, 0};
-    for (std::size_t j = 0; j < 5; ++j) {
+  const std::size_t hrows = std::size_t{1} << ns;
+  for (std::size_t idx = 0; idx < hrows; ++idx) {
+    int sv[ns] = {};
+    for (std::size_t j = 0; j < ns; ++j) {
       const int k = std::stoi(h->vars[j].substr(1));
-      sv[k] = static_cast<int>((idx >> (4 - j)) & 1);
+      sv[k] = static_cast<int>((idx >> (ns - 1 - j)) & 1);
     }
     const bool expected = sv[4] ? (sv[0] != 0) : (sv[2] != 0);
     CHECK((h->outputs[0].func.value(static_cast<std::uint32_t>(idx)) != 0) ==

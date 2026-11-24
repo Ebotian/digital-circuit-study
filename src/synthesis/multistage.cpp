@@ -30,6 +30,8 @@
 
 namespace dcstudy {
 
+constexpr std::size_t kLogTailLines = 30;
+
 namespace {
 constexpr int kMaxPorts = 128;
 } // namespace
@@ -63,7 +65,7 @@ std::string read_file(const fs::path &p) {
   return os.str();
 }
 
-std::string tail(const std::string &s, std::size_t max_lines = 30) {
+std::string tail(const std::string &s, std::size_t max_lines = kLogTailLines) {
   std::vector<std::string> lines;
   std::istringstream is(s);
   std::string line;
@@ -217,8 +219,9 @@ synthesize_multistage_static_multi_impl(const MultiProblem &p, int max_fanin) {
   }
   // The real limit is the truth-table footprint, not the input count:
   // 2^n rows x outputs, with room for completion/working copies.
-  if (vars.size() >= 63) {
-    out.reason = "truth table needs 2^n rows; n >= 63 is not addressable";
+  if (vars.size() >= kMaxAddressableVars) {
+    out.reason = "truth table needs 2^n rows; n >= kMaxAddressableVars is not "
+                 "addressable";
     return out;
   }
   const std::size_t rows = std::size_t{1} << vars.size();
@@ -230,7 +233,7 @@ synthesize_multistage_static_multi_impl(const MultiProblem &p, int max_fanin) {
     const std::size_t budget = budget_mb * 1024ull * 1024ull / 2;
     if (need > budget) {
       out.reason = "truth table needs " +
-                   std::to_string(need / (std::size_t{1024} * 1024)) +
+                   std::to_string(need / (kBytesPerMiB * kBytesPerMiB)) +
                    " MiB (2^" + std::to_string(vars.size()) + " rows x " +
                    std::to_string(funcs.size()) + " outputs), budget is " +
                    std::to_string(budget_mb / 2) +

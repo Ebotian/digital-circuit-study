@@ -8,6 +8,14 @@
 #include <unordered_set>
 
 namespace dcstudy {
+
+namespace {
+constexpr int kHexDigitMax = 15;  // base-16 digit
+constexpr int kAlphabetSize = 26; // A..Z default variable names
+constexpr std::uint64_t kHashMix = 0x9e3779b97f4a7c15ULL; // 2^64/phi
+constexpr std::size_t kHashShift = 6; // Boost-style hash_combine
+constexpr std::size_t kMemoReserve = std::size_t{1} << 20; // ~32 MiB
+} // namespace
 namespace {
 
 constexpr std::size_t kMaxArity = 16;
@@ -378,7 +386,7 @@ FuncSpec spec_from_truth(const std::string &text,
           std::isdigit(static_cast<unsigned char>(c))
               ? c - '0'
               : (std::tolower(static_cast<unsigned char>(c)) - 'a' + 10);
-      if (d < 0 || d > 15)
+      if (d < 0 || d > kHexDigitMax)
         throw std::invalid_argument("bad hex digit in truth table");
       const std::size_t base = 4 * (digits - 1 - k);
       for (int b = 0; b < 4; ++b) {
@@ -418,7 +426,7 @@ FuncSpec spec_from_truth(const std::string &text,
 }
 
 std::string default_var_name(std::size_t i) {
-  if (i < 26)
+  if (i < kAlphabetSize)
     return std::string(1, static_cast<char>('A' + i));
   return "V" + std::to_string(i);
 }
@@ -426,7 +434,7 @@ std::string default_var_name(std::size_t i) {
 std::uint64_t count_monotone(std::size_t n) {
   if (n == 0)
     return 1;
-  if (n > 6)
+  if (n > kMaxDedekindVars)
     throw std::invalid_argument("exact Dedekind count supported for n <= 6");
   const std::uint32_t N = std::uint32_t{1} << n; // number of lattice elements
   std::vector<std::uint64_t> down(N), up(N);
@@ -455,14 +463,14 @@ std::uint64_t count_monotone(std::size_t n) {
   };
   struct Hash {
     std::size_t operator()(const Key &k) const {
-      std::uint64_t h = k.f0 * 0x9e3779b97f4a7c15ULL;
-      h ^= k.f1 + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
-      h ^= k.i + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+      std::uint64_t h = k.f0 * kHashMix;
+      h ^= k.f1 + kHashMix + (h << kHashShift) + (h >> 2);
+      h ^= k.i + kHashMix + (h << kHashShift) + (h >> 2);
       return static_cast<std::size_t>(h);
     }
   };
   std::unordered_map<Key, std::uint64_t, Hash> memo;
-  memo.reserve(1 << 20);
+  memo.reserve(kMemoReserve);
 
   auto dfs = [&](auto &&self, std::uint32_t i, std::uint64_t f0,
                  std::uint64_t f1) -> std::uint64_t {

@@ -39,14 +39,22 @@ struct Branch {
   std::string topo(const std::vector<std::string> &vars) const;
 };
 
-// Default work budget for 2^n x outputs x chain-candidate searches.
+// Search-space policy.  max_cost/max_chain bound the static-gate and chain
+// enumeration; the maxima are the largest spaces that stay interactive.
 inline constexpr std::size_t kDefaultMaxOps = 20000000;
 inline constexpr int kMaxPathCandidates = 256;
 inline constexpr int kMaxMultiPathCandidates = 512;
+inline constexpr int kDefaultMaxCost = 8;
+inline constexpr int kDefaultMaxChain = 4;
+inline constexpr int kMaxSearchCost = 32;
+inline constexpr int kMaxSearchChain = 8;
+inline constexpr std::size_t kMaxSearchSolutions = 1024;
+// Truth-table arity used when loading a --library entry: 2^16 rows.
+inline constexpr int kMaxLibraryVars = 16;
 
 struct SpaceOptions {
-  int max_chain = 4;
-  int max_cost = 8;
+  int max_chain = kDefaultMaxChain;
+  int max_cost = kDefaultMaxCost;
   bool allow_tg = true;
   // Work budget for search-based flows (0 = unlimited).  This bounds
   // 2^n inverter masks x outputs x chain candidates, not the input count.

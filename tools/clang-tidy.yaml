@@ -7,5 +7,5 @@
 # - easily-swappable-parameters: small internal helpers, call sites reviewed;
 # - inefficient-string-concatenation: expression builders favour readability;
 # - enum-size: enums are internal/API contracts; int base avoids casts.
-Checks: "-*,clang-analyzer-*,bugprone-*,performance-*,-bugprone-signed-bitwise,-bugprone-command-processor,-bugprone-easily-swappable-parameters,-performance-inefficient-string-concatenation,-performance-enum-size"
+Checks: "-*,clang-analyzer-*,bugprone-*,performance-*,readability-magic-numbers,-bugprone-signed-bitwise,-bugprone-command-processor,-bugprone-easily-swappable-parameters,-performance-inefficient-string-concatenation,-performance-enum-size"
 WarningsAsErrors: ''

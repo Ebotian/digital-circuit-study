@@ -1,5 +1,7 @@
 #include "synthesis/path_search.hpp"
 
+#include "core/limits.hpp"
+
 #include <algorithm>
 #include <cstdint>
 #include <functional>
@@ -190,7 +192,7 @@ synthesize_path_variables(const BoolFunc &f,
                           const std::vector<std::string> &vars,
                           const SpaceOptions &opt, bool tri_state) {
   PathSynthesisResult out;
-  if (vars.empty() || vars.size() >= 63) {
+  if (vars.empty() || vars.size() >= kMaxAddressableVars) {
     out.reason = "path synthesis: 2^n rows are not addressable";
     return out;
   }

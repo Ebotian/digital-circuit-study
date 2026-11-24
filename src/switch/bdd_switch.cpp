@@ -1,5 +1,7 @@
 #include "switch/bdd_switch.hpp"
 
+#include "core/limits.hpp"
+
 #include <algorithm>
 #include <map>
 #include <set>
@@ -84,7 +86,7 @@ synthesize_bdd_switch_order(const BoolFunc &f,
                             const std::vector<int> &order) {
   BddSwitchDesign out;
   const std::size_t n = vars.size();
-  if (n == 0 || n >= 63) {
+  if (n == 0 || n >= kMaxAddressableVars) {
     out.reason = "BDD switch construction: 2^n rows are not addressable";
     return out;
   }

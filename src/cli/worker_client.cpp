@@ -1,4 +1,5 @@
 #include "cli/worker_client.hpp"
+#include "core/limits.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -15,6 +16,8 @@
 #include <unistd.h>
 
 namespace dcstudy {
+
+constexpr std::size_t kLogTailLines = 40;
 namespace {
 
 namespace fs = std::filesystem;
@@ -38,7 +41,7 @@ std::string read_file(const fs::path &p) {
   return os.str();
 }
 
-std::string tail(const std::string &s, std::size_t max_lines = 40) {
+std::string tail(const std::string &s, std::size_t max_lines = kLogTailLines) {
   std::vector<std::string> lines;
   std::istringstream is(s);
   std::string line;
@@ -135,7 +138,7 @@ Json call_worker(const std::string &helper, const Json &request,
   const std::string error_log = read_file(err);
   fs::remove_all(dir, ec);
 
-  if (code == 124)
+  if (code == kTimeoutExitCode)
     throw std::runtime_error("worker timed out after " +
                              std::to_string(timeout_seconds) + "s");
   if (!body.empty()) {

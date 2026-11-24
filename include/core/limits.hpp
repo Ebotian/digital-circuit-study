@@ -7,6 +7,7 @@
 // after the machine has already started swapping.
 #pragma once
 
+#include <cstddef>
 #include <string>
 
 namespace dcstudy {
@@ -23,6 +24,18 @@ unsigned long apply_mem_limit(unsigned long mb);
 
 // Soft RLIMIT_AS currently in force, in MiB (0 = unlimited).
 unsigned long current_mem_limit_mb();
+
+// Truth tables are addressed with size_t; 2^n rows must stay addressable.
+inline constexpr std::size_t kMaxAddressableVars = 63;
+
+// Binary unit conversion (MiB is 2^20 bytes, not 10^6).
+inline constexpr std::size_t kBytesPerMiB = 1024;
+
+// Small reserve so the bad_alloc path can still format an error message.
+inline constexpr std::size_t kOomReserveBytes = std::size_t{64} * 1024;
+
+// `timeout` exits 124 when it kills the child.
+inline constexpr int kTimeoutExitCode = 124;
 
 // Headroom the default cap leaves for the rest of the system, in MiB.
 inline constexpr unsigned long kMemReserveMb = 2048;

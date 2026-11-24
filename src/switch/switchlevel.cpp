@@ -242,13 +242,19 @@ char logic_symbol(Logic v) {
   return '?';
 }
 
+namespace {
+// Behaviour is enumerated over 2^n rows; 8 inputs is the largest table the
+// switch-level proof and the CDL fixtures exercise today.
+constexpr std::size_t kMaxSwitchInputs = 8;
+} // namespace
+
 SwitchAnalysis analyze_switch(const Subckt &cell,
                               const std::vector<std::string> &inputs,
                               const std::vector<std::string> &outputs,
                               bool exact, const std::string &vdd,
                               const std::string &vss, bool graphblas,
                               int jobs) {
-  if (inputs.size() > 8)
+  if (inputs.size() > kMaxSwitchInputs)
     throw std::invalid_argument(
         "switch-level analysis supports at most 8 inputs");
   if (outputs.empty())

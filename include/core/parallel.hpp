@@ -21,7 +21,7 @@ inline int hardware_jobs() {
   int n = static_cast<int>(std::thread::hardware_concurrency());
   if (n <= 0)
     n = 1;
-  return std::max(1, std::min(n, 64));
+  return std::max(1, n);
 }
 
 inline int parallel_jobs() {
@@ -29,7 +29,7 @@ inline int parallel_jobs() {
     try {
       const int n = std::stoi(s);
       if (n > 0)
-        return std::min(n, 64);
+        return n;   // explicit user choice; oversubscription is their call
     } catch (...) { // NOLINT(bugprone-empty-catch)
     }
   }

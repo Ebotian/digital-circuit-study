@@ -18,6 +18,8 @@
 #include "core/verilog.hpp"
 
 namespace dcstudy {
+
+constexpr std::size_t kLogTailLines = 60;
 namespace {
 
 namespace fs = std::filesystem;
@@ -88,7 +90,7 @@ int run_shell(const std::string &command, const fs::path &log) {
   return -1;
 }
 
-std::string tail(const std::string &s, std::size_t max_lines = 60) {
+std::string tail(const std::string &s, std::size_t max_lines = kLogTailLines) {
   std::vector<std::string> lines;
   std::istringstream is(s);
   std::string line;

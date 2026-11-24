@@ -11,6 +11,8 @@
 
 namespace dcstudy {
 
+inline constexpr std::size_t kDefaultMaxSolutions = 64;
+
 struct Design {
   std::vector<Branch> branches;
   std::vector<std::size_t> inv_vars;
@@ -32,7 +34,7 @@ struct SynthesisResult {
 SynthesisResult synthesize_min(const std::vector<std::string> &vars,
                                const std::vector<int> &target,
                                const SpaceOptions &opt,
-                               std::size_t max_solutions = 64,
+                               std::size_t max_solutions = kDefaultMaxSolutions,
                                bool canonical = false);
 
 } // namespace dcstudy

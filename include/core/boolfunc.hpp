@@ -11,6 +11,9 @@
 
 namespace dcstudy {
 
+// Dedekind numbers: D(6) is the last count that fits ordinary time/memory.
+inline constexpr int kMaxDedekindVars = 6;
+
 class BoolFunc {
 public:
   BoolFunc() = default;

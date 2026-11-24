@@ -50,7 +50,8 @@ TEST_CASE("joint switch-graph check rejects outputs sharing a node",
 TEST_CASE("minimum pass-network designs match the lecture", "[switchlevel]") {
   REQUIRE_Z3_HELPER();
   SpaceOptions opt;
-  opt.max_cost = 6;
+  constexpr int kSmallSearchCost = 6;
+  opt.max_cost = kSmallSearchCost;
   opt.max_chain = 3;
   struct Case {
     const char *expr;
@@ -71,10 +72,15 @@ TEST_CASE("don't-care rows drive exact synthesis and verification",
   const std::vector<std::string> vars{"A3", "A2", "A1", "A0"};
   const FuncSpec y0 = spec_from_expr("A1|A3", vars);
   const FuncSpec y1 = spec_from_expr("A2|A3", vars);
-  Bits any(16);
-  for (std::size_t m = 0; m < 16; ++m)
-    if (m != 1 && m != 2 && m != 4 && m != 8)
+  const std::size_t rows = std::size_t{1} << vars.size();
+  Bits any(rows);
+  for (std::size_t m = 0; m < rows; ++m) {
+    bool one_hot = false;
+    for (std::size_t b = 0; b < vars.size(); ++b)
+      one_hot = one_hot || m == (std::size_t{1} << b);
+    if (!one_hot)
       any.set(m);
+  }
   MultiProblem p;
   p.vars = vars;
   p.names = {"Y0", "Y1"};
@@ -89,7 +95,7 @@ TEST_CASE("don't-care rows drive exact synthesis and verification",
   REQUIRE(truth_satisfies(r.truths[1], y1.func.truth_string(), any));
   // Same expressions without don't-cares need inverters and cost more.
   MultiProblem plain = p;
-  plain.outputs = {{y0.func, Bits::zeros(16)}, {y1.func, Bits::zeros(16)}};
+  plain.outputs = {{y0.func, Bits::zeros(rows)}, {y1.func, Bits::zeros(rows)}};
   const auto total = synthesize_static_exact_multi(plain);
   REQUIRE(total.total > r.total);
   // A Z/X on a don't-care row is not a valid extension of a static network.
@@ -241,13 +247,14 @@ TEST_CASE("input aliases resolve in fixpoint and exact analysis",
 TEST_CASE("hex truth tables fill the table bit by bit", "[switchlevel]") {
   const std::vector<std::string> vars{"A", "B", "C", "D", "E", "F", "G"};
   const FuncSpec wide = spec_from_truth("0x1", vars);
-  REQUIRE(wide.func.num_minterms() == 128);
+  const std::uint32_t rows = wide.func.num_minterms();
+  REQUIRE(rows == (std::uint32_t{1} << vars.size()));
   int ones = 0;
-  for (std::uint32_t m = 0; m < 128; ++m)
+  for (std::uint32_t m = 0; m < rows; ++m)
     ones += wide.func.value(m) ? 1 : 0;
   REQUIRE(ones == 1);
   REQUIRE(wide.func.value(0));
-  REQUIRE_FALSE(wide.func.value(64)); // used to be set by a 64-bit shift
+  REQUIRE_FALSE(wide.func.value(rows / 2)); // used to be set by a 64-bit shift
   // A digit that spills past the table is an error, not a silent truncation.
   REQUIRE_THROWS_AS(spec_from_truth("0x10000000000000000", {"A", "B"}),
                     std::invalid_argument);
@@ -255,7 +262,7 @@ TEST_CASE("hex truth tables fill the table bit by bit", "[switchlevel]") {
   for (std::uint32_t m = 0; m < 4; ++m)
     REQUIRE(full.func.value(m));
   // 64 variables used to turn 1 << n into an undefined shift.
-  std::vector<std::string> too_many(64);
+  std::vector<std::string> too_many(kMaxAddressableVars + 1);
   for (std::size_t i = 0; i < too_many.size(); ++i)
     too_many[i] = "V" + std::to_string(i);
   REQUIRE_THROWS_AS(spec_from_truth("0x1", too_many), std::invalid_argument);

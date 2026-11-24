@@ -174,7 +174,11 @@ TemplateResult optimize_template(const NetworkTemplate &t,
   std::size_t combinations = 1;
   for (const auto &e : t.edges)
     combinations *= static_cast<std::size_t>(choice_count(e) + 1);
-  if (t.edges.size() <= 20 && combinations <= 2'000'000) {
+  // DFS over edge choices; 20 edges / 2M combinations keeps it interactive.
+  constexpr std::size_t kMaxTemplateEdges = 20;
+  constexpr std::size_t kMaxTemplateCombinations = 2'000'000;
+  if (t.edges.size() <= kMaxTemplateEdges &&
+      combinations <= kMaxTemplateCombinations) {
     Search s(t, vars, targets);
     s.best = best_cost;
     s.best_chosen = all;

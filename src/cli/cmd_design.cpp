@@ -506,13 +506,13 @@ int cmd_design(const std::string &sub, int argc, char **argv) {
   opt.max_cost = std::stoi(a.get("max-cost", static_mode ? "32" : "8"));
   opt.max_chain = std::stoi(a.get("max-chain", "4"));
   opt.allow_tg = !a.is("no-tg");
-  if (opt.max_cost < 1 || opt.max_cost > 32)
+  if (opt.max_cost < 1 || opt.max_cost > kMaxSearchCost)
     throw CliError("--max-cost out of range");
-  if (opt.max_chain < 1 || opt.max_chain > 8)
+  if (opt.max_chain < 1 || opt.max_chain > kMaxSearchChain)
     throw CliError("--max-chain out of range");
   const unsigned long limit_raw =
       std::stoul(a.get("limit", a.is("all") ? "64" : "8"));
-  if (limit_raw == 0 || limit_raw > 1024)
+  if (limit_raw == 0 || limit_raw > kMaxSearchSolutions)
     throw CliError("--limit must be in 1..1024");
   const std::size_t limit = static_cast<std::size_t>(limit_raw);
   const VerifyMode vmode =

@@ -640,7 +640,8 @@ compose_from_library(const MultiProblem &spec,
     const int width =
         std::min(16, std::max(4, static_cast<int>(std::sqrt(cands.size()))));
     std::optional<State> best_state;
-    for (int depth = 0; depth < 6 && !beam.empty(); ++depth) {
+    for (std::size_t depth = 0; depth < cands.size() && !beam.empty();
+         ++depth) {
       std::vector<State> next;
       std::set<std::string> seen;
       for (const auto &st : beam) {

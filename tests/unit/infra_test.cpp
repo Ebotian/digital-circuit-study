@@ -11,7 +11,8 @@ TEST_CASE("JSON parser and Z3 protocol round-trip", "[infra]") {
   SynthProblem p;
   p.n_rows = 2;
   p.n_inverters = 1;
-  p.max_cost = 6;
+  constexpr int kSmallSearchCost = 6;
+  p.max_cost = kSmallSearchCost;
   p.limit = 3;
   p.costs = {1, 2};
   p.req = {0, 1};
@@ -51,7 +52,8 @@ TEST_CASE("batched driver profile matches single-design analysis", "[infra]") {
   REQUIRE_Z3_HELPER();
   const FuncSpec s = spec_from_expr("A^B");
   SpaceOptions opt;
-  opt.max_cost = 6;
+  constexpr int kSmallSearchCost = 6;
+  opt.max_cost = kSmallSearchCost;
   opt.max_chain = 3;
   const auto r = synthesize_min(s.vars, target_of(s), opt, 4, false);
   REQUIRE(r.feasible);

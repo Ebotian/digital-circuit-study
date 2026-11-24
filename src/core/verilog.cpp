@@ -143,11 +143,16 @@ std::string emit_miter(const std::vector<std::string> &vars) {
   return os.str();
 }
 
+namespace {
+// 2^12 rows is already a ~100 KiB testbench; beyond that the TB dwarfs the DUT.
+constexpr std::size_t kMaxTestbenchRows = 4096;
+} // namespace
+
 std::string emit_tb(const BoolFunc &target,
                     const std::vector<std::string> &vars) {
   const std::size_t n = vars.size();
   const std::size_t rows = std::size_t{1} << n;
-  if (rows > 4096)
+  if (rows > kMaxTestbenchRows)
     throw std::invalid_argument("testbench too large");
   const std::string truth = target.truth_string();
   std::string exp_literal;

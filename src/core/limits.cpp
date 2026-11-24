@@ -8,6 +8,10 @@
 #include <stdexcept>
 
 namespace dcstudy {
+
+namespace {
+constexpr unsigned long kDecimalBase = 10;
+} // namespace
 namespace {
 
 constexpr unsigned long kBytesPerMb = 1024UL * 1024UL;
@@ -26,9 +30,9 @@ unsigned long parse_mem_limit_mb(const std::string &text) {
       throw std::invalid_argument(
           "--mem-limit expects MiB as an integer, got: " + text);
     const auto digit = static_cast<unsigned long>(c - '0');
-    if (mb > (kMaxMb - digit) / 10)
+    if (mb > (kMaxMb - digit) / kDecimalBase)
       throw std::invalid_argument("--mem-limit out of range: " + text);
-    mb = mb * 10 + digit;
+    mb = mb * kDecimalBase + digit;
   }
   return mb;
 }
@@ -53,7 +57,7 @@ unsigned long available_memory_mb() {
     unsigned long kb = 0;
     is >> key >> kb;
     if (key == "MemAvailable:")
-      return kb / 1024; // kB -> MiB
+      return kb / kBytesPerMiB; // kB -> MiB
   }
   // Fallback for kernels without MemAvailable: count free pages only.
   const long pages = sysconf(_SC_AVPHYS_PAGES);

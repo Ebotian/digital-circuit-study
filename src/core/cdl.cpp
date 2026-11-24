@@ -8,6 +8,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 namespace dcstudy {
 namespace {
@@ -141,10 +142,13 @@ CdlLibrary CdlLibrary::load(const std::string &path) {
     if (trimmed.empty())
       return;
 
-    if (trimmed.rfind("*.PININFO", 0) == 0) {
+    constexpr std::string_view kPinInfo = "*.PININFO";
+    constexpr std::string_view kEqn = "*.EQN";
+    constexpr std::string_view kAlias = "*.ALIAS";
+    if (trimmed.rfind(kPinInfo, 0) == 0) {
       if (!cur)
         return;
-      auto toks = split_ws(trimmed.substr(9));
+      auto toks = split_ws(trimmed.substr(kPinInfo.size()));
       for (const auto &t : toks) {
         auto c = t.find(':');
         if (c == std::string::npos)
@@ -153,15 +157,15 @@ CdlLibrary CdlLibrary::load(const std::string &path) {
       }
       return;
     }
-    if (trimmed.rfind("*.EQN", 0) == 0) {
+    if (trimmed.rfind(kEqn, 0) == 0) {
       if (cur)
-        cur->eqn = trimmed.substr(5);
+        cur->eqn = trimmed.substr(kEqn.size());
       return;
     }
-    if (trimmed.rfind("*.ALIAS", 0) == 0) {
+    if (trimmed.rfind(kAlias, 0) == 0) {
       if (!cur)
         return;
-      auto toks = split_ws(trimmed.substr(7));
+      auto toks = split_ws(trimmed.substr(kAlias.size()));
       if (toks.size() >= 2)
         cur->aliases[toks[0]] = toks[1];
       return;
@@ -188,7 +192,9 @@ CdlLibrary CdlLibrary::load(const std::string &path) {
       if (!cur)
         return;
       // M<name> drain gate source [bulk] model [params...]
-      if (toks.size() < 6)
+      // M<name> drain gate source bulk model: at least six fields.
+      constexpr std::size_t kMosfetMinFields = 6;
+      if (toks.size() < kMosfetMinFields)
         throw std::runtime_error("short MOSFET line " + std::to_string(ln));
       std::size_t model_idx = 0;
       for (std::size_t i = 4; i < toks.size(); ++i) {

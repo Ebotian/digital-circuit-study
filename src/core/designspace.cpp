@@ -1,5 +1,7 @@
 #include "core/designspace.hpp"
 
+#include "core/limits.hpp"
+
 #include <algorithm>
 #include <cstdint>
 #include <stdexcept>
@@ -271,7 +273,7 @@ std::string Branch::topo(const std::vector<std::string> &vars) const {
 
 std::vector<Branch> build_branches(const std::vector<std::string> &vars,
                                    const SpaceOptions &opt) {
-  if (vars.empty() || vars.size() >= 63)
+  if (vars.empty() || vars.size() >= kMaxAddressableVars)
     throw std::invalid_argument(
         "pass-network space: 2^n rows are not addressable");
   const Env e = make_env(vars);

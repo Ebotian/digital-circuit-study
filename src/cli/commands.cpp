@@ -87,7 +87,7 @@ int dcstudy_cli_main(int argc, char **argv) {
       argv[argc - 1] = json_arg;
     }
     configure_mem_limit(argc, argv);
-    g_oom_reserve = new (std::nothrow) char[std::size_t{64} * 1024];
+    g_oom_reserve = new (std::nothrow) char[kOomReserveBytes];
     const std::string cmd = argv[1];
     if (cmd == "help" || cmd == "--help" || cmd == "-h") {
       help();

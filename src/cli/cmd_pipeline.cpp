@@ -13,9 +13,9 @@ int cmd_pipeline(int argc, char **argv) {
   opt.max_cost = std::stoi(a.get("max-cost", "8"));
   opt.max_chain = std::stoi(a.get("max-chain", "4"));
   opt.allow_tg = !a.is("no-tg");
-  if (opt.max_cost < 1 || opt.max_cost > 32)
+  if (opt.max_cost < 1 || opt.max_cost > kMaxSearchCost)
     throw CliError("--max-cost out of range");
-  if (opt.max_chain < 1 || opt.max_chain > 8)
+  if (opt.max_chain < 1 || opt.max_chain > kMaxSearchChain)
     throw CliError("--max-chain out of range");
   const VerifyMode vmode = parse_verify(a, VerifyMode::Both);
   // "static" is the switch-level proof of a single-stage static gate and only

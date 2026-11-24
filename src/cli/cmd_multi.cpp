@@ -87,7 +87,7 @@ void add_any_json(Json &j, const MultiProblem &spec) {
 
 int cmd_multi_template(const Args &a, const MultiProblem &spec) {
   SpaceOptions opt;
-  opt.max_cost = 32;
+  opt.max_cost = kMaxSearchCost;
   opt.max_chain = 4;
   opt.allow_tg = !a.is("no-tg");
   const MultiPathSynthesisResult seed =
@@ -456,7 +456,7 @@ int cmd_multi(const std::string &sub, int argc, char **argv) {
         {
           std::ofstream(p) << e.dump();
         }
-        library.push_back(load_multi_spec(p, 16));
+        library.push_back(load_multi_spec(p, kMaxLibraryVars));
         fs::remove(p);
       }
     }

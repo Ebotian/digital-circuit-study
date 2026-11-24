@@ -42,9 +42,9 @@ int cmd_bool(const std::string &sub, int argc, char **argv) {
   }
   if (sub == "count") {
     const int n = std::stoi(a.need("n"));
-    if (n < 0 || n > 6)
+    if (n < 0 || n > kMaxDedekindVars)
       throw CliError("--n must be in 0..6");
-    if (n == 6 && !a.is("heavy"))
+    if (n == kMaxDedekindVars && !a.is("heavy"))
       throw CliError(
           "n=6 needs --heavy (about 40 s and 10 GB); n<=5 is instant");
     const auto t0 = std::chrono::steady_clock::now();

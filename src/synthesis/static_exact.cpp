@@ -1,5 +1,7 @@
 #include "synthesis/static_exact.hpp"
 
+#include "core/limits.hpp"
+
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -295,7 +297,7 @@ StaticExactResult synthesize_static_exact_multi(const MultiProblem &p) {
     return out;
   }
   const std::size_t n = vars.size();
-  if (n == 0 || n >= 63) {
+  if (n == 0 || n >= kMaxAddressableVars) {
     out.reason = "exact single-stage static CMOS: 2^n rows are not addressable";
     return out;
   }

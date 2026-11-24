@@ -56,7 +56,9 @@ bliss_automorphisms(std::size_t n, const std::string &truth) {
       for (std::size_t i = 0; i < n; ++i)
         composed[i] = gen[base[i]];
       if (std::find(group.begin(), group.end(), composed) == group.end()) {
-        if (group.size() >= 4096)
+        // Avoid factorial blow-up in the permutation group.
+        constexpr std::size_t kMaxSymmetryGroup = 4096;
+        if (group.size() >= kMaxSymmetryGroup)
           throw std::runtime_error("symmetry: automorphism group too large");
         group.push_back(std::move(composed));
       }

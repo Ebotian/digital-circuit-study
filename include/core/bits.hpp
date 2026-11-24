@@ -11,11 +11,18 @@
 
 namespace dcstudy {
 
+// Storage is an array of uint64_t words: 64 bits, shift 6, mask 63.
+inline constexpr std::size_t kWordBits = 64;
+inline constexpr std::size_t kWordShift = 6;
+inline constexpr std::size_t kWordMask = kWordBits - 1;
+static_assert((std::size_t{1} << kWordShift) == kWordBits,
+              "kWordShift must match kWordBits");
+
 class Bits {
 public:
   Bits() = default;
   explicit Bits(std::size_t n, bool fill = false)
-      : n_(n), w_((n + 63) / 64, fill ? ~std::uint64_t{0} : 0) {
+      : n_(n), w_((n + kWordMask) / kWordBits, fill ? ~std::uint64_t{0} : 0) {
     trim();
   }
 
@@ -26,21 +33,21 @@ public:
   bool empty() const { return n_ == 0; }
 
   bool test(std::size_t i) const {
-    return i < n_ && ((w_[i >> 6] >> (i & 63)) & 1U) != 0;
+    return i < n_ && ((w_[i >> kWordShift] >> (i & kWordMask)) & 1U) != 0;
   }
   void set(std::size_t i) {
     if (i >= n_)
       grow(i + 1);
-    w_[i >> 6] |= (std::uint64_t{1} << (i & 63));
+    w_[i >> kWordShift] |= (std::uint64_t{1} << (i & kWordMask));
   }
   void reset(std::size_t i) {
     if (i < n_)
-      w_[i >> 6] &= ~(std::uint64_t{1} << (i & 63));
+      w_[i >> kWordShift] &= ~(std::uint64_t{1} << (i & kWordMask));
   }
   void flip(std::size_t i) {
     if (i >= n_)
       grow(i + 1);
-    w_[i >> 6] ^= (std::uint64_t{1} << (i & 63));
+    w_[i >> kWordShift] ^= (std::uint64_t{1} << (i & kWordMask));
   }
 
   std::size_t count() const {
@@ -108,7 +115,7 @@ public:
   std::size_t find_first() const {
     for (std::size_t i = 0; i < w_.size(); ++i) {
       if (w_[i])
-        return i * 64 + static_cast<std::size_t>(__builtin_ctzll(w_[i]));
+        return i * kWordBits + static_cast<std::size_t>(__builtin_ctzll(w_[i]));
     }
     return n_;
   }
@@ -119,7 +126,7 @@ public:
     if (i >= w_.size())
       w_.resize(i + 1, 0);
     w_[i] = v;
-    n_ = std::max(n_, (i + 1) * 64);
+    n_ = std::max(n_, (i + 1) * kWordBits);
     trim();
   }
 
@@ -144,7 +151,7 @@ private:
   }
   void grow(std::size_t n) {
     n_ = std::max(n_, n);
-    w_.resize((n_ + 63) / 64, 0);
+    w_.resize((n_ + kWordMask) / kWordBits, 0);
   }
   void ensure_same(const Bits &o) const {
     if (n_ != o.n_) {
