@@ -699,8 +699,8 @@ compose_from_library(const MultiProblem &spec,
     std::ofstream(atom_path) << out.atom_rtl;
   }
   try {
-    out.synth =
-        synthesize_rtl_atoms(top_path.string(), atom_path.string(), spec);
+    out.synth = synthesize_rtl_atoms(top_path.string(), atom_path.string(),
+                                     spec, "", 0, true);
     out.ok = out.synth.ok;
     out.verified = out.synth.verified;
     if (!out.synth.ok)

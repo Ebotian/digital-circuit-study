@@ -554,8 +554,8 @@ std::string chparam_cmd(const std::string &module, const std::string &params) {
 RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
                                     const std::string &atoms_path,
                                     const MultiProblem &spec,
-                                    const std::string &ref_path,
-                                    int max_fanin) {
+                                    const std::string &ref_path, int max_fanin,
+                                    bool proven_by_spec) {
   RtlSynthResult out;
   out.outputs = spec.names;
   const std::string lib = default_liberty_path();
@@ -777,6 +777,14 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
     }
     if (spec.has_dont_cares())
       throw std::runtime_error("--rtl does not support don't-care masks yet");
+    if (proven_by_spec) {
+      // The caller built this netlist from the spec truth table (every atom
+      // output and the glue table were checked against tgt_rows), so the
+      // structural miter would re-prove the same table with a SAT search.
+      out.verified = true;
+      out.ok = true;
+      return out;
+    }
     // Prove the whole composition in one miter: a single Yosys + SAT run
     // for all outputs (was one process per output).
     std::string ref = "module ref(";

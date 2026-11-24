@@ -84,10 +84,9 @@ struct RtlSynthResult {
 // Structural mode: when ref_path is non-empty, the mapped design is proven
 // against the reference module instead of a truth-table spec (spec may be
 // empty; ports come from the mapped netlist, no 2^n table is built).
-RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
-                                    const std::string &atoms_path,
-                                    const MultiProblem &spec,
-                                    const std::string &ref_path = "",
-                                    int max_fanin = 0);
+RtlSynthResult
+synthesize_rtl_atoms(const std::string &rtl_path, const std::string &atoms_path,
+                     const MultiProblem &spec, const std::string &ref_path = "",
+                     int max_fanin = 0, bool proven_by_spec = false);
 
 } // namespace dcstudy
