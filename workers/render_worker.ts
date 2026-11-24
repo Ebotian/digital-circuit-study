@@ -1100,20 +1100,58 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
     if (outs.indexOf(c.ports[outPort(c)]) >= 0) level[i] = maxLevel0;
   });
   const maxLevel = Math.max(...level, 0);
-  const width = Math.max(760, 220 + (maxLevel + 1) * 210);
   const boxW = 130;
-  const boxH = 52;
-  const xOf = (i: number) => 170 + level[i] * 210;
+  const maxInputs = Math.max(1, ...cells.map((c) => inputsOf(c).length));
+  const boxH = Math.max(52, 18 + maxInputs * 15);
+  const rowStep = boxH + 38;
+
+  const netSource = new Map<string, { kind: "cell" | "input"; index: number }>();
+  vars.forEach((v, i) => netSource.set(v, { kind: "input", index: i }));
+  cells.forEach((c, i) => {
+    const p = outPort(c);
+    if (c.ports[p]) netSource.set(c.ports[p], { kind: "cell", index: i });
+  });
+  const netSinks = new Map<string, Array<{ cell: number; pin: string }>>();
+  cells.forEach((c, i) => {
+    inputsOf(c).forEach((p) => {
+      const list = netSinks.get(c.ports[p]) || [];
+      list.push({ cell: i, pin: p });
+      netSinks.set(c.ports[p], list);
+    });
+  });
+
+  // One vertical track per net inside the gap after its source level.  The
+  // gap widens with the number of tracks, so parallel nets never share an x.
+  const gapSlots = new Map<number, number>();
+  const slotOf = new Map<string, number>();
+  const nextSlot = new Map<number, number>();
+  for (const [net, src] of netSource) {
+    if (src.kind !== "cell" || outs.indexOf(net) >= 0) continue;
+    const gap = level[src.index];
+    const slot = nextSlot.get(gap) ?? 0;
+    nextSlot.set(gap, slot + 1);
+    gapSlots.set(gap, slot + 1);
+    slotOf.set(net, slot);
+  }
+  const firstX = 70 + vars.length * 20 + 30;
+  const levelX: number[] = [];
+  let cursor = firstX;
+  for (let l = 0; l <= maxLevel; l++) {
+    levelX[l] = cursor;
+    cursor += boxW + Math.max(70, 20 + 12 * (gapSlots.get(l) ?? 0));
+  }
+  const width = Math.max(760, cursor + 90);
+  const xOf = (i: number) => levelX[level[i]];
   const rows = new Map<number, number>();
   const yOf = (i: number) => {
     const row = rows.get(level[i]) ?? 0;
     rows.set(level[i], row + 1);
-    return 110 + row * 90;
+    return 110 + row * rowStep;
   };
   const pos = new Map<number, { x: number; y: number }>();
   cells.forEach((_, i) => pos.set(i, { x: xOf(i), y: yOf(i) }));
   const maxY = Math.max(...cells.map((_, i) => pos.get(i)!.y + boxH));
-  const height = Math.max(320, maxY + 80);
+  const height = Math.max(320, maxY + 90);
 
   const parts: string[] = [];
   parts.push('<svg viewBox="0 0 ' + width + " " + height + '" xmlns="http://www.w3.org/2000/svg">');
@@ -1121,35 +1159,72 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
   parts.push("<style>");
   parts.push(style());
   parts.push("  .box{fill:#f7f8fa;stroke:#1c1c1e;stroke-width:2}");
+  parts.push("  text.lbl,text.small{stroke:#fff;stroke-width:3;paint-order:stroke;stroke-linejoin:round}");
+  parts.push("  .j{fill:#1c1c1e}");
+  parts.push("  .pin{font-family:-apple-system,Segoe UI,Noto Sans CJK SC,sans-serif;font-size:10px;fill:#505056}");
   parts.push("</style>");
   parts.push(text(40, 38, title + " · " + d.cost + "T", "title"));
-  parts.push(text(40, 62, "multi-stage static complementary CMOS · gate-level netlist"));
+  parts.push(text(40, 62,
+    "multi-stage static complementary CMOS · SEL=0 hex 0-F · SEL=1 decimal 0-9 (10-15 blank)"));
 
-  // wires first
-  cells.forEach((c, i) => {
-    const dst = pos.get(i)!;
-    const ins = inputsOf(c);
-    ins.forEach((p, j) => {
-      const net = c.ports[p];
-      const sy = dst.y + 10 + (boxH - 20) * (j + 1) / (ins.length + 1);
-      const src = producer.get(net);
-      if (src !== undefined && src !== i) {
-        const sp = pos.get(src)!;
-        const sx = sp.x + boxW;
-        const sy0 = sp.y + boxH / 2;
-        const mid = (sx + dst.x) / 2 + 10 * (src % 7);
-        parts.push('<path d="M ' + sx + " " + sy0 + " H " + mid + " V " + sy +
-          " H " + dst.x + '" fill="none" stroke="#1c1c1e" stroke-width="1.8"/>');
-      } else if (vars.indexOf(net) >= 0) {
-        const vi = vars.indexOf(net);
-        const ly = 90 + vi * 22;
-        const busX = 108 + vi * 16;
-        parts.push('<path d="M 95 ' + ly + " H " + busX + " V " + sy + " H " + dst.x +
-          '" fill="none" stroke="#1c1c1e" stroke-width="1.8"/>');
-        parts.push(text(80, ly + 5, net, "lbl", "end"));
-      }
-    });
-  });
+  const wire = (dPath: string) =>
+    parts.push('<path d="' + dPath + '" fill="none" stroke="#1c1c1e" stroke-width="1.6"/>');
+  const dot = (x: number, y: number) =>
+    parts.push('<circle cx="' + x + '" cy="' + y + '" r="3.2" class="j"/>');
+  const inputBusX = (i: number) => 70 + i * 18;
+  const inputY = (i: number) => 98 + i * 26;
+  const busOf = (net: string) => {
+    const src = netSource.get(net)!;
+    if (src.kind === "input") return inputBusX(src.index);
+    const gap = level[src.index];
+    return levelX[gap] + boxW + 10 + (slotOf.get(net) ?? 0) * 12;
+  };
+  const srcPoint = (net: string) => {
+    const src = netSource.get(net);
+    if (!src) return null;
+    if (src.kind === "input")
+      return { x: inputBusX(src.index), y: inputY(src.index) };
+    const p = pos.get(src.index)!;
+    return { x: p.x + boxW, y: p.y + boxH / 2 };
+  };
+  const sinkPoint = (cell: number, pin: string) => {
+    const ins = inputsOf(cells[cell]);
+    const j = Math.max(0, ins.indexOf(pin));
+    const p = pos.get(cell)!;
+    return { x: p.x, y: p.y + 10 + (boxH - 20) * (j + 1) / (ins.length + 1) };
+  };
+
+  // Wires first.  Each net owns one vertical trunk; branches are marked with
+  // junction dots, crossings keep none.
+  for (const [net, sinks] of netSinks) {
+    if (outs.indexOf(net) >= 0) continue;
+    const src = netSource.get(net);
+    if (!src || sinks.length === 0) continue;
+    const busX = busOf(net);
+    const sp = srcPoint(net)!;
+    const pts = sinks.map((k) => sinkPoint(k.cell, k.pin));
+    const ys = [sp.y, ...pts.map((p) => p.y)];
+    const top = Math.min(...ys);
+    const bot = Math.max(...ys);
+    if (src.kind === "cell")
+      wire("M " + sp.x + " " + sp.y + " H " + busX);
+    else {
+      wire("M 45 " + sp.y + " H " + busX);
+      parts.push(text(10, sp.y + 5, net, "lbl"));
+    }
+    wire("M " + busX + " " + top + " V " + bot);
+    for (const p of pts) wire("M " + busX + " " + p.y + " H " + p.x);
+    const junction = (y: number) => {
+      if (y > top + 0.1 && y < bot - 0.1) dot(busX, y);
+    };
+    if (src.kind === "cell") junction(sp.y);
+    const sameY = new Map<number, number>();
+    for (const p of pts) {
+      junction(p.y);
+      sameY.set(p.y, (sameY.get(p.y) ?? 0) + 1);
+    }
+    for (const [y, n] of sameY) if (n > 1) dot(busX, y);
+  }
   cells.forEach((c, i) => {
     const posi = pos.get(i)!;
     parts.push('<rect x="' + posi.x + '" y="' + posi.y + '" width="' + boxW +
@@ -1158,10 +1233,10 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
     const ins = inputsOf(c);
     ins.forEach((p, j) => {
       const sy = posi.y + 10 + (boxH - 20) * (j + 1) / (ins.length + 1);
-      parts.push(text(posi.x + 8, sy + 4, p, "small"));
+      parts.push(text(posi.x + 12, sy + 4, p, "pin"));
     });
     const op = outPort(c);
-    parts.push(text(posi.x + boxW - 8, posi.y + boxH / 2 + 4, op, "small", "end"));
+    parts.push(text(posi.x + boxW - 8, posi.y + boxH / 2 + 4, op, "pin", "end"));
   });
   outs.forEach((net) => {
     const src = producer.get(net);
@@ -1170,7 +1245,10 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
     parts.push(line(p.x + boxW, p.y + boxH / 2, p.x + boxW + 55, p.y + boxH / 2, "w"));
     parts.push(text(p.x + boxW + 68, p.y + boxH / 2 + 6, net, "lbl"));
   });
-  parts.push(text(55, height - 26, "gate-level view · each cell is a static complementary CMOS standard cell"));
+  parts.push(text(55, height - 26,
+    "gate-level view · each cell is a static complementary CMOS standard cell"));
+  parts.push(text(55, height - 8,
+    "● junction    crossing without a dot is not connected"));
   parts.push("</svg>");
   return parts.join("\n");
 }
