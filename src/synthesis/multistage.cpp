@@ -1,5 +1,7 @@
 #include "synthesis/multistage.hpp"
 
+#include "core/limits.hpp"
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -205,9 +207,31 @@ synthesize_multistage_static_multi_impl(const MultiProblem &p, int max_fanin) {
     out.reason = "multi-stage synthesis needs one name per output";
     return out;
   }
-  if (vars.empty() || vars.size() > 5) {
-    out.reason = "multi-stage synthesis supports 1..5 inputs";
+  if (vars.empty()) {
+    out.reason = "multi-stage synthesis needs at least one input";
     return out;
+  }
+  // The real limit is the truth-table footprint, not the input count:
+  // 2^n rows x outputs, with room for completion/working copies.
+  if (vars.size() >= 63) {
+    out.reason = "truth table needs 2^n rows; n >= 63 is not addressable";
+    return out;
+  }
+  const std::size_t rows = std::size_t{1} << vars.size();
+  const unsigned long cap_mb = current_mem_limit_mb();
+  const unsigned long avail_mb = available_memory_mb();
+  const unsigned long budget_mb = cap_mb ? cap_mb : avail_mb;
+  if (budget_mb != 0) {
+    const std::size_t need = rows * (funcs.size() + 8);
+    const std::size_t budget = budget_mb * 1024 * 1024 / 2;
+    if (need > budget) {
+      out.reason = "truth table needs " + std::to_string(need / (1024 * 1024)) +
+                   " MiB (2^" + std::to_string(vars.size()) + " rows x " +
+                   std::to_string(funcs.size()) + " outputs), budget is " +
+                   std::to_string(budget_mb / 2) +
+                   " MiB; raise --mem-limit or reduce inputs";
+      return out;
+    }
   }
   // Complete partial functions first: the mapper needs a total function, and
   // the cheapest static-gate extension keeps the mapped logic small.
