@@ -241,6 +241,7 @@ compose_from_library(const MultiProblem &spec,
       tvars[v][m] = (m >> (n - 1 - v)) & 1u;
 
   std::vector<Cand> cands;
+  int glue_mux_cost = 12; // used only if the library has no measured mux2
   std::vector<int> atom_cost(library.size(), -1);
   for (std::size_t ai = 0; ai < library.size(); ++ai) {
     const MultiProblem &atom = library[ai];
@@ -262,6 +263,11 @@ compose_from_library(const MultiProblem &spec,
       cost = am.total;
     }
     atom_cost[ai] = cost;
+    if (atom.title == "mux2") {
+      const MultiStageMultiDesign am = synthesize_multistage_static_multi(atom);
+      if (am.ok && am.verified)
+        glue_mux_cost = am.total;
+    }
     std::vector<std::size_t> comb(k);
     std::iota(comb.begin(), comb.end(), 0);
     while (true) {
@@ -271,9 +277,8 @@ compose_from_library(const MultiProblem &spec,
       c.outs.assign(atom.outputs.size(), std::vector<unsigned char>(rows));
       for (std::size_t m = 0; m < rows; ++m) {
         std::uint32_t idx = 0;
-        for (std::size_t j = 0; j < k; ++j) {
+        for (std::size_t j = 0; j < k; ++j)
           idx = (idx << 1) | tvars[comb[j]][m];
-        }
         for (std::size_t o = 0; o < atom.outputs.size(); ++o)
           c.outs[o][m] = atom.outputs[o].func.value(idx) ? 1 : 0;
       }
@@ -426,7 +431,7 @@ compose_from_library(const MultiProblem &spec,
           const auto [h, mux] = best_h(sv);
           if (!h)
             continue;
-          const int total = cost + 12 * mux;
+          const int total = cost + glue_mux_cost * mux;
           if (total < partition_total) {
             partition_total = total;
             partition_best = plan;
