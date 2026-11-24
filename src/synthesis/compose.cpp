@@ -292,6 +292,21 @@ compose_from_library(const MultiProblem &spec,
           cands.push_back(std::move(cand));
       };
       add_candidate(std::move(c));
+      if (k == 4 && n == 3 * k) {
+        std::vector<std::size_t> rv(comb.rbegin(), comb.rend());
+        Cand rc;
+        rc.atom = static_cast<int>(ai);
+        rc.vars = rv;
+        rc.outs.assign(atom.outputs.size(), std::vector<unsigned char>(rows));
+        for (std::size_t m = 0; m < rows; ++m) {
+          std::uint32_t idx = 0;
+          for (std::size_t j = 0; j < k; ++j)
+            idx = (idx << 1) | tvars[rv[j]][m];
+          for (std::size_t o = 0; o < atom.outputs.size(); ++o)
+            rc.outs[o][m] = atom.outputs[o].func.value(idx) ? 1 : 0;
+        }
+        add_candidate(std::move(rc));
+      }
       // permutations for small atoms (k<=3); k=4 stayed identity because the
       // 24x candidate growth outweighed the search benefit on the current set.
       if (k <= 3) {
@@ -476,6 +491,69 @@ compose_from_library(const MultiProblem &spec,
       for (const auto &o : cands[ci].outs)
         sigs.push_back(&o);
     cur = 0;
+  }
+
+  // g=3 direct cover: atom output tables that equal spec output tables.
+  if (!partition_best) {
+    for (std::size_t ai = 0; ai < library.size(); ++ai) {
+      const std::size_t k = library[ai].vars.size();
+      if (library[ai].outputs.size() < 2 || n != 3 * k)
+        continue;
+      std::map<std::string, int> spec_key;
+      for (std::size_t o = 0; o < spec.outputs.size(); ++o)
+        spec_key[std::string(
+            reinterpret_cast<const char *>(tgt_rows.data() + o * rows), rows)] =
+            static_cast<int>(o);
+      std::vector<int> hits;
+      for (std::size_t ci = 0; ci < cands.size(); ++ci) {
+        if (cands[ci].atom != static_cast<int>(ai))
+          continue;
+        bool all = true;
+        std::vector<int> matched;
+        for (const auto &o : cands[ci].outs) {
+          auto it = spec_key.find(
+              std::string(reinterpret_cast<const char *>(o.data()), rows));
+          if (it == spec_key.end()) {
+            all = false;
+            break;
+          }
+          matched.push_back(it->second);
+        }
+        if (all)
+          hits.push_back(static_cast<int>(ci));
+      }
+      for (std::size_t i = 0; i < hits.size() && !partition_best; ++i)
+        for (std::size_t j = i + 1; j < hits.size() && !partition_best; ++j)
+          for (std::size_t l = j + 1; l < hits.size() && !partition_best; ++l) {
+            std::vector<int> plan{hits[i], hits[j], hits[l]};
+            std::vector<bool> used(n, false);
+            bool ok = true;
+            int cost = 0;
+            for (int ci : plan) {
+              for (auto v : cands[ci].vars) {
+                if (used[v])
+                  ok = false;
+                used[v] = true;
+              }
+              cost += atom_cost[cands[ci].atom];
+            }
+            for (bool u : used)
+              ok = ok && u;
+            if (!ok)
+              continue;
+            std::vector<const std::vector<unsigned char> *> sv;
+            for (int ci : plan)
+              for (const auto &o : cands[ci].outs)
+                sv.push_back(&o);
+            if (conflicts(sv) != 0)
+              continue;
+            const auto [h, mux] = best_h(sv);
+            if (!h)
+              continue;
+            partition_total = cost + glue_mux_cost * mux;
+            partition_best = plan;
+          }
+    }
   }
 
   if (!partition_best) {
