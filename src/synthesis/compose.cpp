@@ -337,12 +337,11 @@ compose_from_library(const MultiProblem &spec,
       [&](const std::vector<const std::vector<unsigned char> *> &sigs) {
         long long total = 0;
         for (std::size_t k = 0; k < spec.outputs.size(); ++k) {
-          std::unordered_map<std::string, std::pair<int, int>> buckets;
+          std::unordered_map<std::uint64_t, std::pair<int, int>> buckets;
           for (std::size_t m = 0; m < rows; ++m) {
-            std::string key;
-            key.reserve(sigs.size());
+            std::uint64_t key = 0;
             for (const auto *s : sigs)
-              key.push_back(static_cast<char>((*s)[m]));
+              key = (key << 1) | ((*s)[m] ? 1u : 0u);
             auto &b = buckets[key];
             if (tgt_rows[k * rows + m])
               ++b.second;
