@@ -19,6 +19,15 @@ path_of() {
 }
 
 selected=0
+declare -A DEFAULT_SEEN
+
+render_atom_spec() {
+  local name=$1 dir=$2 spec=$3
+  mkdir -p "$dir/atoms/$name"
+  "$BIN" multi synth --spec "$spec" --out "$dir/atoms/$name" --png --json \
+    >"$dir/atoms/$name/result.json"
+  pass "  atom $name"
+}
 render_synth() {
   local name=$1 variant=$2 dir=$3 spec=$4
   shift 4
@@ -33,7 +42,25 @@ render_compose() {
   local args=(--spec "$(path_of "$spec")")
   [ -n "$lib" ] && args+=(--library "$(path_of "$lib")")
   "$BIN" multi compose "${args[@]}" --out "$dir" --png --json >"$dir/result.json"
-  pass "render $name/$variant (compose)"
+  local m spec libfile tmp
+  libfile=""
+  [ -n "$lib" ] && libfile="$(path_of "$lib")"
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
+  for m in $(jq -r '.atoms[].module' "$dir/result.json"); do
+    if [ -f "$ROOT/tests/verify/instances/specs/$m.json" ]; then
+      spec="$ROOT/tests/verify/instances/specs/$m.json"
+    elif [ -n "$libfile" ] && [ -f "$libfile" ]; then
+      jq --arg m "$m" '.[] | select(.name==$m)' "$libfile" >"$tmp/$m.json"
+      spec="$tmp/$m.json"
+      [ -s "$spec" ] || continue
+    else
+      continue
+    fi
+    render_atom_spec "$m" "$dir" "$spec"
+  done
+  rm -rf "$tmp"
+  pass "render $name/$variant (compose + atoms)"
 }
 render_atoms() {
   local name=$1 variant=$2 dir=$3 atom_spec=$4 top=$5 ref=$6
@@ -52,6 +79,7 @@ render_atoms() {
     --atoms "$tmp/atoms.v" --top top --title "$name" --cost "$cost" \
     --out "$dir" --png >/dev/null
   printf '%s\n' "$json" >"$dir/result.json"
+  render_atom_spec "$atom" "$dir" "$(path_of "$atom_spec")"
   pass "render $name/$variant (atoms, ${cost}T)"
 }
 render_rtl() {
@@ -83,6 +111,24 @@ render_rtl() {
     "$BIN" render --netlist "$(path_of "$top")" \
       --top top --title "$name" --out "$dir" --png >/dev/null
   fi
+  local f base spec atomtmp
+  for f in "$@"; do
+    base=$(basename "$f" .v)
+    if [ -f "$ROOT/tests/verify/instances/specs/$base.json" ]; then
+      render_atom_spec "$base" "$dir" \
+        "$ROOT/tests/verify/instances/specs/$base.json"
+    elif [ "$base" = "pe16" ]; then
+      atomtmp=$(mktemp -d)
+      cat "$ROOT/tests/verify/instances/rtl/pe42.v" >"$atomtmp/pe42.v"
+      mkdir -p "$dir/atoms/pe16"
+      "$BIN" render --netlist "$f" --atoms "$atomtmp/pe42.v" --top pe16 \
+        --title pe16 --out "$dir/atoms/pe16" --png >/dev/null
+      rm -rf "$atomtmp"
+      render_atom_spec pe42 "$dir" \
+        "$ROOT/tests/verify/instances/specs/pe42.json"
+      pass "  atom pe16 (hierarchy)"
+    fi
+  done
   pass "render $name/$variant (rtl, ${cost}T)"
 }
 
@@ -94,7 +140,12 @@ while read -r name variant kind rest; do
   if [ -n "$VARIANT" ] && [ "$variant" != "$VARIANT" ]; then continue; fi
   if [ -z "$INSTANCE" ] && [ -z "$VARIANT" ] && [ "$default" -eq 0 ]; then continue; fi
   selected=$((selected + 1))
-  if [ "$default" -eq 1 ]; then dir="$OUT/$name"; else dir="$OUT/$name/$variant"; fi
+  if [ "$default" -eq 1 ] && [ -z "${DEFAULT_SEEN[$name]:-}" ]; then
+    dir="$OUT/$name"
+    DEFAULT_SEEN[$name]=1
+  else
+    dir="$OUT/$name/$variant"
+  fi
   # shellcheck disable=SC2086
   set -- $rest
   case "$kind" in

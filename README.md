@@ -84,7 +84,7 @@ make                 # 主程序 + dcstudy-z3 worker
 make test            # 单元测试(按模块) + CLI 烟测
 make smoke           # CLI 烟测 + (有 Fil-C 时)Fil-C 烟测
 make verify          # 实例验证(见 tests/verify/README.md)
-make render          # 可选: 每个实例的默认实现出图到 out/render
+make render          # 可选: 每个实例的默认实现(含组合体用到的原子)出图
 make render INSTANCE=fa1          # 该器件的全部实现
 make render INSTANCE=fa1 VARIANT=ha  # 指定实现
 make verify-all      # 实例 + 形式化(ctest) + 完整 CLI 套件

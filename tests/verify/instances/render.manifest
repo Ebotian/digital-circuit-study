@@ -4,7 +4,7 @@ decoder38   spec*       synth   specs/decoder38.json
 encoder42   spec*       synth   specs/encoder42.json
 eq4         spec*       synth   specs/eq4.json
 fa1         spec*       synth   specs/fa1.json
-fa1         ha          atoms   specs/ha.json rtl/fa_ha.v rtl/gold_fa.v
+fa1         ha*         atoms   specs/ha.json rtl/fa_ha.v rtl/gold_fa.v
 hex7seg     spec*       synth   specs/hex7seg.json
 hex7seg     fanin2      synth   specs/hex7seg.json --max-fanin 2
 hex7seg_sel spec*       synth   specs/hex7seg_sel.json
