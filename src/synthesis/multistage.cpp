@@ -205,8 +205,8 @@ synthesize_multistage_static_multi_impl(const MultiProblem &p, int max_fanin) {
     out.reason = "multi-stage synthesis needs one name per output";
     return out;
   }
-  if (vars.empty() || vars.size() > 4) {
-    out.reason = "multi-stage synthesis supports 1..4 inputs";
+  if (vars.empty() || vars.size() > 5) {
+    out.reason = "multi-stage synthesis supports 1..5 inputs";
     return out;
   }
   // Complete partial functions first: the mapper needs a total function, and

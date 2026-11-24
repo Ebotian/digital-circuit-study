@@ -35,7 +35,7 @@ tests/verify/
 | 自动组合 3 位 4:1（compose_mux4_3bit） | 14 输入 spec | BDD→mux2 + 穷举自检 + 结构 miter | 9×12T = 108T，PASS |
 | 自动组合 8-3（compose_prio8） | spec + {pe42,or4,mux2} 库 | 分区构造 + DC 补全 + 结构 miter | 2×16T+10T+2×12T = 66T，PASS |
 | 4-7 段译码器（hex7seg） | spec | synth（默认 / --max-fanin 2）+ exact | 31 cells/162T；44 cells/192T；180T |
-| 4 位 hex/十进制七段（hex7seg_sel） | 5 输入 spec（D3..D0,SEL） | compose（BDD→mux2）+ 独立 RTL 结构 miter | 39×12T = 472T，PASS |
+| 4 位 hex/十进制七段（hex7seg_sel） | 5 输入 spec（D3..D0,SEL） | synth（多级静态 CMOS）+ 原生渲染 | 40 cells / 232T，scheme-0.svg |
 | 4-2 优先编码器 | spec | 逐输出开关级 miter | 16T，verified |
 | 16-4 优先编码器 | RTL + 原子 + --ref | 结构 miter（无真值表） | 172T = 4x16T + 108T，PASS |
 | 前导/尾随 0/1 计数（lzcount16） | RTL + 4x pe16 + --ref | 结构 miter + Verilator 激励 | 866T = 4x172T + 178T；16392 → LZ=1, TZ=3 |
