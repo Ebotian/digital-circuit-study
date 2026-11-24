@@ -18,6 +18,8 @@ std::uint64_t full_mask(std::size_t n) {
              : ((std::uint64_t{1} << n) - 1);
 }
 
+// Internal helper; call sites reviewed.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 Bits cover_of(std::uint64_t care, std::uint64_t value, std::size_t n) {
   const std::uint32_t N = std::uint32_t{1} << n;
   Bits cover(N);

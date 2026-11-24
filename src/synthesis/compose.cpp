@@ -57,6 +57,8 @@ struct Bdd {
     return id;
   }
 
+  // Internal helper; call sites reviewed.
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
   int build_range(const unsigned char *base, std::size_t size, int level) {
     bool same = true;
     for (std::size_t i = 1; i < size; ++i)
@@ -71,6 +73,8 @@ struct Bdd {
               build_range(base + half, half, level + 1));
   }
 
+  // Internal helper; call sites reviewed.
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
   int build(const std::vector<unsigned char> &table, int n, int level) {
     (void)n;
     return build_range(table.data(), table.size(), level);
@@ -140,6 +144,8 @@ std::string atom_module_rtl(const MultiProblem &atom) {
 
 // Complete a partially-specified truth table: subtrees without care rows are
 // filled to match their sibling, so the BDD collapses free coordinates.
+// Internal helper; call sites reviewed.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 bool fill_dc(unsigned char *val, const unsigned char *care, std::size_t size,
              int level) {
   (void)level;
@@ -285,7 +291,7 @@ compose_from_library(const MultiProblem &spec,
       for (std::size_t m = 0; m < rows; ++m) {
         std::uint32_t idx = 0;
         for (std::size_t j = 0; j < k; ++j)
-          idx = (idx << 1) | tvars[comb[j]][m];
+          idx = (idx << 1u) | static_cast<std::uint32_t>(tvars[comb[j]][m]);
         for (std::size_t o = 0; o < atom.outputs.size(); ++o)
           c.outs[o][m] = atom.outputs[o].func.value(idx) ? 1 : 0;
       }
@@ -306,7 +312,7 @@ compose_from_library(const MultiProblem &spec,
         for (std::size_t m = 0; m < rows; ++m) {
           std::uint32_t idx = 0;
           for (std::size_t j = 0; j < k; ++j)
-            idx = (idx << 1) | tvars[rv[j]][m];
+            idx = (idx << 1u) | static_cast<std::uint32_t>(tvars[rv[j]][m]);
           for (std::size_t o = 0; o < atom.outputs.size(); ++o)
             rc.outs[o][m] = atom.outputs[o].func.value(idx) ? 1 : 0;
         }
@@ -324,7 +330,7 @@ compose_from_library(const MultiProblem &spec,
           for (std::size_t m = 0; m < rows; ++m) {
             std::uint32_t idx = 0;
             for (std::size_t j = 0; j < k; ++j)
-              idx = (idx << 1) | tvars[perm[j]][m];
+              idx = (idx << 1u) | static_cast<std::uint32_t>(tvars[perm[j]][m]);
             for (std::size_t o = 0; o < atom.outputs.size(); ++o)
               pc.outs[o][m] = atom.outputs[o].func.value(idx) ? 1 : 0;
           }
@@ -361,7 +367,7 @@ compose_from_library(const MultiProblem &spec,
           for (std::size_t m = 0; m < rows; ++m) {
             std::uint64_t key = 0;
             for (const auto *s : sigs)
-              key = (key << 1) | ((*s)[m] ? 1u : 0u);
+              key = (key << 1u) | ((*s)[m] ? 1u : 0u);
             auto &b = buckets[key];
             if (tgt_rows[k * rows + m])
               ++b.second;
@@ -454,10 +460,10 @@ compose_from_library(const MultiProblem &spec,
           ok = ok && u;
         if (!ok)
           continue;
-        for (int mask = 0; mask < 4; ++mask) {
+        for (unsigned mask = 0; mask < 4u; ++mask) {
           std::vector<int> plan{molist[i], molist[j]};
           for (int g = 0; g < 2; ++g) {
-            if (!(mask & (1 << g)))
+            if (!(mask & (1u << static_cast<unsigned>(g))))
               continue;
             for (int ci : solist) {
               if (cands[ci].vars != (g == 0 ? a : b))
@@ -523,11 +529,12 @@ compose_from_library(const MultiProblem &spec,
         for (const auto &o : cands[ci].outs) {
           auto it = spec_key.find(
               std::string(reinterpret_cast<const char *>(o.data()), rows));
-          if (it == spec_key.end() || (mask & (1u << it->second))) {
+          if (it == spec_key.end() ||
+              (mask & (1u << static_cast<unsigned>(it->second)))) {
             all = false;
             break;
           }
-          mask |= 1u << it->second;
+          mask |= 1u << static_cast<unsigned>(it->second);
         }
         if (!all)
           continue;

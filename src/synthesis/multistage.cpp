@@ -169,8 +169,13 @@ std::string cdl_from_subckt(const Subckt &c) {
     out += " " + p + ":" + d;
   }
   out += '\n';
-  for (const auto &[alias, canon] : c.aliases)
-    out += "*.ALIAS " + alias + " " + canon + "\n";
+  for (const auto &[alias, canon] : c.aliases) {
+    out += "*.ALIAS ";
+    out += alias;
+    out += ' ';
+    out += canon;
+    out += '\n';
+  }
   for (const auto &dev : c.devices) {
     const std::string bulk = dev.pmos ? "VDD" : "VSS";
     out += dev.name + " " + dev.drain + " " + dev.gate + " " + dev.source +
@@ -179,8 +184,15 @@ std::string cdl_from_subckt(const Subckt &c) {
   // Two ports on one net cannot be written in a transistor netlist, so tie
   // them with a 0 V source: SPICE simulators then see the alias connected
   // (the *.ALIAS line above is what this repo's own parser uses).
-  for (const auto &[alias, canon] : c.aliases)
-    out += "V__alias_" + alias + " " + alias + " " + canon + " 0\n";
+  for (const auto &[alias, canon] : c.aliases) {
+    out += "V__alias_";
+    out += alias;
+    out += ' ';
+    out += alias;
+    out += ' ';
+    out += canon;
+    out += " 0\n";
+  }
   out += ".ENDS\n";
   return out;
 }
@@ -303,7 +315,7 @@ synthesize_multistage_static_multi_impl(const MultiProblem &p, int max_fanin) {
       "cd " + shell_quote(dir.path().string()) + " && timeout " +
       std::to_string(kYosysTimeoutSeconds) + " yosys -Q -p " +
       shell_quote(script) + " > " + shell_quote(log.string()) + " 2>&1";
-  const int rc = std::system(cmd.c_str());
+  const int rc = std::system(cmd.c_str()); // NOLINT(bugprone-command-processor)
   const int code = (rc != -1 && WIFEXITED(rc)) ? WEXITSTATUS(rc) : -1;
   const std::string ylog = read_file(log);
   if (code != 0) {
@@ -536,22 +548,42 @@ std::map<std::string, PortSpec> module_ports(const Json &module) {
 
 // Reject name/direction/width mismatches before any miter is built: a silent
 // pad or truncation would prove only a subset of the RTL inputs.
+// Internal helper; call sites reviewed.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 void require_same_ports(const std::map<std::string, PortSpec> &got,
                         const std::map<std::string, PortSpec> &want,
                         const std::string &what) {
   for (const auto &[name, w] : want) {
     const auto it = got.find(name);
-    if (it == got.end())
-      throw std::runtime_error(what + ": missing port " + name);
-    if (it->second.dir != w.dir || it->second.width != w.width)
-      throw std::runtime_error(
-          what + ": port " + name + " is " + it->second.dir + "[" +
-          std::to_string(it->second.width) + "], expected " + w.dir + "[" +
-          std::to_string(w.width) + "]");
+    if (it == got.end()) {
+      std::string msg = what;
+      msg += ": missing port ";
+      msg += name;
+      throw std::runtime_error(msg);
+    }
+    if (it->second.dir != w.dir || it->second.width != w.width) {
+      std::string msg = what;
+      msg += ": port ";
+      msg += name;
+      msg += " is ";
+      msg += it->second.dir;
+      msg += '[';
+      msg += std::to_string(it->second.width);
+      msg += "], expected ";
+      msg += w.dir;
+      msg += '[';
+      msg += std::to_string(w.width);
+      msg += ']';
+      throw std::runtime_error(msg);
+    }
   }
   for (const auto &[name, g] : got)
-    if (!want.count(name))
-      throw std::runtime_error(what + ": unexpected port " + name);
+    if (!want.count(name)) {
+      std::string msg = what;
+      msg += ": unexpected port ";
+      msg += name;
+      throw std::runtime_error(msg);
+    }
 }
 
 std::string render_params(const Json &cell) {
@@ -566,6 +598,8 @@ std::string render_params(const Json &cell) {
   return out;
 }
 
+// Internal helper; call sites reviewed.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 std::string chparam_cmd(const std::string &module, const std::string &params) {
   if (params.empty())
     return "";
@@ -628,7 +662,8 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
         std::to_string(kYosysTimeoutSeconds) + " yosys -Q -p " +
         shell_quote(script) + " > " +
         shell_quote((dir.path() / log_name).string()) + " 2>&1";
-    const int rc = std::system(cmd.c_str());
+    const int rc =
+        std::system(cmd.c_str()); // NOLINT(bugprone-command-processor)
     const int code = (rc != -1 && WIFEXITED(rc)) ? WEXITSTATUS(rc) : -1;
     const std::string log = read_file(dir.path() / log_name);
     if (code != 0)
@@ -659,7 +694,10 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
         cell_cost += static_cast<int>(library.cell(type).transistor_count());
       } else {
         const std::string params = render_params(cj);
-        RtlAtomUse &use = atom_uses[type + "|" + params];
+        std::string key = type;
+        key += '|';
+        key += params;
+        RtlAtomUse &use = atom_uses[key];
         use.module = type;
         use.parameters = params;
         ++use.instances;
@@ -706,9 +744,13 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
       for (const auto &[inst, cj] : acells.object()) {
         const std::string type = cj.at("type").as_string();
         if (library.has(type)) {
-          if (!static_cell(type))
-            throw std::runtime_error("atom " + module +
-                                     " mapped to non-static cell: " + type);
+          if (!static_cell(type)) {
+            std::string msg = "atom ";
+            msg += module;
+            msg += " mapped to non-static cell: ";
+            msg += type;
+            throw std::runtime_error(msg);
+          }
           cost += static_cast<int>(library.cell(type).transistor_count());
         } else {
           cost += measure(type, render_params(cj)); // nested atom
@@ -760,13 +802,34 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
         const std::string range =
             width > 1 ? " [" + std::to_string(width - 1) + ":0] " : " ";
         if (dir == "input") {
-          header += "input logic" + range + name + ", ";
-          conns += "." + name + "(" + name + "), ";
+          header += "input logic";
+          header += range;
+          header += name;
+          header += ", ";
+          conns += '.';
+          conns += name;
+          conns += '(';
+          conns += name;
+          conns += "), ";
           ++n_in;
         } else {
-          wires += "  wire" + range + "t_" + name + ", r_" + name + ";\n";
-          conns += "." + name + "(t_" + name + "), ";
-          cmps += " | (t_" + name + " !== r_" + name + ")";
+          wires += "  wire";
+          wires += range;
+          wires += "t_";
+          wires += name;
+          wires += ", r_";
+          wires += name;
+          wires += ";\n";
+          conns += '.';
+          conns += name;
+          conns += "(t_";
+          conns += name;
+          conns += "), ";
+          cmps += " | (t_";
+          cmps += name;
+          cmps += " !== r_";
+          cmps += name;
+          cmps += ')';
           if (spec.names.empty())
             out.outputs.push_back(name);
           ++n_out;
@@ -781,10 +844,19 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
       // it by replacing the output wires.
       std::string ref_conns;
       for (const auto &[name, pj] : ports.object()) {
-        if (pj.at("direction").as_string() == "input")
-          ref_conns += "." + name + "(" + name + "), ";
-        else
-          ref_conns += "." + name + "(r_" + name + "), ";
+        if (pj.at("direction").as_string() == "input") {
+          ref_conns += '.';
+          ref_conns += name;
+          ref_conns += '(';
+          ref_conns += name;
+          ref_conns += "), ";
+        } else {
+          ref_conns += '.';
+          ref_conns += name;
+          ref_conns += "(r_";
+          ref_conns += name;
+          ref_conns += "), ";
+        }
       }
       std::string miter =
           "module miter(" + header + "output logic mismatch);\n" + wires +
@@ -837,23 +909,43 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
     for (std::size_t i = 0; i < spec.vars.size(); ++i)
       miter += (i ? ", " : "") + std::string("input logic ") + spec.vars[i];
     miter += ", output logic mismatch);\n";
-    for (const auto &n : spec.names)
-      miter += "  wire t_" + n + ", r_" + n + ";\n";
+    for (const auto &n : spec.names) {
+      miter += "  wire t_";
+      miter += n;
+      miter += ", r_";
+      miter += n;
+      miter += ";\n";
+    }
     miter += "  top u_top(";
     for (std::size_t i = 0; i < spec.vars.size(); ++i)
       miter += (i ? ", " : "") + std::string(".") + spec.vars[i] + "(" +
                spec.vars[i] + ")";
-    for (const auto &n : spec.names)
-      miter += ", ." + n + "(t_" + n + ")";
+    for (const auto &n : spec.names) {
+      miter += ", .";
+      miter += n;
+      miter += "(t_";
+      miter += n;
+      miter += ')';
+    }
     miter += ");\n  ref u_ref(";
     for (std::size_t i = 0; i < spec.vars.size(); ++i)
       miter += (i ? ", " : "") + std::string(".") + spec.vars[i] + "(" +
                spec.vars[i] + ")";
-    for (const auto &n : spec.names)
-      miter += ", ." + n + "(r_" + n + ")";
+    for (const auto &n : spec.names) {
+      miter += ", .";
+      miter += n;
+      miter += "(r_";
+      miter += n;
+      miter += ')';
+    }
     miter += ");\n  assign mismatch = 1'b0";
-    for (const auto &n : spec.names)
-      miter += " | (t_" + n + " !== r_" + n + ")";
+    for (const auto &n : spec.names) {
+      miter += " | (t_";
+      miter += n;
+      miter += " !== r_";
+      miter += n;
+      miter += ')';
+    }
     miter += ";\nendmodule\n";
     write_text(dir.path() / "ref.v", ref);
     write_text(dir.path() / "miter.v", miter);

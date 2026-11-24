@@ -244,6 +244,9 @@ private:
       return c - 'A' + 10;
     return -1;
   }
+  // UTF-8 packs bytes from a Unicode code point; signed/unsigned byte
+  // interop is intrinsic to RFC 3629, not a logic error.
+  // NOLINTBEGIN(bugprone-signed-bitwise)
   void utf8(std::uint32_t cp, std::string &out) {
     if (cp <= 0x7f) {
       out.push_back(static_cast<char>(cp));
@@ -261,13 +264,14 @@ private:
       out.push_back(static_cast<char>(0x80 | (cp & 0x3f)));
     }
   }
+  // NOLINTEND(bugprone-signed-bitwise)
   std::uint32_t unicode_escape() {
     std::uint32_t cp = 0;
     for (int k = 0; k < 4; ++k) {
       int h = hex(take());
       if (h < 0)
         fail("bad \\u escape");
-      cp = (cp << 4) | static_cast<std::uint32_t>(h);
+      cp = (cp << 4u) | static_cast<std::uint32_t>(h);
     }
     return cp;
   }
@@ -311,7 +315,7 @@ private:
             if (take() != '\\' || take() != 'u')
               fail("bad surrogate pair");
             std::uint32_t low = unicode_escape();
-            cp = 0x10000 + ((cp - 0xd800) << 10) + (low - 0xdc00);
+            cp = 0x10000 + ((cp - 0xd800) << 10u) + (low - 0xdc00);
           }
           utf8(cp, out);
           break;

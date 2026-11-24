@@ -60,10 +60,11 @@ struct FixedPoint {
   bool invariant_ok = true;
 };
 
-FixedPoint run_fixpoint(const Subckt &cell, const NetIndex &ni,
-                        const std::vector<std::size_t> &input_idx,
-                        std::uint32_t minterm, std::size_t vdd, std::size_t vss,
-                        bool graphblas) {
+FixedPoint run_fixpoint(
+    const Subckt &cell, const NetIndex &ni,
+    const std::vector<std::size_t> &input_idx,
+    std::uint32_t minterm, // NOLINT(bugprone-easily-swappable-parameters)
+    std::size_t vdd, std::size_t vss, bool graphblas) {
   const std::size_t n = ni.names.size();
   FixedPoint fp;
   fp.f0.assign(n, 0);

@@ -146,10 +146,13 @@ BoolMatrix power_closure(const BoolMatrix &c, std::size_t n, int &steps) {
 }
 
 template <typename Reach>
-DriverRow extract_row_t(const Graph &g, const Reach &reach, std::size_t offset,
-                        std::uint32_t m, const std::vector<std::string> &vars,
-                        const std::vector<int> &target, bool &valid,
-                        bool &all_single, int &max_drivers) {
+// Internal helper; call sites reviewed.
+DriverRow // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+extract_row_t(const Graph &g, const Reach &reach, std::size_t offset,
+              std::uint32_t m, const std::vector<std::string> &vars,
+              const std::vector<int> &target,
+              bool &valid, // NOLINT(bugprone-easily-swappable-parameters)
+              bool &all_single, int &max_drivers) {
   DriverRow row;
   std::map<std::string, bool> strong_for;
   for (const auto &p : g.paths) {

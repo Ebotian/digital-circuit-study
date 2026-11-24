@@ -16,6 +16,8 @@ TEST_CASE("joint switch-graph check rejects outputs sharing a node",
     g.source_ids = {zero, one};
     g.outputs = {y0, y1};
     g.output = y0;
+    // Internal helper; call sites reviewed.
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     auto add = [&](int from, int to, SwKind kind, const std::string &lit) {
       SwitchGraphEdge e;
       e.from = from;

@@ -190,7 +190,7 @@ TEST_CASE("glue table matches its declared signal order", "[core]") {
   std::vector<std::vector<unsigned char>> sig(
       ns, std::vector<unsigned char>(rows, 0));
   for (std::size_t m = 0; m < rows; ++m) {
-    const unsigned a = (m >> 2) & 1, b = (m >> 1) & 1, c = m & 1;
+    const unsigned a = (m >> 2u) & 1u, b = (m >> 1u) & 1u, c = m & 1u;
     sig[0][m] = b; // s0
     sig[1][m] = 0; // s1
     sig[2][m] = c; // s2
@@ -209,7 +209,7 @@ TEST_CASE("glue table matches its declared signal order", "[core]") {
     int sv[ns] = {};
     for (std::size_t j = 0; j < ns; ++j) {
       const int k = std::stoi(h->vars[j].substr(1));
-      sv[k] = static_cast<int>((idx >> (ns - 1 - j)) & 1);
+      sv[k] = static_cast<int>((idx >> (ns - 1 - j)) & 1u);
     }
     const bool expected = sv[4] ? (sv[0] != 0) : (sv[2] != 0);
     CHECK((h->outputs[0].func.value(static_cast<std::uint32_t>(idx)) != 0) ==

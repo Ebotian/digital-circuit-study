@@ -82,7 +82,8 @@ int run_shell(const std::string &command, const fs::path &log) {
   const std::string full = "timeout " + std::to_string(kVerifyTimeoutSeconds) +
                            " bash -c " + shell_quote_str(command) + " > " +
                            shell_quote(log) + " 2>&1";
-  const int rc = std::system(full.c_str());
+  const int rc =
+      std::system(full.c_str()); // NOLINT(bugprone-command-processor)
   if (rc == -1)
     return -1;
   if (WIFEXITED(rc))

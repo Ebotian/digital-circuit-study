@@ -13,7 +13,7 @@
 
 namespace dcstudy {
 
-enum class SwKind { N, P, TGL, TGH };
+enum class SwKind : std::uint8_t { N, P, TGL, TGH };
 
 struct ChainElem {
   SwKind kind;

@@ -6,6 +6,7 @@
 // VDD/VSS; it also handles floating gate nodes, which the fixed point
 // deliberately does not assign.
 #pragma once
+#include <cstdint>
 
 #include <string>
 #include <vector>
@@ -14,7 +15,7 @@
 
 namespace dcstudy {
 
-enum class Logic { Zero, One, Float, Race };
+enum class Logic : std::uint8_t { Zero, One, Float, Race };
 
 struct SwitchRow {
   std::vector<int> inputs;

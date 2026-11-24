@@ -1,12 +1,32 @@
 #include "cli/cli_common.hpp"
 #include "cli/cli_includes.hpp"
 #include "cli/cmd_design.hpp"
+#include <unistd.h>
 
 namespace fs = std::filesystem;
 
 using namespace dcstudy;
 
 namespace dcstudy {
+
+static bool have_program(const std::string &name) {
+  const char *path = std::getenv("PATH");
+  if (path == nullptr)
+    return false;
+  std::string rest(path);
+  std::size_t begin = 0;
+  while (begin <= rest.size()) {
+    const std::size_t end = rest.find(':', begin);
+    const std::string dir = rest.substr(begin, end - begin);
+    const fs::path cand = fs::path(dir.empty() ? "." : dir) / name;
+    if (::access(cand.c_str(), X_OK) == 0)
+      return true;
+    if (end == std::string::npos)
+      break;
+    begin = end + 1;
+  }
+  return false;
+}
 
 static std::string shq(const std::string &s) {
   std::string out = "'";
@@ -28,14 +48,12 @@ bool render_netlist_files(const std::vector<std::string> &files,
     return false;
   }
   for (const char *tool : {"yosys", "dot"}) {
-    if (std::system(
-            (std::string("command -v ") + tool + " >/dev/null 2>&1").c_str()) !=
-        0) {
+    if (!have_program(tool)) {
       err = std::string("netlist render needs ") + tool + " in PATH";
       return false;
     }
   }
-  if (png && std::system("command -v rsvg-convert >/dev/null 2>&1") != 0) {
+  if (png && !have_program("rsvg-convert")) {
     err = "netlist render --png needs rsvg-convert in PATH";
     return false;
   }
@@ -60,7 +78,7 @@ bool render_netlist_files(const std::vector<std::string> &files,
   const std::string log = (fs::path(out) / "render.log").string();
   const std::string ycmd = "cd " + shq(out) + " && timeout 180 yosys -Q -p " +
                            shq(script) + " > " + shq(log) + " 2>&1";
-  if (std::system(ycmd.c_str()) != 0) {
+  if (std::system(ycmd.c_str()) != 0) { // NOLINT(bugprone-command-processor)
     err = "yosys show failed; see " + log;
     return false;
   }
@@ -68,7 +86,7 @@ bool render_netlist_files(const std::vector<std::string> &files,
   const std::string svg = (fs::path(out) / (top + ".svg")).string();
   const std::string dcmd = "timeout 120 dot -Tsvg " + shq(dot) + " -o " +
                            shq(svg) + " >> " + shq(log) + " 2>&1";
-  if (std::system(dcmd.c_str()) != 0) {
+  if (std::system(dcmd.c_str()) != 0) { // NOLINT(bugprone-command-processor)
     err = "graphviz failed; see " + log;
     return false;
   }
@@ -78,7 +96,7 @@ bool render_netlist_files(const std::vector<std::string> &files,
                              " -o " +
                              shq((fs::path(out) / (top + ".png")).string()) +
                              " >> " + shq(log) + " 2>&1";
-    if (std::system(pcmd.c_str()) != 0) {
+    if (std::system(pcmd.c_str()) != 0) { // NOLINT(bugprone-command-processor)
       err = "rsvg-convert failed; see " + log;
       return false;
     }

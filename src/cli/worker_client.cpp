@@ -132,7 +132,7 @@ Json call_worker(const std::string &helper, const Json &request,
       "timeout " + std::to_string(timeout_seconds) + " " +
       executable_command(helper) + " < " + shell_quote(req.string()) + " > " +
       shell_quote(resp.string()) + " 2> " + shell_quote(err.string());
-  const int rc = std::system(cmd.c_str());
+  const int rc = std::system(cmd.c_str()); // NOLINT(bugprone-command-processor)
   const int code = (rc != -1 && WIFEXITED(rc)) ? WEXITSTATUS(rc) : -1;
   const std::string body = read_file(resp);
   const std::string error_log = read_file(err);

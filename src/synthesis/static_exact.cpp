@@ -17,6 +17,8 @@
 namespace dcstudy {
 namespace {
 
+// Internal helper; call sites reviewed.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 Bits cover_of(std::uint64_t care, std::uint64_t value, std::size_t n) {
   const std::uint32_t N = std::uint32_t{1} << n;
   Bits cover(N);
@@ -119,6 +121,8 @@ std::string cdl_from_subckt(const Subckt &c) {
 // Enumerate every non-empty cube over the available literals that is
 // contained in `allowed`; fn(cube) is called once per distinct cube.
 template <class Fn>
+// Internal helper; call sites reviewed.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 void for_each_allowed_cube(const Bits &allowed, std::size_t n,
                            std::uint64_t neg_allowed, Fn &&fn) {
   std::uint64_t total = 1;

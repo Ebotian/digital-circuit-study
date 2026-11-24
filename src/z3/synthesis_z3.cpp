@@ -96,9 +96,9 @@ SynthSolution z3_solve_synth(const SynthProblem &p) {
 
   std::vector<std::size_t> inv_bits;
   for (int j = 0; j < p.n_inverters; ++j) {
-    const std::uint32_t bit = std::uint32_t{1} << j;
+    const std::uint32_t bit = std::uint32_t{1} << static_cast<unsigned>(j);
     for (auto req : p.req)
-      if (req & bit) {
+      if ((static_cast<std::uint32_t>(req) & bit) != 0) {
         inv_bits.push_back(static_cast<std::size_t>(j));
         break;
       }

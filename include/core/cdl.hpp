@@ -1,5 +1,6 @@
 // CDL (SPICE-like) standard-cell netlist reader.
 #pragma once
+#include <cstdint>
 
 #include <map>
 #include <string>
@@ -8,7 +9,7 @@
 
 namespace dcstudy {
 
-enum class PinDir { Unknown, Input, Output, Power, Ground };
+enum class PinDir : std::uint8_t { Unknown, Input, Output, Power, Ground };
 
 struct Device {
   std::string name;

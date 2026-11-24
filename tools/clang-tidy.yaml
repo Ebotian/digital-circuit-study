@@ -1,11 +1,6 @@
 # clang-tidy policy for this repository.
 # `make tidy` uses this file; clice has its own checks and does not read it.
-#
-# Excluded on purpose:
-# - signed-bitwise: truth-table words are integer bit masks;
-# - command-processor: yosys/verilator/node/rsvg run as subprocesses;
-# - easily-swappable-parameters: small internal helpers, call sites reviewed;
-# - inefficient-string-concatenation: expression builders favour readability;
-# - enum-size: enums are internal/API contracts; int base avoids casts.
-Checks: "-*,clang-analyzer-*,bugprone-*,performance-*,readability-magic-numbers,-bugprone-signed-bitwise,-bugprone-command-processor,-bugprone-easily-swappable-parameters,-performance-inefficient-string-concatenation,-performance-enum-size"
+# All checks are enabled; intentional exceptions are marked locally with
+# NOLINT(<check>) and a reason next to the code they apply to.
+Checks: "-*,clang-analyzer-*,bugprone-*,performance-*,readability-magic-numbers"
 WarningsAsErrors: ''

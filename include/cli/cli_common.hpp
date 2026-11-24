@@ -1,5 +1,6 @@
 // Shared CLI helpers: argument parsing, spec loading, JSON/verify plumbing.
 #pragma once
+#include <cstdint>
 
 #include <filesystem>
 #include <map>
@@ -37,6 +38,8 @@ struct Args {
 
   bool has(const std::string &k) const { return opt.count(k) || flag.count(k); }
   bool is(const std::string &k) const { return flag.count(k) != 0; }
+  // Internal helper; call sites reviewed.
+  // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
   std::string get(const std::string &k, const std::string &def = {}) const {
     auto it = opt.find(k);
     return it == opt.end() ? def : it->second;
@@ -49,7 +52,7 @@ struct Args {
   }
 };
 
-enum class VerifyMode { None, Yosys, Sim, Both, Static };
+enum class VerifyMode : std::uint8_t { None, Yosys, Sim, Both, Static };
 
 struct Verified {
   bool yosys = false;

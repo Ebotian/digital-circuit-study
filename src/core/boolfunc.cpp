@@ -14,14 +14,25 @@ constexpr int kHexDigitMax = 15;  // base-16 digit
 constexpr int kAlphabetSize = 26; // A..Z default variable names
 constexpr std::uint64_t kHashMix = 0x9e3779b97f4a7c15ULL; // 2^64/phi
 constexpr std::size_t kHashShift = 6; // Boost-style hash_combine
-constexpr std::size_t kMemoReserve = std::size_t{1} << 20; // ~32 MiB
+constexpr std::size_t kMemoReserve = std::size_t{1}
+                                     << std::size_t{20}; // ~32 MiB
 } // namespace
 namespace {
 
 constexpr std::size_t kMaxArity = 16;
 
 struct Token {
-  enum Kind { Ident, Const, And, Or, Xor, Not, LParen, RParen, End } kind;
+  enum Kind : std::uint8_t {
+    Ident,
+    Const,
+    And,
+    Or,
+    Xor,
+    Not,
+    LParen,
+    RParen,
+    End
+  } kind;
   std::string text;
   bool value = false;
 };
@@ -390,7 +401,7 @@ FuncSpec spec_from_truth(const std::string &text,
         throw std::invalid_argument("bad hex digit in truth table");
       const std::size_t base = 4 * (digits - 1 - k);
       for (int b = 0; b < 4; ++b) {
-        if (!((d >> b) & 1))
+        if (!((static_cast<unsigned>(d) >> static_cast<unsigned>(b)) & 1u))
           continue;
         const std::size_t pos = base + static_cast<std::size_t>(b);
         if (pos >= width)
@@ -464,8 +475,8 @@ std::uint64_t count_monotone(std::size_t n) {
   struct Hash {
     std::size_t operator()(const Key &k) const {
       std::uint64_t h = k.f0 * kHashMix;
-      h ^= k.f1 + kHashMix + (h << kHashShift) + (h >> 2);
-      h ^= k.i + kHashMix + (h << kHashShift) + (h >> 2);
+      h ^= k.f1 + kHashMix + (h << kHashShift) + (h >> std::size_t{2});
+      h ^= k.i + kHashMix + (h << kHashShift) + (h >> std::size_t{2});
       return static_cast<std::size_t>(h);
     }
   };

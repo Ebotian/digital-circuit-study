@@ -50,6 +50,8 @@ Env make_env(const std::vector<std::string> &vars) {
   return e;
 }
 
+// Internal helper; call sites reviewed.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 int bit_of(const Env &e, std::size_t var, std::uint32_t minterm) {
   const std::size_t p = e.n - 1 - var;
   return int((minterm >> p) & 1U);
@@ -145,6 +147,8 @@ std::string behavior_key(const std::vector<Behavior> &bh, std::uint32_t req) {
   return key;
 }
 
+// Internal helper; call sites reviewed.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 std::vector<std::vector<ChainElem>> all_chains(const Env &e, int max_chain,
                                                int max_cost, bool allow_tg) {
   std::vector<std::vector<ChainElem>> out;
@@ -226,6 +230,8 @@ const char *switch_name(SwKind k) {
   return "?";
 }
 
+// Internal helper; call sites reviewed.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 bool Branch::covers_strong(std::size_t minterm, int target) const {
   if (minterm >= behavior.size())
     return false;

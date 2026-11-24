@@ -67,7 +67,8 @@ struct Search {
         strong_cover(static_cast<std::size_t>(rows), false) {}
 
   void add_path(int pi, std::vector<std::pair<int, std::string>> &old_driver,
-                std::vector<std::pair<int, bool>> &old_strong, int &old_edges,
+                std::vector<std::pair<int, bool>> &old_strong,
+                int &old_edges, // NOLINT(bugprone-easily-swappable-parameters)
                 std::uint32_t &old_mask) {
     const auto &p = paths[static_cast<std::size_t>(pi)];
     const auto &b = branches[static_cast<std::size_t>(p.branch)];
@@ -89,10 +90,12 @@ struct Search {
     }
   }
 
-  void remove_path(int pi,
-                   const std::vector<std::pair<int, std::string>> &old_driver,
-                   const std::vector<std::pair<int, bool>> &old_strong,
-                   int old_edges, std::uint32_t old_mask) {
+  void
+  remove_path(int pi,
+              const std::vector<std::pair<int, std::string>> &old_driver,
+              const std::vector<std::pair<int, bool>> &old_strong,
+              int old_edges, // NOLINT(bugprone-easily-swappable-parameters)
+              std::uint32_t old_mask) {
     const auto &p = paths[static_cast<std::size_t>(pi)];
     for (auto it = old_driver.rbegin(); it != old_driver.rend(); ++it)
       driver[static_cast<std::size_t>(it->first)] = it->second;
