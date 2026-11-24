@@ -216,7 +216,8 @@ function renderStaticCmosSvg(d: Design, title: string): string {
   parts.push("<style>");
   parts.push(style());
   parts.push("</style>");
-  parts.push(text(40, 38, title + " · " + d.cost + "T", "title"));
+  parts.push(text(40, 38,
+    title + (d.cost > 0 ? " · " + d.cost + "T" : ""), "title"));
   parts.push(text(40, 62, "static complementary CMOS · " + (d.nfet || 0) +
     " NMOS + " + (d.pfet || 0) + " PMOS"));
 
@@ -1289,7 +1290,8 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
   parts.push("  .pinline{stroke:#8a8a90;stroke-width:1.2}");
   parts.push("  .netlbl{font-family:-apple-system,Segoe UI,Noto Sans CJK SC,sans-serif;font-size:9.5px;fill:#3a3a40;stroke:#fff;stroke-width:2.5;paint-order:stroke}");
   parts.push("</style>");
-  parts.push(text(40, 38, title + " · " + d.cost + "T", "title"));
+  parts.push(text(40, 38,
+    title + (d.cost > 0 ? " · " + d.cost + "T" : ""), "title"));
   parts.push(text(40, 62, "multi-stage static CMOS · gate-level netlist"));
   parts.push(text(40, 84,
     "all connections use matching pin labels · inputs: " + vars.join(" ") +

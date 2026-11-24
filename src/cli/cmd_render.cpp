@@ -370,8 +370,9 @@ int cmd_render(int argc, char **argv) {
     const std::string out = a.get("out", "out/render");
     const std::string top = a.get("top", "top");
     std::string err;
-    const bool native =
-        render_netlist_native(files, top, out, a.is("png"), err);
+    const int cost = std::stoi(a.get("cost", "0"));
+    const bool native = render_netlist_native(files, top, out, a.is("png"), err,
+                                              cost, a.get("title", top));
     if (!native) {
       std::string graph_err;
       if (!render_netlist_files(files, top, out, a.is("png"), graph_err))

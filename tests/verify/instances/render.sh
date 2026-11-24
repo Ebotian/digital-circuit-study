@@ -23,17 +23,20 @@ compose() {
 }
 
 rtl() {
-  local name=$1 top=$2 dir="$OUT/$1"
-  shift 2
+  local name=$1 top=$2 ref=$3 dir="$OUT/$1"
+  shift 3
   mkdir -p "$dir"
   local tmp
   tmp=$(mktemp -d)
   trap 'rm -rf "$tmp"' RETURN
   cat "$@" >"$tmp/atoms.v"
+  local cost
+  cost=$("$BIN" multi synth --rtl "$top" --atoms "$tmp/atoms.v" \
+    --ref "$ref" --json | jq -r .total)
   "$BIN" render --netlist "$top" --atoms "$tmp/atoms.v" --top top \
-    --out "$dir" --png >/dev/null
+    --cost "$cost" --out "$dir" --png >/dev/null
   rm -rf "$tmp"
-  pass "render $name (rtl hierarchy)"
+  pass "render $name (rtl hierarchy, ${cost}T)"
 }
 
 for c in "$@"; do
@@ -57,9 +60,11 @@ for c in "$@"; do
         --library "$ROOT/tests/verify/instances/specs/library.json" ;;
     prio16)
       rtl "$c" "$ROOT/tests/verify/instances/rtl/top16.v" \
+        "$ROOT/tests/verify/instances/rtl/gold16.v" \
         "$ROOT/tests/verify/instances/rtl/pe42.v" ;;
     lzcount16)
       rtl "$c" "$ROOT/tests/verify/instances/rtl/lzcount16.v" \
+        "$ROOT/tests/verify/instances/rtl/gold_lzcount16.v" \
         "$ROOT/tests/verify/instances/rtl/pe16.v" \
         "$ROOT/tests/verify/instances/rtl/pe42.v" ;;
     *) fail "no render recipe for instance: $c" ;;
