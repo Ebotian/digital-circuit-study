@@ -50,14 +50,23 @@ struct Bdd {
     return id;
   }
 
+  int build_range(const unsigned char *base, std::size_t size, int level) {
+    bool same = true;
+    for (std::size_t i = 1; i < size; ++i)
+      if (base[i] != base[0]) {
+        same = false;
+        break;
+      }
+    if (same)
+      return base[0] ? 1 : 0;
+    const std::size_t half = size / 2;
+    return mk(level, build_range(base, half, level + 1),
+              build_range(base + half, half, level + 1));
+  }
+
   int build(const std::vector<unsigned char> &table, int n, int level) {
-    if (std::all_of(table.begin(), table.end(),
-                    [&](unsigned char v) { return v == table[0]; }))
-      return table[0] ? 1 : 0;
-    const std::size_t half = table.size() / 2;
-    std::vector<unsigned char> lo(table.begin(), table.begin() + half);
-    std::vector<unsigned char> hi(table.begin() + half, table.end());
-    return mk(level, build(lo, n, level + 1), build(hi, n, level + 1));
+    (void)n;
+    return build_range(table.data(), table.size(), level);
   }
 };
 
@@ -256,13 +265,22 @@ compose_from_library(const MultiProblem &spec,
     const std::size_t ns = sigs.size();
     std::optional<MultiProblem> best;
     int best_count = std::numeric_limits<int>::max();
-    std::vector<std::size_t> order(ns);
-    std::iota(order.begin(), order.end(), 0);
-    if (ns > 6) {
-      best = build_h(sigs);
-      return {best, best ? bdd_mux_count(*best) : best_count};
+    std::vector<std::size_t> id(ns);
+    std::iota(id.begin(), id.end(), 0);
+    std::vector<std::vector<std::size_t>> orders;
+    orders.push_back(id);
+    for (std::size_t j = 0; j < ns; ++j) {
+      std::vector<std::size_t> o;
+      o.reserve(ns);
+      o.push_back(j);
+      for (std::size_t k = 0; k < ns; ++k)
+        if (k != j)
+          o.push_back(k);
+      orders.push_back(std::move(o));
     }
-    do {
+    std::vector<std::size_t> rev(id.rbegin(), id.rend());
+    orders.push_back(std::move(rev));
+    for (const auto &order : orders) {
       auto h = build_h(sigs, order);
       if (!h)
         continue;
@@ -271,7 +289,7 @@ compose_from_library(const MultiProblem &spec,
         best = std::move(h);
         best_count = c;
       }
-    } while (std::next_permutation(order.begin(), order.end()));
+    }
     if (std::getenv("DCSTUDY_COMPOSE_DEBUG"))
       std::cerr << "best_h ns=" << ns << " mux=" << best_count << "\n";
     return {best, best_count};
