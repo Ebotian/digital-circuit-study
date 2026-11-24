@@ -71,7 +71,7 @@ if(DCSTUDY_WITH_EPFL)
 endif()
 
 
-add_executable(dcstudy src/cli/main.cpp)
+add_executable(dcstudy src/cli/main.cpp src/cli/commands.cpp)
 target_link_libraries(dcstudy PRIVATE dcstudy_core)
 
 if(DCSTUDY_BUILD_Z3_HELPER)

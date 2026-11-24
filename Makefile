@@ -7,7 +7,7 @@ FILC ?= filc++
 CMAKE ?= cmake
 SOURCES := $(shell find src -name "*.cpp") $(shell find include -name "*.hpp") \
            $(wildcard tests/unit/*) $(wildcard tests/smoke/*)
-FILC_SOURCES := src/cli/main.cpp src/switch/bdd_switch.cpp src/core/boolfunc.cpp \
+FILC_SOURCES := src/cli/main.cpp src/cli/commands.cpp src/switch/bdd_switch.cpp src/core/boolfunc.cpp \
                 src/core/cdl.cpp src/core/cmos.cpp src/core/designspace.cpp \
                 src/core/driver_profile.cpp src/cli/math_client.cpp \
                 src/synthesis/multi_path.cpp src/synthesis/multistage.cpp \
