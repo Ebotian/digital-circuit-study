@@ -9,7 +9,7 @@ SOURCES := $(shell find src -name "*.cpp") $(shell find include -name "*.hpp") \
            $(wildcard tests/unit/*) $(wildcard tests/smoke/*)
 FILC_SOURCES := src/cli/main.cpp src/cli/commands.cpp \
                 src/cli/cli_common.cpp src/cli/cmd_multi.cpp \
-                src/cli/cmd_basic.cpp src/cli/cmd_design.cpp src/cli/cmd_render.cpp src/switch/bdd_switch.cpp src/core/boolfunc.cpp \
+                src/cli/cmd_basic.cpp src/cli/cmd_design.cpp src/cli/cmd_render.cpp src/cli/cmd_pipeline.cpp src/cli/cli_help.cpp src/switch/bdd_switch.cpp src/core/boolfunc.cpp \
                 src/core/cdl.cpp src/core/cmos.cpp src/core/designspace.cpp \
                 src/core/driver_profile.cpp src/cli/math_client.cpp \
                 src/synthesis/multi_path.cpp src/synthesis/multistage.cpp \

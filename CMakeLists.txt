@@ -73,7 +73,7 @@ endif()
 
 add_executable(dcstudy src/cli/main.cpp src/cli/commands.cpp
   src/cli/cli_common.cpp src/cli/cmd_multi.cpp
-  src/cli/cmd_basic.cpp src/cli/cmd_design.cpp src/cli/cmd_render.cpp)
+  src/cli/cmd_basic.cpp src/cli/cmd_design.cpp src/cli/cmd_render.cpp src/cli/cmd_pipeline.cpp src/cli/cli_help.cpp)
 target_link_libraries(dcstudy PRIVATE dcstudy_core)
 
 if(DCSTUDY_BUILD_Z3_HELPER)
