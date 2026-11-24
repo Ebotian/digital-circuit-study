@@ -1,87 +1,115 @@
 #!/usr/bin/env bash
-# Optional render sweep: one schematic per instance under out/render/.
-# Not part of `make ci`; invoke with `make render` or directly.
+# Render selected implementations from render.manifest.
+#   make render                         # default variant of every instance
+#   make render INSTANCE=fa1            # all variants of fa1
+#   make render INSTANCE=fa1 VARIANT=ha # one implementation
+#   make render VARIANT=rtl             # that variant everywhere it exists
 . "$(dirname "$0")/../lib.sh"
+MANIFEST="$(dirname "$0")/render.manifest"
 OUT="${OUT:-$ROOT/out/render}"
+INSTANCE="${INSTANCE:-}"
+VARIANT="${VARIANT:-}"
 mkdir -p "$OUT"
 need rsvg-convert
+need jq
 
-spec() {
-  local name=$1 file=$2 dir="$OUT/$1"
-  shift 2
-  mkdir -p "$dir"
-  "$BIN" multi synth --spec "$file" "$@" --out "$dir" --png --json >"$dir/result.json"
-  pass "render $name (synth)"
+path_of() {
+  if [[ "$1" == bench/* ]]; then printf '%s\n' "$ROOT/$1";
+  else printf '%s\n' "$ROOT/tests/verify/instances/$1"; fi
 }
 
-compose() {
-  local name=$1 file=$2 dir="$OUT/$1"
-  shift 2
+selected=0
+render_synth() {
+  local name=$1 variant=$2 dir=$3 spec=$4
+  shift 4
   mkdir -p "$dir"
-  "$BIN" multi compose --spec "$file" "$@" --out "$dir" --png --json >"$dir/result.json"
-  pass "render $name (compose)"
+  "$BIN" multi synth --spec "$(path_of "$spec")" "$@" \
+    --out "$dir" --png --json >"$dir/result.json"
+  pass "render $name/$variant (synth)"
 }
-
-rtl() {
-  local name=$1 top=$2 ref=$3 dir="$OUT/$1"
-  shift 3
+render_compose() {
+  local name=$1 variant=$2 dir=$3 spec=$4 lib=${5:-}
   mkdir -p "$dir"
-  local tmp
+  local args=(--spec "$(path_of "$spec")")
+  [ -n "$lib" ] && args+=(--library "$(path_of "$lib")")
+  "$BIN" multi compose "${args[@]}" --out "$dir" --png --json >"$dir/result.json"
+  pass "render $name/$variant (compose)"
+}
+render_atoms() {
+  local name=$1 variant=$2 dir=$3 atom_spec=$4 top=$5 ref=$6
+  mkdir -p "$dir"
+  local tmp atom cost json
   tmp=$(mktemp -d)
   trap 'rm -rf "$tmp"' RETURN
-  cat "$@" >"$tmp/atoms.v"
-  local cost
-  cost=$("$BIN" multi synth --rtl "$top" --atoms "$tmp/atoms.v" \
-    --ref "$ref" --json | jq -r .total)
-  "$BIN" render --netlist "$top" --atoms "$tmp/atoms.v" --top top \
-    --cost "$cost" --out "$dir" --png >/dev/null
-  rm -rf "$tmp"
-  pass "render $name (rtl hierarchy, ${cost}T)"
+  atom=$(basename "$atom_spec" .json)
+  json=$("$BIN" multi synth --spec "$(path_of "$atom_spec")" \
+    --emit-atom "$atom" --json)
+  jq -r .atom_verilog <<<"$json" >"$tmp/atoms.v"
+  json=$("$BIN" multi synth --rtl "$(path_of "$top")" \
+    --atoms "$tmp/atoms.v" --ref "$(path_of "$ref")" --json)
+  cost=$(jq -r .total <<<"$json")
+  "$BIN" render --netlist "$(path_of "$top")" \
+    --atoms "$tmp/atoms.v" --top top --title "$name" --cost "$cost" \
+    --out "$dir" --png >/dev/null
+  printf '%s\n' "$json" >"$dir/result.json"
+  pass "render $name/$variant (atoms, ${cost}T)"
+}
+render_rtl() {
+  local name=$1 variant=$2 dir=$3 top=$4 ref=$5
+  shift 5
+  mkdir -p "$dir"
+  local tmp cost json
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
+  cat "$@" >"$tmp/atoms.v" 2>/dev/null || true
+  if [ -s "$tmp/atoms.v" ]; then
+    json=$("$BIN" multi synth --rtl "$(path_of "$top")" \
+      --atoms "$tmp/atoms.v" --ref "$(path_of "$ref")" --json)
+    cost=$(jq -r .total <<<"$json")
+    printf '%s\n' "$json" >"$dir/result.json"
+  else
+    cost=0
+  fi
+  local args=(--netlist "$(path_of "$top")" --top top
+              --title "$name" --out "$dir" --png)
+  [ "$cost" -gt 0 ] && args+=(--cost "$cost")
+  if [ -s "$tmp/atoms.v" ]; then
+    # render expects one --atoms file; concatenate atom modules there.
+    cat "$tmp/atoms.v" >"$tmp/atoms-all.v"
+    "$BIN" render --netlist "$(path_of "$top")" \
+      --atoms "$tmp/atoms-all.v" --top top --title "$name" --cost "$cost" \
+      --out "$dir" --png >/dev/null
+  else
+    "$BIN" render --netlist "$(path_of "$top")" \
+      --top top --title "$name" --out "$dir" --png >/dev/null
+  fi
+  pass "render $name/$variant (rtl, ${cost}T)"
 }
 
-for c in "$@"; do
-  case "$c" in
-    decoder38) spec "$c" "$ROOT/tests/verify/instances/specs/decoder38.json" ;;
-    encoder42) spec "$c" "$ROOT/tests/verify/instances/specs/encoder42.json" ;;
-    eq4) spec "$c" "$ROOT/tests/verify/instances/specs/eq4.json" ;;
-    hex7seg) spec "$c" "$ROOT/tests/verify/instances/specs/hex7seg.json" ;;
-    hex7seg_sel) spec "$c" "$ROOT/tests/verify/instances/specs/hex7seg_sel.json" ;;
-    pe42) spec "$c" "$ROOT/tests/verify/instances/specs/pe42.json" ;;
-    nor2) spec "$c" "$ROOT/tests/verify/instances/specs/nor2.json" ;;
-    xor2) spec "$c" "$ROOT/tests/verify/instances/specs/xor2.json" ;;
-    xnor2) spec "$c" "$ROOT/tests/verify/instances/specs/xnor2.json" ;;
-    mux2) spec "$c" "$ROOT/tests/verify/instances/specs/mux2.json" ;;
-    fa1)
-      # Two views of the same top device: spec synth and the ha-based
-      # hierarchy (2x ha + OR) under fa1/ha/.
-      spec "$c" "$ROOT/tests/verify/instances/specs/fa1.json"
-      local_tmp=$(mktemp -d)
-      HA=$("$BIN" multi synth --spec "$ROOT/tests/verify/instances/specs/ha.json" \
-        --emit-atom ha --json)
-      jq -r .atom_verilog <<<"$HA" >"$local_tmp/ha.v"
-      FJ=$("$BIN" multi synth --rtl "$ROOT/tests/verify/instances/rtl/fa_ha.v" \
-        --atoms "$local_tmp/ha.v" --ref "$ROOT/tests/verify/instances/rtl/gold_fa.v" \
-        --json)
-      cost=$(jq -r .total <<<"$FJ")
-      mkdir -p "$OUT/$c/ha"
-      "$BIN" render --netlist "$ROOT/tests/verify/instances/rtl/fa_ha.v" \
-        --atoms "$local_tmp/ha.v" --top top --title fa1 --cost "$cost" \
-        --out "$OUT/$c/ha" --png >/dev/null
-      rm -rf "$local_tmp"
-      pass "render $c/ha (ha composition, ${cost}T)" ;;
-    mux4_3bit) compose "$c" "$ROOT/tests/verify/instances/specs/mux4_3bit.json" ;;
-    prio8)
-      compose "$c" "$ROOT/bench/fixtures/prio8.json" \
-        --library "$ROOT/tests/verify/instances/specs/library.json" ;;
-    prio16)
-      rtl "$c" "$ROOT/tests/verify/instances/rtl/top16.v" \
-        "$ROOT/tests/verify/instances/rtl/gold16.v" \
-        "$ROOT/tests/verify/instances/rtl/pe42.v" ;;
-    lzcount16)
-      rtl "$c" "$ROOT/tests/verify/instances/rtl/lzcount16.v" \
-        "$ROOT/tests/verify/instances/rtl/gold_lzcount16.v" \
-        "$ROOT/tests/verify/instances/rtl/pe16.v" \
-        "$ROOT/tests/verify/instances/rtl/pe42.v" ;;
-    *) fail "no render recipe for instance: $c" ;;
+while read -r name variant kind rest; do
+  case "$name" in ''|'#'*) continue ;; esac
+  default=0
+  if [[ "$variant" == *'*' ]]; then default=1; variant=${variant%\*}; fi
+  if [ -n "$INSTANCE" ] && [ "$name" != "$INSTANCE" ]; then continue; fi
+  if [ -n "$VARIANT" ] && [ "$variant" != "$VARIANT" ]; then continue; fi
+  if [ -z "$INSTANCE" ] && [ -z "$VARIANT" ] && [ "$default" -eq 0 ]; then continue; fi
+  selected=$((selected + 1))
+  if [ "$default" -eq 1 ]; then dir="$OUT/$name"; else dir="$OUT/$name/$variant"; fi
+  # shellcheck disable=SC2086
+  set -- $rest
+  case "$kind" in
+    synth) render_synth "$name" "$variant" "$dir" "$@" ;;
+    compose) render_compose "$name" "$variant" "$dir" "$@" ;;
+    atoms)
+      [ $# -eq 3 ] || fail "atoms manifest row needs: atom_spec top ref"
+      render_atoms "$name" "$variant" "$dir" "$1" "$2" "$3" ;;
+    rtl)
+      [ $# -ge 3 ] || fail "rtl manifest row needs: top atom... ref"
+      top=$1; shift; ref=${!#}
+      atoms=()
+      for f in "$@"; do [ "$f" != "$ref" ] && atoms+=("$(path_of "$f")"); done
+      render_rtl "$name" "$variant" "$dir" "$top" "$ref" "${atoms[@]}" ;;
+    *) fail "unknown render kind: $kind" ;;
   esac
-done
+done <"$MANIFEST"
+[ "$selected" -gt 0 ] || fail "no render variant matched INSTANCE='$INSTANCE' VARIANT='$VARIANT'"

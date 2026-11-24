@@ -12,7 +12,7 @@ $(INSTANCE_TARGETS): instance-%:
 	BIN=$(BIN) bash instances/scripts/$*.sh
 
 render:
-	BIN=$(BIN) bash instances/render.sh $(INSTANCE_CASES)
+	BIN=$(BIN) INSTANCE="$(INSTANCE)" VARIANT="$(VARIANT)" bash instances/render.sh
 
 instances: $(INSTANCE_TARGETS) simulation
 

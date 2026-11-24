@@ -1,0 +1,22 @@
+# instance  variant     kind    args...
+# variant with * is the default shown by plain `make render`.
+decoder38   spec*       synth   specs/decoder38.json
+encoder42   spec*       synth   specs/encoder42.json
+eq4         spec*       synth   specs/eq4.json
+fa1         spec*       synth   specs/fa1.json
+fa1         ha          atoms   specs/ha.json rtl/fa_ha.v rtl/gold_fa.v
+hex7seg     spec*       synth   specs/hex7seg.json
+hex7seg     fanin2      synth   specs/hex7seg.json --max-fanin 2
+hex7seg_sel spec*       synth   specs/hex7seg_sel.json
+pe42        spec*       synth   specs/pe42.json
+pe42        library     compose specs/pe42.json specs/library.json
+nor2        spec*       synth   specs/nor2.json
+xor2        spec*       synth   specs/xor2.json
+xnor2       spec*       synth   specs/xnor2.json
+mux2        spec*       synth   specs/mux2.json
+mux4_3bit   spec*       compose specs/mux4_3bit.json
+mux4_3bit   rtl         atoms   specs/mux2.json rtl/mux4_3bit.v rtl/gold_mux4_3bit.v
+prio8       compose*    compose bench/fixtures/prio8.json specs/library.json
+prio8       spec        synth   bench/fixtures/prio8.json
+prio16      rtl*        rtl     rtl/top16.v rtl/pe42.v rtl/gold16.v
+lzcount16   rtl*        rtl     rtl/lzcount16.v rtl/pe16.v rtl/pe42.v rtl/gold_lzcount16.v

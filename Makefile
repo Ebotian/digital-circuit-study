@@ -26,7 +26,8 @@ FILC_SOURCES := src/cli/main.cpp src/cli/commands.cpp \
 all: build
 
 render: $(BUILD)/dcstudy
-	$(MAKE) -C tests/verify render BIN=$(abspath $(BUILD)/dcstudy)
+	$(MAKE) -C tests/verify render BIN=$(abspath $(BUILD)/dcstudy) \
+		INSTANCE="$(INSTANCE)" VARIANT="$(VARIANT)"
 
 build: $(BUILD)/dcstudy
 

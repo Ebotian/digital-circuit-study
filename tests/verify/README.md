@@ -69,9 +69,13 @@ make verify-all                  # 仓库根目录：全量
 ### 可选渲染
 
 ```bash
-make render
+make render                            # 每个实例的默认实现
+make render INSTANCE=fa1               # fa1 的全部实现 (spec + ha)
+make render INSTANCE=fa1 VARIANT=ha    # 只渲 ha 组合
+make render VARIANT=rtl                # 所有带 rtl 变体的实例
 ```
 
-按 `INSTANCE_CASES` 为每个实例生成 `out/render/<name>/`：spec 实例走
-`multi synth --spec --out --png`，组合实例走 `multi compose`，RTL+原子实例走
-`render --netlist`（原生门级盒子，输出 `scheme-0.*`）。该目标默认不参与 `make all`/`make ci`，只作为本地看图入口。
+渲染清单在 `instances/render.manifest`（instance / variant / kind / 参数），
+`render.sh` 只负责解释清单，不再为单个器件写 case。变体输出在
+`out/render/<instance>/<variant>/`；默认变体直接放在 `out/render/<instance>/`。
+该目标默认不参与 `make all`/`make ci`，只作为本地看图入口。
