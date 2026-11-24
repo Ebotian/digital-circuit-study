@@ -13,7 +13,7 @@
 ```
 tests/verify/
   lib.sh                # BIN/fail/pass/need
-  Makefile              # instances | simulation | formal | optional | all
+  Makefile              # instances | simulation | formal | optional | render | all
   instances/            # 实例验证（已知答案）
     specs/              # 各实例的 spec：decoder38/encoder42/hex7seg/hex7seg_sel/pe42/nor2/xor2/xnor2
     scripts/            # 各实例断言：decoder38.sh ... prio16.sh/lzcount16.sh
@@ -64,3 +64,13 @@ make verify-all                  # 仓库根目录：全量
 
 新增实例：在 `instances/scripts/` 放一个 `<name>.sh`，断言 `verified` 与 `total`，
 并把名字加进 `tests/verify/Makefile` 的 `INSTANCE_CASES`；spec 放 `instances/specs/`，RTL 夹具放 `instances/rtl/`。
+
+### 可选渲染
+
+```bash
+make render
+```
+
+按 `INSTANCE_CASES` 为每个实例生成 `out/render/<name>/`：spec 实例走
+`multi synth --spec --out --png`，组合实例走 `multi compose`，RTL+原子实例走
+`render --netlist`。该目标默认不参与 `make all`/`make ci`，只作为本地看图入口。

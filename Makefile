@@ -21,9 +21,12 @@ FILC_SOURCES := src/cli/main.cpp src/cli/commands.cpp \
                 src/cli/z3_client.cpp src/cli/render_client.cpp \
                 src/z3/z3_protocol.cpp
 
-.PHONY: all build test bench bench-save bench-micro bench-perf bench-profile bench-size format format-check lint ci ci-full asan werror coverage test-gcc fuzz shellcheck pylint tslint smoke smoke-cli smoke-filc filc filc-smoke verify verify-all integration clean
+.PHONY: all build render test bench bench-save bench-micro bench-perf bench-profile bench-size format format-check lint ci ci-full asan werror coverage test-gcc fuzz shellcheck pylint tslint smoke smoke-cli smoke-filc filc filc-smoke verify verify-all integration clean
 
 all: build
+
+render: $(BUILD)/dcstudy
+	$(MAKE) -C tests/verify render BIN=$(abspath $(BUILD)/dcstudy)
 
 build: $(BUILD)/dcstudy
 

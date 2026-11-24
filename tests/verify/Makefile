@@ -4,12 +4,15 @@ BIN ?= $(abspath ../../build/dcstudy)
 INSTANCE_CASES := decoder38 encoder42 hex7seg prio42 nor2 xor2 xnor2 mux2 mux4_3bit compose_mux4_3bit compose_prio8 compose_library prio16 lzcount16 hex7seg_sel
 INSTANCE_TARGETS := $(addprefix instance-,$(INSTANCE_CASES))
 
-.PHONY: all instances simulation formal optional $(INSTANCE_TARGETS)
+.PHONY: all instances simulation formal optional render $(INSTANCE_TARGETS)
 
 # instance-<name> is one end-to-end design with a known-answer assertion.
 # A static pattern rule (not a generic one): .PHONY targets skip implicit rules.
 $(INSTANCE_TARGETS): instance-%:
 	BIN=$(BIN) bash instances/scripts/$*.sh
+
+render:
+	BIN=$(BIN) bash instances/render.sh $(INSTANCE_CASES)
 
 instances: $(INSTANCE_TARGETS) simulation
 
