@@ -43,6 +43,7 @@ for c in "$@"; do
   case "$c" in
     decoder38) spec "$c" "$ROOT/tests/verify/instances/specs/decoder38.json" ;;
     encoder42) spec "$c" "$ROOT/tests/verify/instances/specs/encoder42.json" ;;
+    eq4) spec "$c" "$ROOT/tests/verify/instances/specs/eq4.json" ;;
     hex7seg) spec "$c" "$ROOT/tests/verify/instances/specs/hex7seg.json" ;;
     hex7seg_sel) spec "$c" "$ROOT/tests/verify/instances/specs/hex7seg_sel.json" ;;
     pe42) spec "$c" "$ROOT/tests/verify/instances/specs/pe42.json" ;;
