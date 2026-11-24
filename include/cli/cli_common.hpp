@@ -1,8 +1,10 @@
 // Shared CLI helpers: argument parsing, spec loading, JSON/verify plumbing.
 #pragma once
 
+#include <filesystem>
 #include <map>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
