@@ -5,6 +5,7 @@
 // mapping, cost measurement and the miter are unchanged.
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -25,5 +26,13 @@ struct ComposeResult {
 
 ComposeResult compose_mux2(const MultiProblem &spec,
                            const std::vector<MultiProblem> &library = {});
+
+// Build the glue truth table h(S) from signal tables.  h.vars is the declared
+// port order; h.outputs[k].func.value(idx) must correspond to that order with
+// variable j = minterm bit (ns-1-j) (BoolFunc's big-endian convention).
+std::optional<MultiProblem>
+glue_from_signals(const MultiProblem &spec,
+                  const std::vector<std::vector<unsigned char>> &signals,
+                  const std::vector<std::size_t> &order = {});
 
 } // namespace dcstudy

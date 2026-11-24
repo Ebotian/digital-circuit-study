@@ -1,5 +1,7 @@
 #include "helpers.hpp"
 
+#include "synthesis/compose.hpp"
+
 TEST_CASE("series-chain enumeration is order-canonical", "[core]") {
   // A series stack conducts the same way in any order, so all_chains keeps one
   // representative per multiset of atoms.  For n=4 that is 58,890 chains
@@ -170,4 +172,35 @@ TEST_CASE("emitted dut is Verilog", "[core]") {
   REQUIRE(dut.find("module dut") != std::string::npos);
   REQUIRE(dut.find("assign ok") != std::string::npos);
   REQUIRE(emit_ref(s.func, s.vars).find("module ref") != std::string::npos);
+}
+
+TEST_CASE("glue table matches its declared signal order", "[core]") {
+  MultiProblem spec;
+  spec.vars = {"A", "B", "C"};
+  spec.names = {"Y"};
+  const FuncSpec f = spec_from_expr("(A&B)|(~A&C)", {"A", "B", "C"});
+  spec.outputs.push_back({f.func, Bits{}});
+
+  const std::size_t rows = 8;
+  std::vector<std::vector<unsigned char>> sig(
+      5, std::vector<unsigned char>(rows, 0));
+  for (std::size_t m = 0; m < rows; ++m) {
+    const unsigned a = (m >> 2) & 1, b = (m >> 1) & 1, c = m & 1;
+    sig[0][m] = b; // s0
+    sig[1][m] = 0; // s1
+    sig[2][m] = c; // s2
+    sig[3][m] = 0; // s3
+    sig[4][m] = a; // s4
+  }
+  const auto h = glue_from_signals(spec, sig);
+  REQUIRE(h.has_value());
+  REQUIRE(h->vars.size() == 5);
+  for (std::size_t m = 0; m < rows; ++m) {
+    std::size_t idx = 0;
+    for (std::size_t j = 0; j < 5; ++j)
+      if (sig[j][m])
+        idx |= std::size_t{1} << j;
+    CHECK((h->outputs[0].func.value(static_cast<std::uint32_t>(idx)) != 0) ==
+          (spec.outputs[0].func.value(static_cast<std::uint32_t>(m)) != 0));
+  }
 }

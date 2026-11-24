@@ -132,6 +132,53 @@ std::string atom_module_rtl(const MultiProblem &atom) {
 
 } // namespace
 
+std::optional<MultiProblem>
+glue_from_signals(const MultiProblem &spec,
+                  const std::vector<std::vector<unsigned char>> &signals,
+                  const std::vector<std::size_t> &order) {
+  const std::size_t n = spec.vars.size();
+  const std::size_t rows = std::size_t{1} << n;
+  const std::size_t ns = signals.size();
+  if (ns == 0 || ns > 12)
+    return std::nullopt;
+  for (const auto &s : signals)
+    if (s.size() != rows)
+      return std::nullopt;
+  const std::size_t hrows = std::size_t{1} << ns;
+  std::vector<std::vector<unsigned char>> ht(
+      spec.outputs.size(), std::vector<unsigned char>(hrows, 0));
+  std::vector<bool> seen(hrows, false);
+  for (std::size_t m = 0; m < rows; ++m) {
+    std::size_t idx = 0;
+    for (std::size_t j = 0; j < ns; ++j)
+      if (signals[order.empty() ? j : order[j]][m])
+        idx |= std::size_t{1} << j;
+    if (seen[idx])
+      continue;
+    seen[idx] = true;
+    for (std::size_t k = 0; k < spec.outputs.size(); ++k)
+      ht[k][idx] =
+          spec.outputs[k].func.value(static_cast<std::uint32_t>(m)) ? 1 : 0;
+  }
+  // Unreachable signal tuples are don't-cares.  They are left at 0 for now;
+  // a care-aware completion is the next step (it decides the BDD size).
+  MultiProblem h;
+  h.title = "glue";
+  for (std::size_t j = 0; j < ns; ++j) {
+    const std::size_t src = order.empty() ? (ns - 1 - j) : order[ns - 1 - j];
+    h.vars.push_back("s" + std::to_string(src));
+  }
+  h.names = spec.names;
+  for (std::size_t k = 0; k < spec.outputs.size(); ++k) {
+    Bits bits(hrows);
+    for (std::size_t j = 0; j < hrows; ++j)
+      if (ht[k][j])
+        bits.set(j);
+    h.outputs.push_back({BoolFunc(ns, bits), Bits{}});
+  }
+  return h;
+}
+
 std::optional<ComposeResult>
 compose_from_library(const MultiProblem &spec,
                      const std::vector<MultiProblem> &library) {
@@ -302,8 +349,6 @@ compose_from_library(const MultiProblem &spec,
         best_count = c;
       }
     }
-    if (std::getenv("DCSTUDY_COMPOSE_DEBUG"))
-      std::cerr << "best_h ns=" << ns << " mux=" << best_count << "\n";
     return {best, best_count};
   };
 
@@ -415,39 +460,10 @@ compose_from_library(const MultiProblem &spec,
   if (cur != 0 || chosen.empty())
     return std::nullopt;
 
-  if (std::getenv("DCSTUDY_COMPOSE_DEBUG")) {
-    std::cerr << "chosen:";
-    for (int ci : chosen) {
-      const Cand &c = cands[ci];
-      std::cerr << " " << library[c.atom].title << "(";
-      for (std::size_t j = 0; j < c.vars.size(); ++j)
-        std::cerr << (j ? "," : "") << spec.vars[c.vars[j]];
-      std::cerr << ")";
-    }
-    std::cerr << " signals=" << sigs.size() << "\n";
-  }
-  const auto [glue_opt, glue_mux] = best_h(sigs);
-  if (!glue_opt)
+  const auto glue_res = best_h(sigs);
+  if (!glue_res.first)
     return std::nullopt;
-  const MultiProblem &glue_problem = *glue_opt;
-  if (std::getenv("DCSTUDY_COMPOSE_DEBUG"))
-    std::cerr << "glue mux=" << glue_mux << "\n";
-  if (std::getenv("DCSTUDY_COMPOSE_DEBUG")) {
-    std::cerr << "glue vars:";
-    for (const auto &v : glue_problem.vars)
-      std::cerr << " " << v;
-    std::cerr << "\n";
-    for (std::size_t k = 0; k < glue_problem.outputs.size(); ++k) {
-      std::cerr << "  y" << k << ": ";
-      for (std::size_t i = 0; i < (std::size_t{1} << glue_problem.vars.size());
-           ++i)
-        std::cerr << (glue_problem.outputs[k].func.value(
-                          static_cast<std::uint32_t>(i))
-                          ? '1'
-                          : '0');
-      std::cerr << "\n";
-    }
-  }
+  const MultiProblem &glue_problem = *glue_res.first;
   const ComposeResult glue = compose_mux2(glue_problem, {});
 
   const std::size_t ns = sigs.size();
