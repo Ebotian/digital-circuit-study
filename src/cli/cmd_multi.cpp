@@ -296,8 +296,9 @@ int cmd_multi_compose(const Args &a, const MultiProblem &spec,
     std::ofstream(out_dir + "/netlist.json") << r.synth.json;
     if (a.is("png")) {
       std::string err;
-      if (!render_netlist_files({out_dir + "/compose.v", out_dir + "/mux2.v"},
-                                "top", out_dir, true, err))
+      if (!render_netlist_native({out_dir + "/compose.v", out_dir + "/mux2.v"},
+                                 "top", out_dir, true, err, r.synth.total,
+                                 spec.title))
         throw CliError(err);
     }
   }

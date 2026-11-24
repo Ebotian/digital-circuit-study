@@ -1,6 +1,7 @@
 #include "cli/cli_common.hpp"
 #include "cli/cli_includes.hpp"
 #include "cli/cmd_design.hpp"
+#include "cli/render_client.hpp"
 #include <unistd.h>
 
 namespace fs = std::filesystem;
@@ -106,6 +107,156 @@ bool render_netlist_files(const std::vector<std::string> &files,
   html << "<!doctype html><meta charset=\"utf-8\"><title>" << top
        << "</title>\n<h1>" << top << "</h1>\n<img src=\"" << img
        << "\" style=\"max-width:100%\">\n";
+  return true;
+}
+
+bool render_netlist_native(const std::vector<std::string> &files,
+                           const std::string &top, const std::string &out,
+                           bool png, std::string &err, int cost,
+                           const std::string &title) {
+  if (files.empty()) {
+    err = "native render: no input files";
+    return false;
+  }
+  const fs::path dir = fs::temp_directory_path() /
+                       ("dcstudy-native-" + std::to_string(::getpid()));
+  std::error_code ec;
+  fs::create_directories(dir, ec);
+  std::string script;
+  for (std::size_t i = 0; i < files.size(); ++i) {
+    const std::string name = "in" + std::to_string(i) + ".v";
+    fs::copy_file(files[i], dir / name, fs::copy_options::overwrite_existing,
+                  ec);
+    if (ec) {
+      err = "native render: cannot stage " + files[i];
+      fs::remove_all(dir);
+      return false;
+    }
+    script += "read_verilog -sv " + name + "; ";
+  }
+  script += "prep -top " + top + "; write_json net.json;";
+  const std::string log = (dir / "yosys.log").string();
+  const std::string cmd = "cd " + shq(dir.string()) +
+                          " && timeout 180 yosys -Q -p " + shq(script) + " > " +
+                          shq(log) + " 2>&1";
+  if (std::system(cmd.c_str()) != 0) { // NOLINT(bugprone-command-processor)
+    err = "native render: yosys write_json failed; see " + log;
+    fs::remove_all(dir);
+    return false;
+  }
+  Json root;
+  try {
+    std::ifstream in(dir / "net.json");
+    std::ostringstream os;
+    os << in.rdbuf();
+    root = Json::parse(os.str());
+  } catch (const std::exception &e) {
+    err = std::string("native render: bad netlist json: ") + e.what();
+    fs::remove_all(dir);
+    return false;
+  }
+  if (!root.contains("modules") || !root.at("modules").contains(top)) {
+    err = "native render: module not found: " + top;
+    fs::remove_all(dir);
+    return false;
+  }
+  const Json &mod = root.at("modules").at(top);
+  std::map<std::string, std::string> bit_name;
+  auto key_of = [](const Json &b) -> std::string {
+    if (b.is_number())
+      return std::to_string(b.as_int());
+    if (b.is_string())
+      return b.as_string();
+    return "";
+  };
+  std::vector<std::string> vars, outs;
+  auto bind_port = [&](const Json &pj, const std::string &name, bool input) {
+    if (!pj.contains("bits"))
+      return;
+    const Json &bits = pj.at("bits");
+    for (std::size_t i = 0; i < bits.size(); ++i) {
+      const std::string k = key_of(bits.array().at(i));
+      if (k.empty())
+        continue;
+      bit_name[k] =
+          bits.size() == 1 ? name : name + "[" + std::to_string(i) + "]";
+    }
+    (input ? vars : outs).push_back(name);
+  };
+  if (mod.contains("ports")) {
+    for (const auto &[name, pj] : mod.at("ports").object()) {
+      const bool input =
+          pj.contains("direction") && pj.at("direction").as_string() == "input";
+      bind_port(pj, name, input);
+    }
+  }
+  auto name_of = [&](const Json &b) -> std::string {
+    const std::string k = key_of(b);
+    if (k.empty())
+      return "0";
+    if (k == "0" || k == "1" || k == "x")
+      return k;
+    auto it = bit_name.find(k);
+    if (it != bit_name.end())
+      return it->second;
+    const std::string name = "n" + k;
+    bit_name[k] = name;
+    return name;
+  };
+  Json cells = Json::Array{};
+  if (mod.contains("cells")) {
+    for (const auto &[inst, cj] : mod.at("cells").object()) {
+      if (!cj.contains("type") || !cj.contains("connections"))
+        continue;
+      Json ports;
+      for (const auto &[port, bits] : cj.at("connections").object()) {
+        if (!bits.is_array() || bits.size() == 0)
+          continue;
+        ports[port] = name_of(bits.array().at(0));
+      }
+      Json cell;
+      cell["type"] = cj.at("type").as_string();
+      if (cj.contains("port_directions")) {
+        Json dirs;
+        for (const auto &[p, d] : cj.at("port_directions").object())
+          dirs[p] = d.as_string();
+        cell["directions"] = std::move(dirs);
+      }
+      cell["ports"] = std::move(ports);
+      cells.push_back(std::move(cell));
+    }
+  }
+  Json design;
+  design["kind"] = "gate-boxes";
+  design["cost"] = cost;
+  design["branches"] = Json::Array{};
+  design["inverters"] = Json::Array{};
+  design["cells"] = std::move(cells);
+  Json out_names = Json::Array{};
+  for (const auto &o : outs)
+    out_names.push_back(o);
+  design["outputs"] = std::move(out_names);
+  Json req;
+  req["op"] = "render";
+  req["out"] = out;
+  req["vars"] = [&] {
+    Json v = Json::Array{};
+    for (const auto &x : vars)
+      v.push_back(x);
+    return v;
+  }();
+  req["title"] = title.empty() ? top : title;
+  req["truth"] = "";
+  req["png"] = png;
+  req["designs"] = Json::Array{design};
+  try {
+    render_call(req);
+  } catch (const std::exception &e) {
+    err = std::string("native render: worker failed: ") + e.what();
+    fs::remove_all(dir);
+    return false;
+  }
+  fs::remove_all(dir);
   return true;
 }
 

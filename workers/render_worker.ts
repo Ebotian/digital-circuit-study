@@ -15,7 +15,11 @@ type Design = {
   kind?: string; pd_terms?: string[][]; pu_groups?: string[][];
   pull_down?: string; pull_up?: string; topology?: string;
   nfet?: number; pfet?: number;
-  cells?: Array<{ type: string; ports: Record<string, string> }>;
+  cells?: Array<{
+    type: string;
+    ports: Record<string, string>;
+    directions?: Record<string, string>;
+  }>;
   outputs?: string[];
   truths?: Record<string, string>;
 };
@@ -303,8 +307,24 @@ function renderGateLevelSvg(d: Design, vars: string[], title: string): string {
     const keys = Object.keys(c.ports);
     return keys.length ? keys[keys.length - 1] : "";
   };
-  const inputsOf = (c: { type: string; ports: Record<string, string> }) =>
-    Object.keys(c.ports).filter((p) => p !== outPort(c)).sort();
+  const outPorts = (c: {
+    type: string; ports: Record<string, string>;
+    directions?: Record<string, string>;
+  }) => {
+    if (c.directions)
+      return Object.keys(c.ports)
+        .filter((p) => c.directions?.[p] === "output").sort();
+    return [outPort(c)];
+  };
+  const inputsOf = (c: {
+    type: string; ports: Record<string, string>;
+    directions?: Record<string, string>;
+  }) => {
+    if (c.directions)
+      return Object.keys(c.ports)
+        .filter((p) => c.directions?.[p] === "input").sort();
+    return Object.keys(c.ports).filter((p) => p !== outPort(c)).sort();
+  };
 
   // Reuse the circuitikz logic-port flow.  If any cell cannot be expressed as
   // a standard port (e.g. a compound AOI/OAI), fall back to the generic boxes.
@@ -316,8 +336,7 @@ function renderGateLevelSvg(d: Design, vars: string[], title: string): string {
 
   const producer = new Map<string, number>();
   cells.forEach((c, i) => {
-    const p = outPort(c);
-    if (c.ports[p]) producer.set(c.ports[p], i);
+    for (const p of outPorts(c)) if (c.ports[p]) producer.set(c.ports[p], i);
   });
   const level = new Array<number>(cells.length).fill(0);
   for (let iter = 0; iter < cells.length; iter++) {
@@ -424,8 +443,24 @@ function renderGateLevelSvgRails(d: Design, vars: string[], title: string): stri
     const keys = Object.keys(c.ports);
     return keys.length ? keys[keys.length - 1] : "";
   };
-  const inputsOf = (c: { type: string; ports: Record<string, string> }) =>
-    Object.keys(c.ports).filter((p) => p !== outPort(c)).sort();
+  const outPorts = (c: {
+    type: string; ports: Record<string, string>;
+    directions?: Record<string, string>;
+  }) => {
+    if (c.directions)
+      return Object.keys(c.ports)
+        .filter((p) => c.directions?.[p] === "output").sort();
+    return [outPort(c)];
+  };
+  const inputsOf = (c: {
+    type: string; ports: Record<string, string>;
+    directions?: Record<string, string>;
+  }) => {
+    if (c.directions)
+      return Object.keys(c.ports)
+        .filter((p) => c.directions?.[p] === "input").sort();
+    return Object.keys(c.ports).filter((p) => p !== outPort(c)).sort();
+  };
   const shapes = cells.map((c) => tikzPort(c.type, inputsOf(c).length));
   if (shapes.some((s) => s === "")) return null;
 
@@ -568,8 +603,24 @@ function renderGateLevelSvgLocalBus(d: Design, vars: string[], title: string): s
     const keys = Object.keys(c.ports);
     return keys.length ? keys[keys.length - 1] : "";
   };
-  const inputsOf = (c: { type: string; ports: Record<string, string> }) =>
-    Object.keys(c.ports).filter((p) => p !== outPort(c)).sort();
+  const outPorts = (c: {
+    type: string; ports: Record<string, string>;
+    directions?: Record<string, string>;
+  }) => {
+    if (c.directions)
+      return Object.keys(c.ports)
+        .filter((p) => c.directions?.[p] === "output").sort();
+    return [outPort(c)];
+  };
+  const inputsOf = (c: {
+    type: string; ports: Record<string, string>;
+    directions?: Record<string, string>;
+  }) => {
+    if (c.directions)
+      return Object.keys(c.ports)
+        .filter((p) => c.directions?.[p] === "input").sort();
+    return Object.keys(c.ports).filter((p) => p !== outPort(c)).sort();
+  };
   const shapes = cells.map((c) => tikzPort(c.type, inputsOf(c).length));
   if (shapes.some((s) => s === ""))
     return renderGateLevelSvgBoxes(d, vars, title);
@@ -579,8 +630,7 @@ function renderGateLevelSvgLocalBus(d: Design, vars: string[], title: string): s
 
   const producer = new Map<string, number>();
   cells.forEach((c, i) => {
-    const p = outPort(c);
-    if (c.ports[p]) producer.set(c.ports[p], i);
+    for (const p of outPorts(c)) if (c.ports[p]) producer.set(c.ports[p], i);
   });
   const level = new Array<number>(cells.length).fill(0);
   for (let iter = 0; iter < cells.length; iter++) {
@@ -859,8 +909,24 @@ function renderGateLevelSvgBus(d: Design, vars: string[], title: string): string
     const keys = Object.keys(c.ports);
     return keys.length ? keys[keys.length - 1] : "";
   };
-  const inputsOf = (c: { type: string; ports: Record<string, string> }) =>
-    Object.keys(c.ports).filter((p) => p !== outPort(c)).sort();
+  const outPorts = (c: {
+    type: string; ports: Record<string, string>;
+    directions?: Record<string, string>;
+  }) => {
+    if (c.directions)
+      return Object.keys(c.ports)
+        .filter((p) => c.directions?.[p] === "output").sort();
+    return [outPort(c)];
+  };
+  const inputsOf = (c: {
+    type: string; ports: Record<string, string>;
+    directions?: Record<string, string>;
+  }) => {
+    if (c.directions)
+      return Object.keys(c.ports)
+        .filter((p) => c.directions?.[p] === "input").sort();
+    return Object.keys(c.ports).filter((p) => p !== outPort(c)).sort();
+  };
   const shapes = cells.map((c) => tikzPort(c.type, inputsOf(c).length));
   if (shapes.some((s) => s === ""))
     return renderGateLevelSvgBoxes(d, vars, title);
@@ -870,8 +936,7 @@ function renderGateLevelSvgBus(d: Design, vars: string[], title: string): string
 
   const producer = new Map<string, number>();
   cells.forEach((c, i) => {
-    const p = outPort(c);
-    if (c.ports[p]) producer.set(c.ports[p], i);
+    for (const p of outPorts(c)) if (c.ports[p]) producer.set(c.ports[p], i);
   });
   const level = new Array<number>(cells.length).fill(0);
   for (let iter = 0; iter < cells.length; iter++) {
@@ -1072,12 +1137,27 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
     const keys = Object.keys(c.ports);
     return keys.length ? keys[keys.length - 1] : "";
   };
-  const inputsOf = (c: { type: string; ports: Record<string, string> }) =>
-    Object.keys(c.ports).filter((p) => p !== outPort(c)).sort();
+  const outPorts = (c: {
+    type: string; ports: Record<string, string>;
+    directions?: Record<string, string>;
+  }) => {
+    if (c.directions)
+      return Object.keys(c.ports)
+        .filter((p) => c.directions?.[p] === "output").sort();
+    return [outPort(c)];
+  };
+  const inputsOf = (c: {
+    type: string; ports: Record<string, string>;
+    directions?: Record<string, string>;
+  }) => {
+    if (c.directions)
+      return Object.keys(c.ports)
+        .filter((p) => c.directions?.[p] === "input").sort();
+    return Object.keys(c.ports).filter((p) => p !== outPort(c)).sort();
+  };
   const producer = new Map<string, number>();
   cells.forEach((c, i) => {
-    const p = outPort(c);
-    if (c.ports[p]) producer.set(c.ports[p], i);
+    for (const p of outPorts(c)) if (c.ports[p]) producer.set(c.ports[p], i);
   });
   const level = new Array<number>(cells.length).fill(0);
   for (let iter = 0; iter < cells.length; iter++) {
@@ -1097,19 +1177,22 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
   });
   const maxLevel0 = Math.max(...level, 0);
   cells.forEach((c, i) => {
-    if (outs.indexOf(c.ports[outPort(c)]) >= 0) level[i] = maxLevel0;
+    if (outPorts(c).some((p) => outs.indexOf(c.ports[p]) >= 0))
+      level[i] = maxLevel0;
   });
   const maxLevel = Math.max(...level, 0);
   const boxW = 130;
-  const maxInputs = Math.max(1, ...cells.map((c) => inputsOf(c).length));
-  const boxH = Math.max(52, 18 + maxInputs * 15);
+  const maxPins = Math.max(1, ...cells.map((c) =>
+    Math.max(inputsOf(c).length, outPorts(c).length)));
+  const boxH = Math.max(52, 18 + maxPins * 15);
   const rowStep = boxH + 38;
 
-  const netSource = new Map<string, { kind: "cell" | "input"; index: number }>();
+  const netSource = new Map<string,
+    { kind: "cell" | "input"; index: number; port?: string }>();
   vars.forEach((v, i) => netSource.set(v, { kind: "input", index: i }));
   cells.forEach((c, i) => {
-    const p = outPort(c);
-    if (c.ports[p]) netSource.set(c.ports[p], { kind: "cell", index: i });
+    for (const p of outPorts(c))
+      if (c.ports[p]) netSource.set(c.ports[p], { kind: "cell", index: i, port: p });
   });
   const netSinks = new Map<string, Array<{ cell: number; pin: string }>>();
   cells.forEach((c, i) => {
@@ -1166,8 +1249,7 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
   parts.push("  .netlbl{font-family:-apple-system,Segoe UI,Noto Sans CJK SC,sans-serif;font-size:9.5px;fill:#3a3a40;stroke:#fff;stroke-width:2.5;paint-order:stroke}");
   parts.push("</style>");
   parts.push(text(40, 38, title + " · " + d.cost + "T", "title"));
-  parts.push(text(40, 62,
-    "multi-stage static complementary CMOS · SEL=0 hex 0-F · SEL=1 decimal 0-9 (10-15 blank)"));
+  parts.push(text(40, 62, "multi-stage static CMOS · gate-level netlist"));
   parts.push(text(40, 84,
     "net labels: " + vars.join("  ") +
       " · multi-fanout nets are labeled at the pins; single-fanout nets are drawn", "netlbl"));
@@ -1205,18 +1287,22 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
     const gap = level[src.index];
     return levelX[gap] + boxW + 10 + (slotOf.get(net) ?? 0) * 12;
   };
+  const pinY = (cell: number, pin: string, output: boolean) => {
+    const list = output ? outPorts(cells[cell]) : inputsOf(cells[cell]);
+    const j = Math.max(0, list.indexOf(pin));
+    return pos.get(cell)!.y + 10 + (boxH - 20) * (j + 1) / (list.length + 1);
+  };
   const srcPoint = (net: string) => {
     const src = netSource.get(net);
     if (!src) return null;
     if (src.kind === "input") return null;
     const p = pos.get(src.index)!;
-    return { x: p.x + boxW, y: p.y + boxH / 2 };
+    const port = src.port || outPorts(cells[src.index])[0];
+    return { x: p.x + boxW, y: pinY(src.index, port, true) };
   };
   const sinkPoint = (cell: number, pin: string) => {
-    const ins = inputsOf(cells[cell]);
-    const j = Math.max(0, ins.indexOf(pin));
     const p = pos.get(cell)!;
-    return { x: p.x, y: p.y + 10 + (boxH - 20) * (j + 1) / (ins.length + 1) };
+    return { x: p.x, y: pinY(cell, pin, false) };
   };
 
   // Primary inputs and high-fanout nets use standard net labels at the pins.
@@ -1233,7 +1319,8 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
     const src = netSource.get(net);
     if (src?.kind === "cell") {
       const p = pos.get(src.index)!;
-      const oy = p.y + boxH / 2;
+      const port = src.port || outPorts(cells[src.index])[0];
+      const oy = pinY(src.index, port, true);
       parts.push(line(p.x + boxW, oy, p.x + boxW + 18, oy, "pinline"));
       parts.push(text(p.x + boxW + 20, oy - 5, disp(net), "netlbl"));
     }
@@ -1285,17 +1372,21 @@ function renderGateLevelSvgBoxes(d: Design, vars: string[], title: string): stri
       parts.push(line(posi.x, sy, posi.x + 10, sy, "pinline"));
       parts.push(text(posi.x + 14, sy + 4, p, "pintxt"));
     });
-    const op = outPort(c);
-    const oy = posi.y + boxH / 2;
-    parts.push(line(posi.x + boxW - 10, oy, posi.x + boxW, oy, "pinline"));
-    parts.push(text(posi.x + boxW - 14, oy + 4, op, "pintxt", "end"));
+    for (const op of outPorts(c)) {
+      const oy = pinY(i, op, true);
+      parts.push(line(posi.x + boxW - 10, oy, posi.x + boxW, oy, "pinline"));
+      parts.push(text(posi.x + boxW - 14, oy + 4, op, "pintxt", "end"));
+    }
   });
   outs.forEach((net) => {
     const src = producer.get(net);
     if (src === undefined) return;
+    const c = cells[src];
+    const port = outPorts(c).find((p) => c.ports[p] === net) || outPorts(c)[0];
     const p = pos.get(src)!;
-    parts.push(line(p.x + boxW, p.y + boxH / 2, p.x + boxW + 55, p.y + boxH / 2, "w"));
-    parts.push(text(p.x + boxW + 68, p.y + boxH / 2 + 6, net, "lbl"));
+    const sy = pinY(src, port, true);
+    parts.push(line(p.x + boxW, sy, p.x + boxW + 55, sy, "w"));
+    parts.push(text(p.x + boxW + 68, sy + 6, net, "lbl"));
   });
   parts.push(text(55, height - 26,
     "gate-level view · each cell is a static complementary CMOS standard cell"));
@@ -1344,6 +1435,8 @@ function foldTgBranches(d: Design): Design {
 function renderDesignSvg(d: Design, vars: string[], title: string): { svg: string; inverters: string[] } {
   if (d.kind === "static-cmos")
     return { svg: renderStaticCmosSvg(d, title), inverters: [] };
+  if (d.kind === "gate-boxes")
+    return { svg: renderGateLevelSvgBoxes(d, vars, title), inverters: [] };
   if (d.kind === "static-cmos-multi") {
     let svg = "";
     if (d.outputs && d.outputs.length > 1)
@@ -1750,13 +1843,14 @@ function renderIndexHtml(req: Request, svgNames: string[], inverterNames: Array<
     "<p><code>dcstudy</code> 自动生成 · " +
     (multiOutputs.length
       ? "outputs = " + esc(multiOutputs.join(", ")) + " · multi-output"
-      : "truth = " + esc(req.truth)) +
+      : req.truth.length ? "truth = " + esc(req.truth) : "gate-level netlist") +
     " · optimum = " + optimum + "T</p>\n" +
     "<p>" + esc(canonicalText) + "；晶体管符号与讲义一致。</p>\n</div></header>\n<div class=\"wrap\">\n" +
     "<div class=\"grid\"><div class=\"box\"><p><strong>真值表</strong>（输入顺序 " + esc(req.vars.join(", ")) + "）</p>" +
     (multiOutputs.length && multiTruths
       ? truthTableMulti(req.vars, multiOutputs, multiTruths)
-      : truthTable(req.vars, req.truth)) + "</div>" +
+      : req.truth.length ? truthTable(req.vars, req.truth)
+                         : "<p>来自映射网表的门级视图</p>") + "</div>" +
     (logic ? "<div class=\"box logic\"><p><strong>逻辑抽象</strong> · " + esc(logic.label) + "</p>" +
       "<img src=\"" + esc(logic.svg) + "\" alt=\"logic abstraction\">" +
       "<p class=\"small\">行为等价，不是结构分解。" +
