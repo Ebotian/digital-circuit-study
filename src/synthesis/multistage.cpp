@@ -777,33 +777,48 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
     }
     if (spec.has_dont_cares())
       throw std::runtime_error("--rtl does not support don't-care masks yet");
-    // Prove the RTL composition against the spec, one output at a time.
-    const std::string top_src = read_file(rtl_path);
-    const std::string atoms_src = read_file(atoms_path);
-    for (std::size_t k = 0; k < spec.outputs.size(); ++k) {
-      std::string wrapper = "module dut(";
-      for (std::size_t i = 0; i < spec.vars.size(); ++i)
-        wrapper += (i ? ", " : "") + std::string("input logic ") + spec.vars[i];
-      wrapper += ", output logic Y, output logic ok);\n";
-      for (const auto &n : spec.names)
-        wrapper += "  wire " + n + ";\n";
-      wrapper += "  top u_top(";
-      for (const auto &v : spec.vars)
-        wrapper += "." + v + "(" + v + "), ";
-      for (const auto &n : spec.names)
-        wrapper += "." + n + "(" + n + "), ";
-      wrapper.resize(wrapper.size() - 2);
-      wrapper += ");\n  assign Y = " + spec.names[k] +
-                 ";\n  assign ok = 1'b1;\nendmodule\n";
-      const ToolResult v =
-          prove_yosys(top_src + "\n" + atoms_src + "\n" + wrapper,
-                      spec.outputs[k].func, spec.vars);
-      if (!v.ok) {
-        out.reason = "output " + spec.names[k] +
-                     " failed the miter: " + tail(v.output, 8);
-        return out;
-      }
-    }
+    // Prove the whole composition in one miter: a single Yosys + SAT run
+    // for all outputs (was one process per output).
+    std::string ref = "module ref(";
+    for (std::size_t i = 0; i < spec.vars.size(); ++i)
+      ref += (i ? ", " : "") + std::string("input logic ") + spec.vars[i];
+    for (std::size_t i = 0; i < spec.names.size(); ++i)
+      ref += ", output logic " + spec.names[i];
+    ref += ");\n";
+    for (std::size_t k = 0; k < spec.outputs.size(); ++k)
+      ref += "  assign " + spec.names[k] + " = " +
+             spec.outputs[k].func.sop(spec.vars) + ";\n";
+    ref += "endmodule\n";
+
+    std::string miter = "module miter(";
+    for (std::size_t i = 0; i < spec.vars.size(); ++i)
+      miter += (i ? ", " : "") + std::string("input logic ") + spec.vars[i];
+    miter += ", output logic mismatch);\n";
+    for (const auto &n : spec.names)
+      miter += "  wire t_" + n + ", r_" + n + ";\n";
+    miter += "  top u_top(";
+    for (std::size_t i = 0; i < spec.vars.size(); ++i)
+      miter += (i ? ", " : "") + std::string(".") + spec.vars[i] + "(" +
+               spec.vars[i] + ")";
+    for (const auto &n : spec.names)
+      miter += ", ." + n + "(t_" + n + ")";
+    miter += ");\n  ref u_ref(";
+    for (std::size_t i = 0; i < spec.vars.size(); ++i)
+      miter += (i ? ", " : "") + std::string(".") + spec.vars[i] + "(" +
+               spec.vars[i] + ")";
+    for (const auto &n : spec.names)
+      miter += ", ." + n + "(r_" + n + ")";
+    miter += ");\n  assign mismatch = 1'b0";
+    for (const auto &n : spec.names)
+      miter += " | (t_" + n + " !== r_" + n + ")";
+    miter += ";\nendmodule\n";
+    write_text(dir.path() / "ref.v", ref);
+    write_text(dir.path() / "miter.v", miter);
+    run_yosys("read_verilog -sv top.v; read_verilog -sv atoms.v; "
+              "read_verilog -sv ref.v; read_verilog -sv miter.v; "
+              "prep -top miter; flatten; delete t:$scopeinfo; opt -full; "
+              "sat -verify -prove mismatch 0 miter",
+              "spec.log");
     out.verified = true;
     out.ok = true;
     return out;

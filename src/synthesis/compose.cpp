@@ -1,4 +1,5 @@
 #include "synthesis/compose.hpp"
+#include "synthesis/static_exact.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -157,10 +158,21 @@ compose_from_library(const MultiProblem &spec,
     const std::size_t k = atom.vars.size();
     if (k == 0 || k > n)
       continue;
-    const MultiStageMultiDesign am = synthesize_multistage_static_multi(atom);
-    if (!am.ok || !am.verified)
-      continue;
-    atom_cost[ai] = am.total;
+    // <=4-input atoms can be costed by the exact backend (no Yosys process);
+    // the final mapping still re-measures every atom it actually uses.
+    int cost = -1;
+    if (atom.vars.size() <= 4) {
+      const StaticExactResult ex = synthesize_static_exact_multi(atom);
+      if (ex.ok && ex.verified)
+        cost = ex.total;
+    }
+    if (cost < 0) {
+      const MultiStageMultiDesign am = synthesize_multistage_static_multi(atom);
+      if (!am.ok || !am.verified)
+        continue;
+      cost = am.total;
+    }
+    atom_cost[ai] = cost;
     std::vector<std::size_t> comb(k);
     std::iota(comb.begin(), comb.end(), 0);
     while (true) {
