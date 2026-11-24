@@ -21,6 +21,11 @@
 #include <vector>
 
 namespace dcstudy {
+
+namespace {
+constexpr std::size_t kMaxGlueSignals = 12;
+constexpr int kMux2FallbackCost = 12;
+} // namespace
 namespace {
 
 namespace fs = std::filesystem;
@@ -176,7 +181,7 @@ glue_from_signals(const MultiProblem &spec,
   const std::size_t n = spec.vars.size();
   const std::size_t rows = std::size_t{1} << n;
   const std::size_t ns = signals.size();
-  if (ns == 0 || ns > 12)
+  if (ns == 0 || ns > kMaxGlueSignals)
     return std::nullopt;
   for (const auto &s : signals)
     if (s.size() != rows)
@@ -243,7 +248,7 @@ compose_from_library(const MultiProblem &spec,
 
   std::vector<Cand> cands;
   std::set<std::string> cand_sig;
-  int glue_mux_cost = 12; // used only if the library has no measured mux2
+  int glue_mux_cost = kMux2FallbackCost; // used only if no measured mux2
   std::vector<int> atom_cost(library.size(), -1);
   for (std::size_t ai = 0; ai < library.size(); ++ai) {
     const MultiProblem &atom = library[ai];
@@ -679,7 +684,7 @@ compose_from_library(const MultiProblem &spec,
       cur = 0;
     }
   }
-  while (cur > 0 && sigs.size() < 12) {
+  while (cur > 0 && sigs.size() < kMaxGlueSignals) {
     int best = -1;
     long long best_conf = cur;
     int best_cost = std::numeric_limits<int>::max();
@@ -957,7 +962,7 @@ ComposeResult compose_mux2(const MultiProblem &spec,
   // Above kMaxArity-1 the SOP reference is too deep for Yosys; use a
   // behavioural golden with the same BDD (which the self-check above tied to
   // the spec) and verify the mapped netlist against it structurally.
-  if (spec.vars.size() > 12) {
+  if (spec.vars.size() > kMaxGlueSignals) {
     std::function<std::string(int)> tern = [&](int id) -> std::string {
       if (id == 0)
         return "1'b0";
@@ -984,7 +989,7 @@ ComposeResult compose_mux2(const MultiProblem &spec,
     std::ofstream(gold) << g.str();
   }
   try {
-    if (spec.vars.size() > 12)
+    if (spec.vars.size() > kMaxGlueSignals)
       out.synth = synthesize_rtl_atoms(top.string(), atoms.string(),
                                        MultiProblem{}, gold.string());
     else

@@ -27,6 +27,11 @@ unsigned long current_mem_limit_mb();
 // Headroom the default cap leaves for the rest of the system, in MiB.
 inline constexpr unsigned long kMemReserveMb = 2048;
 
+// Default timeout for out-of-process workers (render, z3).
+inline constexpr int kDefaultWorkerTimeoutSeconds = 120;
+inline constexpr int kYosysTimeoutSeconds = 180;
+inline constexpr int kVerifyTimeoutSeconds = 240;
+
 // Memory a new workload can still get without swapping, from MemAvailable,
 // in MiB.  0 when it cannot be determined.
 unsigned long available_memory_mb();

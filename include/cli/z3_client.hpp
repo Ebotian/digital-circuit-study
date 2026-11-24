@@ -1,6 +1,8 @@
 // Client side of the out-of-process Z3 worker.
 #pragma once
 
+#include "core/limits.hpp"
+
 #include <string>
 
 #include "core/json.hpp"
@@ -13,6 +15,6 @@ std::string z3_helper_path();
 
 // Send one JSON request and parse the JSON response.  Throws on transport,
 // timeout, helper error, or an {"ok":false} response.
-Json z3_call(const Json &request, int timeout_seconds = 120);
+Json z3_call(const Json &request, int timeout_seconds = kDefaultWorkerTimeoutSeconds);
 
 } // namespace dcstudy

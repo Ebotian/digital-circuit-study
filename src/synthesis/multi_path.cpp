@@ -660,8 +660,9 @@ synthesize_path_variables_multi(const MultiProblem &p, const SpaceOptions &opt,
     out.reason = "no usable paths";
     return out;
   }
-  if (all.size() > 512) {
-    out.reason = "multi path candidate set exceeds 512";
+  if (all.size() > static_cast<std::size_t>(kMaxMultiPathCandidates)) {
+    out.reason = "multi path candidate set exceeds " +
+                 std::to_string(kMaxMultiPathCandidates);
     return out;
   }
 

@@ -29,6 +29,10 @@
 #include "synthesis/static_exact.hpp"
 
 namespace dcstudy {
+
+namespace {
+constexpr int kMaxPorts = 128;
+} // namespace
 namespace {
 
 namespace fs = std::filesystem;
@@ -293,7 +297,8 @@ synthesize_multistage_static_multi_impl(const MultiProblem &p, int max_fanin) {
       dont_use +
       "; opt_clean; write_json net.json; write_verilog -noattr net.v";
   const std::string cmd = "cd " + shell_quote(dir.path().string()) +
-                          " && timeout 180 yosys -Q -p " + shell_quote(script) +
+                          " && timeout " + std::to_string(kYosysTimeoutSeconds) +
+        " yosys -Q -p " + shell_quote(script) +
                           " > " + shell_quote(log.string()) + " 2>&1";
   const int rc = std::system(cmd.c_str());
   const int code = (rc != -1 && WIFEXITED(rc)) ? WEXITSTATUS(rc) : -1;
@@ -617,7 +622,8 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
                        const std::string &log_name) -> std::string {
     const std::string cmd =
         "cd " + shell_quote(dir.path().string()) +
-        " && timeout 180 yosys -Q -p " + shell_quote(script) + " > " +
+        " && timeout " + std::to_string(kYosysTimeoutSeconds) +
+        " yosys -Q -p " + shell_quote(script) + " > " +
         shell_quote((dir.path() / log_name).string()) + " 2>&1";
     const int rc = std::system(cmd.c_str());
     const int code = (rc != -1 && WIFEXITED(rc)) ? WEXITSTATUS(rc) : -1;
@@ -765,9 +771,9 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
       }
       if (n_in == 0 || n_out == 0)
         throw std::runtime_error("mapped netlist has no usable ports");
-      if (n_in > 128)
+      if (n_in > kMaxPorts)
         throw std::runtime_error("too many inputs: " + std::to_string(n_in) +
-                                 " (max 128)");
+                                 " (max " + std::to_string(kMaxPorts) + ")");
       // Reference instance uses r_* outputs: rebuild the connection list for
       // it by replacing the output wires.
       std::string ref_conns;

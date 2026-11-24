@@ -202,8 +202,9 @@ synthesize_path_variables(const BoolFunc &f,
     out.reason = "no usable paths";
     return out;
   }
-  if (all.size() > 256) {
-    out.reason = "path candidate set exceeds 256; narrow the space";
+  if (all.size() > static_cast<std::size_t>(kMaxPathCandidates)) {
+    out.reason = "path candidate set exceeds " +
+                 std::to_string(kMaxPathCandidates) + "; narrow the space";
     return out;
   }
 

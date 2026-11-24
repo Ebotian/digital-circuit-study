@@ -4,6 +4,8 @@
 // stdout.  A worker whose path ends in .py is launched with python3.
 #pragma once
 
+#include "core/limits.hpp"
+
 #include <string>
 
 #include "core/json.hpp"
@@ -23,6 +25,6 @@ std::string find_worker(const WorkerLocator &locator);
 // Run the worker with a timeout and return its parsed JSON response.  Throws
 // on transport errors, timeouts, non-zero exit, or {"ok": false}.
 Json call_worker(const std::string &helper, const Json &request,
-                 int timeout_seconds = 120);
+                 int timeout_seconds = kDefaultWorkerTimeoutSeconds);
 
 } // namespace dcstudy
