@@ -424,10 +424,10 @@ compose_from_library(const MultiProblem &spec,
     std::vector<int> molist, solist;
     for (std::size_t ci = 0; ci < cands.size(); ++ci) {
       if (cands[ci].atom == static_cast<int>(ai))
-        molist.push_back(ci);
+        molist.push_back(static_cast<int>(ci));
       else if (cands[ci].vars.size() == k &&
                library[cands[ci].atom].outputs.size() == 1)
-        solist.push_back(ci);
+        solist.push_back(static_cast<int>(ci));
     }
     for (std::size_t i = 0; i < molist.size(); ++i)
       for (std::size_t j = i + 1; j < molist.size(); ++j) {
@@ -597,14 +597,12 @@ compose_from_library(const MultiProblem &spec,
             std::vector<int> plan{hits[i].ci, hits[j].ci, hits[l].ci};
             std::vector<bool> used(n, false);
             bool ok = true;
-            int cost = 0;
             for (int ci : plan) {
               for (auto v : cands[ci].vars) {
                 if (used[v])
                   ok = false;
                 used[v] = true;
               }
-              cost += atom_cost[cands[ci].atom];
             }
             for (bool u : used)
               ok = ok && u;
@@ -619,7 +617,6 @@ compose_from_library(const MultiProblem &spec,
             const auto [h, mux] = best_h(sv);
             if (!h)
               continue;
-            partition_total = cost + glue_mux_cost * mux;
             partition_best = plan;
           }
     }

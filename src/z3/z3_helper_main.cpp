@@ -96,5 +96,11 @@ int main() {
     err["error"] = e.what();
     std::cout << err.dump(0) << "\n";
     return 1;
+  } catch (...) {
+    Json err;
+    err["ok"] = false;
+    err["error"] = "unknown exception";
+    std::cout << err.dump(0) << "\n";
+    return 1;
   }
 }

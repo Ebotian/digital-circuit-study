@@ -9,7 +9,7 @@ using namespace dcstudy;
 
 namespace dcstudy {
 
-const std::set<std::string> kBoolFlags = {
+constexpr std::string_view kBoolFlags[] = {
     "json",     "all",         "canonical", "exact",    "keep",
     "help",     "verbose",     "no-tg",     "heavy",    "png",
     "no-logic", "static-cmos", "graphblas", "tri-state"};
@@ -24,7 +24,10 @@ Args parse_args(int argc, char **argv, int start) {
     const std::string body = s.substr(2);
     const auto eq = body.find('=');
     const std::string key = body.substr(0, eq);
-    if (kBoolFlags.count(key)) {
+    bool is_bool = false;
+    for (std::string_view f : kBoolFlags)
+      is_bool = is_bool || key == f;
+    if (is_bool) {
       if (eq != std::string::npos)
         throw CliError("flag --" + key + " does not take a value");
       a.flag.insert(key);

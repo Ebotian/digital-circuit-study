@@ -7,7 +7,7 @@
 namespace dcstudy {
 
 std::string render_helper_path() {
-  const std::string ts =
+  std::string ts =
       find_worker(WorkerLocator{"DCSTUDY_RENDER_HELPER", "render_worker.ts"});
   if (!ts.empty())
     return ts;

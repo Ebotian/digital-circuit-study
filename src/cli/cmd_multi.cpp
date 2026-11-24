@@ -38,7 +38,7 @@ MultiProblem load_multi_spec(const std::string &path,
       name = o.at("name").as_string();
       expr = o.at("expr").as_string();
     } else if (o.is_string()) {
-      const std::string t = o.as_string();
+      const std::string &t = o.as_string();
       const auto eq = t.find('=');
       if (eq == std::string::npos)
         throw CliError("output string must be name=expr");

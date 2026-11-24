@@ -45,7 +45,8 @@ struct CubeSearch {
           by_minterm[m].push_back(i);
   }
 
-  void search(Bits uncovered, int cost, std::vector<std::size_t> &chosen) {
+  void search(const Bits &uncovered, int cost,
+              std::vector<std::size_t> &chosen) {
     if (uncovered.none()) {
       if (cost < best_cost) {
         best_cost = cost;
@@ -202,9 +203,8 @@ bool exact_min_dnf_literals(const Bits &onset, std::size_t n,
     return false;
 
   CubeSearch cs(cubes, onset);
-  Bits uncovered = onset;
   std::vector<std::size_t> chosen;
-  cs.search(uncovered, 0, chosen);
+  cs.search(onset, 0, chosen);
   if (cs.best.empty())
     return false;
   std::sort(cs.best.begin(), cs.best.end());

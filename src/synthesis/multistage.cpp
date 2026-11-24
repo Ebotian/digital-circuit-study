@@ -121,7 +121,7 @@ std::string base_dont_use() {
 std::string bit_net(const Json &bit,
                     const std::map<std::int64_t, std::string> &names) {
   if (bit.is_string()) {
-    const std::string s = bit.as_string();
+    const std::string &s = bit.as_string();
     if (s == "0")
       return "VSS";
     if (s == "1")
@@ -223,9 +223,10 @@ synthesize_multistage_static_multi_impl(const MultiProblem &p, int max_fanin) {
   const unsigned long budget_mb = cap_mb ? cap_mb : avail_mb;
   if (budget_mb != 0) {
     const std::size_t need = rows * (funcs.size() + 8);
-    const std::size_t budget = budget_mb * 1024 * 1024 / 2;
+    const std::size_t budget = budget_mb * 1024ull * 1024ull / 2;
     if (need > budget) {
-      out.reason = "truth table needs " + std::to_string(need / (1024 * 1024)) +
+      out.reason = "truth table needs " +
+                   std::to_string(need / (std::size_t{1024} * 1024)) +
                    " MiB (2^" + std::to_string(vars.size()) + " rows x " +
                    std::to_string(funcs.size()) + " outputs), budget is " +
                    std::to_string(budget_mb / 2) +

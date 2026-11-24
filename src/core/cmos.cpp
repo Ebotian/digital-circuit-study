@@ -116,7 +116,8 @@ struct CoverSearch {
     return k;
   }
 
-  void search(Bits uncovered, int cost, std::vector<std::size_t> &chosen) {
+  void search(const Bits &uncovered, int cost,
+              std::vector<std::size_t> &chosen) {
     if (uncovered.none()) {
       if (cost < best_cost) {
         best_cost = cost;

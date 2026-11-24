@@ -20,7 +20,7 @@ int cmd_bool(const std::string &sub, int argc, char **argv) {
       Json vars = Json::Array{};
       for (const auto &v : spec.vars)
         vars.push_back(v);
-      j["vars"] = vars;
+      j["vars"] = std::move(vars);
       j["truth"] = spec.func.truth_string();
       j["monotone"] = spec.func.is_monotone();
       j["self_dual"] = spec.func.is_self_dual();

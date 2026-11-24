@@ -210,13 +210,13 @@ SwitchSolution z3_solve_switch(const SwitchProblem &p) {
       if (can0 && can1)
         row.values[oi] = Logic::Race;
       else if ((can0 || can1) && can_float)
-        row.values[oi] = Logic::Float;
+        row.values[oi] = Logic::Float; // NOLINT(bugprone-branch-clone)
       else if (can0)
         row.values[oi] = Logic::Zero;
       else if (can1)
         row.values[oi] = Logic::One;
       else
-        row.values[oi] = Logic::Float;
+        row.values[oi] = Logic::Float; // NOLINT(bugprone-branch-clone)
     }
     out.rows.push_back(std::move(row));
     solver.pop();
