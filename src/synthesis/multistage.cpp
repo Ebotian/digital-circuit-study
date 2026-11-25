@@ -714,8 +714,13 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
     // library cell and computes a different function.  Take the names from
     // Yosys instead of a regex: it normalises escaped identifiers, so a
     // module written \NAND2_X1 is the library cell NAND2_X1.
+    // One Yosys run for both jobs: the module names Yosys parsed (for the
+    // shadow check) and the elaborated hierarchy (for parameter specialisation).
+    run_yosys("read_verilog -sv atoms.v; write_json atoms.json; "
+              "read_verilog -sv top.v; hierarchy -top top; "
+              "write_json elab.json",
+              "elab.log");
     {
-      run_yosys("read_verilog -sv atoms.v; write_json atoms.json", "atoms.log");
       const Json aroot = Json::parse(read_file(dir.path() / "atoms.json"));
       for (const auto &[name, mj] : aroot.at("modules").object()) {
         (void)mj;
@@ -731,13 +736,10 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
                   "; opt_clean; write_json net.json; "
                   "write_verilog -noattr net.v",
               "map.log");
-    // Elaborate the hierarchy once: Yosys applies the parameter overrides from
-    // the instantiation itself, so signed values, strings and widths survive
+    // The elaboration above applies the parameter overrides from the
+    // instantiation itself, so signed values, strings and widths survive
     // (rebuilding them from the JSON bit strings lost all three) and every
     // instance gets the specialised module name the netlist will reference.
-    run_yosys("read_verilog -sv atoms.v; read_verilog -sv top.v; "
-              "hierarchy -top top; write_json elab.json",
-              "elab.log");
     const Json elab = Json::parse(read_file(dir.path() / "elab.json"));
     std::vector<std::string> elab_modules;
     for (const auto &[name, mj] : elab.at("modules").object()) {
