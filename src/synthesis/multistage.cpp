@@ -623,11 +623,13 @@ void require_same_ports(ActualPorts actual, ExpectedPorts expected,
     }
 }
 
-// Yosys JSON writes a parameter bit vector as its digits, MSB first: the
-// value 2 of a 4-bit parameter is "0010".  `chparam` reads that verbatim as
-// decimal ten, so keep the width and the base explicit.  A parameter that is
-// really a string passes through unchanged (a string of only 0/1 digits is
-// indistinguishable in the JSON encoding and is read as a bit vector).
+// Display/identity form of a parameter override.  Yosys JSON writes a bit
+// vector as its digits, MSB first (value 2 of a 4-bit parameter is "0010"),
+// which reads like decimal ten; make the width and base explicit.  The cost
+// itself is measured on the elaborated module, so this string never has to
+// round-trip through chparam.  A parameter that is really a string passes
+// through unchanged (a string of only 0/1 digits is indistinguishable in the
+// JSON encoding).
 std::string param_literal(const Json &v) {
   if (!v.is_string())
     return v.dump();
@@ -646,22 +648,6 @@ std::string render_params(const Json &cell) {
     if (!out.empty())
       out += ',';
     out += k + "=" + param_literal(v);
-  }
-  return out;
-}
-
-std::string chparam_cmd(const std::string &module, std::string_view params) {
-  if (params.empty())
-    return "";
-  std::string out;
-  std::istringstream ss{std::string(params)};
-  std::string item;
-  while (std::getline(ss, item, ',')) {
-    const auto eq = item.find('=');
-    if (eq == std::string::npos)
-      throw std::runtime_error("bad atom parameter: " + item);
-    out += "; chparam -set " + item.substr(0, eq) + " " + item.substr(eq + 1) +
-           " " + module;
   }
   return out;
 }
@@ -725,14 +711,14 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
     // An atom whose module name matches a standard cell is ambiguous: mapping
     // and cost look the name up in the library, while the miter reads the
     // atom's own RTL, so the exported netlist resolves the instance to the
-    // library cell and computes a different function.  Refuse the collision
-    // instead of charging and proving two different circuits.
+    // library cell and computes a different function.  Take the names from
+    // Yosys instead of a regex: it normalises escaped identifiers, so a
+    // module written \NAND2_X1 is the library cell NAND2_X1.
     {
-      const std::string atoms_src = read_file(dir.path() / "atoms.v");
-      const std::regex re("\\bmodule\\s+([A-Za-z_]\\w*)");
-      for (std::sregex_iterator it(atoms_src.begin(), atoms_src.end(), re), end;
-           it != end; ++it) {
-        const std::string name = (*it)[1].str();
+      run_yosys("read_verilog -sv atoms.v; write_json atoms.json", "atoms.log");
+      const Json aroot = Json::parse(read_file(dir.path() / "atoms.json"));
+      for (const auto &[name, mj] : aroot.at("modules").object()) {
+        (void)mj;
         if (library.has(name))
           throw std::runtime_error(
               "atom " + name +
@@ -745,6 +731,25 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
                   "; opt_clean; write_json net.json; "
                   "write_verilog -noattr net.v",
               "map.log");
+    // Elaborate the hierarchy once: Yosys applies the parameter overrides from
+    // the instantiation itself, so signed values, strings and widths survive
+    // (rebuilding them from the JSON bit strings lost all three) and every
+    // instance gets the specialised module name the netlist will reference.
+    run_yosys("read_verilog -sv atoms.v; read_verilog -sv top.v; "
+              "hierarchy -top top; write_json elab.json",
+              "elab.log");
+    const Json elab = Json::parse(read_file(dir.path() / "elab.json"));
+    std::vector<std::string> elab_modules;
+    for (const auto &[name, mj] : elab.at("modules").object()) {
+      (void)mj;
+      elab_modules.push_back(name);
+    }
+    // Instance -> specialised type, for the instances of the DUT itself.
+    std::map<std::string, std::string> elab_type;
+    const Json &elab_top = elab.at("modules").at("top");
+    if (elab_top.contains("cells"))
+      for (const auto &[inst, cj] : elab_top.at("cells").object())
+        elab_type[inst] = cj.at("type").as_string();
     const Json root = Json::parse(read_file(dir.path() / "net.json"));
     if (!root.contains("modules") || !root.at("modules").contains("top"))
       throw std::runtime_error("mapped netlist has no top module");
@@ -752,6 +757,8 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
     // Parameters are part of an atom's identity: two instances of the same
     // module with different overrides cost different amounts.
     std::map<std::string, RtlAtomUse> atom_uses;
+    std::map<std::string, std::string>
+        use_type; // use key -> specialised module
     int cell_cost = 0;
     for (const auto &[inst, cj] : cells.object()) {
       const std::string type = cj.at("type").as_string();
@@ -768,68 +775,74 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
         use.module = type;
         use.parameters = params;
         ++use.instances;
+        const auto eit = elab_type.find(inst);
+        if (eit != elab_type.end())
+          use_type[key] = eit->second;
+        else if (!use_type.count(key))
+          use_type[key] = type; // no parameter override: the module itself
       }
     }
 
-    // Module names in the library: measuring one atom blackboxes the others,
-    // so its cost is computed the same way its parent was charged.
-    std::vector<std::string> lib_modules;
-    {
-      const std::string src = read_file(atoms_path);
-      const std::regex re("\\bmodule\\s+([A-Za-z_]\\w*)");
-      for (std::sregex_iterator it(src.begin(), src.end(), re), end; it != end;
-           ++it)
-        lib_modules.push_back((*it)[1].str());
-    }
-    std::map<std::string, int> atom_cost;
+    // Cost one specialised module: the parameter overrides are already applied
+    // by hierarchy, so the module is mapped as Yosys elaborated it.  Every
+    // other module is blackboxed, which keeps nested atoms out of the parent's
+    // cost and lets the recursion charge them exactly once.
+    std::map<std::string, int> type_cost;
     std::set<std::string> measuring;
     int atom_index = 0;
-    std::function<int(const std::string &, const std::string &)> measure =
-        [&](const std::string &module, const std::string &params) -> int {
-      const std::string key = module + "|" + params;
-      if (const auto it = atom_cost.find(key); it != atom_cost.end())
+    std::function<int(const std::string &)> measure =
+        [&](const std::string &type) -> int {
+      if (const auto it = type_cost.find(type); it != type_cost.end())
         return it->second;
-      if (!measuring.insert(key).second)
-        throw std::runtime_error("recursive atom " + module);
+      if (!measuring.insert(type).second)
+        throw std::runtime_error("recursive atom " + type);
       std::string blackbox;
-      for (const auto &m : lib_modules)
-        if (m != module)
+      for (const auto &m : elab_modules)
+        if (m != type)
           blackbox += m + " ";
       const std::string bb =
           blackbox.empty() ? std::string() : "; blackbox " + blackbox;
       const std::string json_name =
           "atom_" + std::to_string(atom_index++) + ".json";
-      run_yosys("read_verilog -sv atoms.v" + bb + chparam_cmd(module, params) +
-                    "; synth -top " + module + "; abc -liberty " + lib + " " +
-                    dont_use + "; opt_clean; write_json " + json_name,
+      run_yosys("read_verilog -sv atoms.v; read_verilog -sv top.v; "
+                "hierarchy -top top" +
+                    bb + "; rename " + type +
+                    " measure_atom; synth -top measure_atom; abc -liberty " +
+                    lib + " " + dont_use + "; opt_clean; write_json " +
+                    json_name,
                 "atom.log");
       const Json aroot = Json::parse(read_file(dir.path() / json_name));
-      if (!aroot.contains("modules") || !aroot.at("modules").contains(module))
-        throw std::runtime_error("atom " + module + " did not map");
-      const Json &acells = aroot.at("modules").at(module).at("cells");
+      if (!aroot.contains("modules") ||
+          !aroot.at("modules").contains("measure_atom"))
+        throw std::runtime_error("atom " + type + " did not map");
       int cost = 0;
-      for (const auto &[inst, cj] : acells.object()) {
-        const std::string type = cj.at("type").as_string();
-        if (library.has(type)) {
-          if (!static_cell(type)) {
+      for (const auto &[inst, cj] :
+           aroot.at("modules").at("measure_atom").at("cells").object()) {
+        const std::string cell = cj.at("type").as_string();
+        if (library.has(cell)) {
+          if (!static_cell(cell)) {
             std::string msg = "atom ";
-            msg += module;
-            msg += " mapped to non-static cell: ";
             msg += type;
+            msg += " mapped to non-static cell: ";
+            msg += cell;
             throw std::runtime_error(msg);
           }
-          cost += static_cast<int>(library.cell(type).transistor_count());
+          cost += static_cast<int>(library.cell(cell).transistor_count());
         } else {
-          cost += measure(type, render_params(cj)); // nested atom
+          cost += measure(cell); // nested atom, already specialised
         }
       }
-      measuring.erase(key);
-      atom_cost[key] = cost;
+      measuring.erase(type);
+      type_cost[type] = cost;
       return cost;
     };
 
     for (const auto &[key, use] : atom_uses) {
-      const int cost = measure(use.module, use.parameters);
+      // The mapping step reports the base module plus its parameter strings;
+      // the elaborated name carries the same identity and is what gets mapped.
+      const auto tit = use_type.find(key);
+      const int cost =
+          measure(tit == use_type.end() ? use.module : tit->second);
       out.atoms.push_back({use.module, use.instances, cost, use.parameters});
     }
 

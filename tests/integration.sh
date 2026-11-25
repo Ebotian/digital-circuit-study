@@ -544,6 +544,21 @@ JSON
   # check -assert reports the conflicting drivers, and is clean now.
   yosys -Q -p "read_verilog -sv $TMP/compose-collide/mux2.v $TMP/compose-collide/compose.v; hierarchy -top top; check -assert" \
     > "$TMP/compose-check.log" 2>&1 || fail "compose netlist has conflicting drivers"
+
+  # The library-compose path names its signal nets s0, s1, ... too; a spec
+  # input with that name used to be driven by an atom output as well.
+  cat > "$TMP/compose-lib.json" <<'JSON'
+[{"name":"xor2","inputs":["A","B"],"outputs":[{"name":"Y","expr":"A^B"}]}]
+JSON
+  cat > "$TMP/compose-lib-spec.json" <<'JSON'
+{"name":"libcollide","inputs":["s0","B"],"outputs":[{"name":"Y","expr":"s0^B"}]}
+JSON
+  "$BIN" multi compose --spec "$TMP/compose-lib-spec.json" \
+    --library "$TMP/compose-lib.json" --out "$TMP/compose-lib-out" --json \
+    > "$TMP/compose-lib.json.out" || fail "library compose with an s0 input"
+  [ "$(jq -r .verified "$TMP/compose-lib.json.out")" = "true" ] || fail "library compose verify"
+  yosys -Q -p "read_verilog -sv $TMP/compose-lib-out/mux2.v $TMP/compose-lib-out/compose.v; hierarchy -top top; check -assert" \
+    > "$TMP/compose-lib-check.log" 2>&1 || fail "library compose has conflicting drivers"
   pass "miter/compose name hygiene"
 
   # An atom module that shadows a standard cell would be costed and mapped as
@@ -589,6 +604,54 @@ VERILOG
   "$BIN" multi synth --rtl "$TMP/top-param.v" --atoms "$TMP/atoms-param.v" \
     --ref "$TMP/gold-param.v" --json > "$TMP/param.json" || fail "parameter atom"
   [ "$(jq -r .total "$TMP/param.json")" = "2" ] || fail "binary parameter cost"
+
+  # Escaped identifiers normalise to the same module name, so \NAND2_X1 is the
+  # library cell NAND2_X1: the check must read names from Yosys, not a regex.
+  cat > "$TMP/atoms-escaped.v" <<'VERILOG'
+module \NAND2_X1 (input logic A, input logic B, output logic Y);
+  assign Y = A ^ B;
+endmodule
+VERILOG
+  cat > "$TMP/top-escaped.v" <<'VERILOG'
+module top(input logic A, input logic B, output logic Y);
+  \NAND2_X1 u(.A(A), .B(B), .Y(Y));
+endmodule
+VERILOG
+  rc=0
+  "$BIN" multi synth --rtl "$TMP/top-escaped.v" --atoms "$TMP/atoms-escaped.v" \
+    --ref "$TMP/gold-shadow.v" --json > "$TMP/escaped.json" 2>&1 || rc=$?
+  [ "$rc" -eq 1 ] || fail "escaped atom name shadowing a standard cell ($rc)"
+
+  # Parameter values come from elaborating the instance, so signed values keep
+  # their sign and string values stay strings (chparam reconstruction lost
+  # both: MODE=-2 proved but cost 0T, MODE="invert" failed to decode).
+  cat > "$TMP/atoms-signed.v" <<'VERILOG'
+module invs #(parameter MODE = 2)(input logic A, output logic Y);
+  assign Y = (MODE < 0) ? ~A : A;
+endmodule
+VERILOG
+  cat > "$TMP/top-signed.v" <<'VERILOG'
+module top(input logic A, output logic Y);
+  invs #(.MODE(-2)) u(.A(A), .Y(Y));
+endmodule
+VERILOG
+  "$BIN" multi synth --rtl "$TMP/top-signed.v" --atoms "$TMP/atoms-signed.v" \
+    --ref "$TMP/gold-param.v" --json > "$TMP/signed.json" || fail "signed parameter atom"
+  [ "$(jq -r .total "$TMP/signed.json")" = "2" ] || fail "signed parameter cost"
+
+  cat > "$TMP/atoms-string.v" <<'VERILOG'
+module invs3 #(parameter MODE = "add")(input logic A, output logic Y);
+  assign Y = (MODE == "invert") ? ~A : A;
+endmodule
+VERILOG
+  cat > "$TMP/top-string.v" <<'VERILOG'
+module top(input logic A, output logic Y);
+  invs3 #(.MODE("invert")) u(.A(A), .Y(Y));
+endmodule
+VERILOG
+  "$BIN" multi synth --rtl "$TMP/top-string.v" --atoms "$TMP/atoms-string.v" \
+    --ref "$TMP/gold-param.v" --json > "$TMP/string.json" || fail "string parameter atom"
+  [ "$(jq -r .total "$TMP/string.json")" = "2" ] || fail "string parameter cost"
   pass "atom accounting"
 else
   skip_or_fail "multi-output checks (no CDL/yosys/node)"

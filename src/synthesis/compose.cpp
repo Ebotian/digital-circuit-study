@@ -193,6 +193,24 @@ bool fill_dc(MaskBuffers buffers, DcRange range) {
   return true;
 }
 
+// Signal nets in the emitted top must not collide with a spec port: an input
+// named s0 plus an atom output s0 puts two drivers on one net, and the mapped
+// netlist then computes something else while the tables still match.
+std::string signal_prefix(const MultiProblem &spec, std::size_t count) {
+  std::set<std::string> used(spec.vars.begin(), spec.vars.end());
+  used.insert(spec.names.begin(), spec.names.end());
+  auto clashes = [&](const std::string &prefix) {
+    for (std::size_t j = 0; j < count; ++j)
+      if (used.count(prefix + std::to_string(j)))
+        return true;
+    return false;
+  };
+  std::string prefix = "s";
+  while (clashes(prefix))
+    prefix += "x";
+  return prefix;
+}
+
 std::optional<MultiProblem>
 glue_from_signals(const MultiProblem &spec,
                   const std::vector<std::vector<unsigned char>> &signals,
@@ -231,9 +249,10 @@ glue_from_signals(const MultiProblem &spec,
 
   MultiProblem h;
   h.title = "glue";
+  const std::string prefix = signal_prefix(spec, ns);
   for (std::size_t j = 0; j < ns; ++j) {
     const std::size_t src = order.empty() ? (ns - 1 - j) : order[ns - 1 - j];
-    h.vars.push_back("s" + std::to_string(src));
+    h.vars.push_back(prefix + std::to_string(src));
   }
   h.names = spec.names;
   for (std::size_t k = 0; k < spec.outputs.size(); ++k) {
@@ -734,13 +753,13 @@ compose_from_library(const MultiProblem &spec,
   if (cur != 0 || chosen.empty())
     return std::nullopt;
 
+  const std::size_t ns = sigs.size();
+  const std::string prefix = signal_prefix(spec, ns);
   const auto glue_res = best_h(sigs);
   if (!glue_res.first)
     return std::nullopt;
   const MultiProblem &glue_problem = *glue_res.first;
   const ComposeResult glue = compose_mux2(glue_problem, {});
-
-  const std::size_t ns = sigs.size();
 
   // Emit the final top: atom instances + the glue module.
   std::ostringstream os;
@@ -751,7 +770,7 @@ compose_from_library(const MultiProblem &spec,
     os << ", output logic " << spec.names[i];
   os << ");\n";
   for (std::size_t j = 0; j < ns; ++j)
-    os << "  wire s" << j << ";\n";
+    os << "  wire " << prefix << j << ";\n";
   std::ostringstream atoms_rtl;
   std::set<std::string> emitted;
   std::size_t out_idx = 0;
@@ -762,7 +781,7 @@ compose_from_library(const MultiProblem &spec,
     for (std::size_t j = 0; j < c.vars.size(); ++j)
       os << (j ? ", " : "") << spec.vars[c.vars[j]];
     for (std::size_t o = 0; o < c.outs.size(); ++o)
-      os << ", s" << (out_idx++);
+      os << ", " << prefix << (out_idx++);
     os << ");\n";
     if (emitted.insert(atom.title).second)
       atoms_rtl << atom_module_rtl(atom) << "\n";
@@ -791,8 +810,13 @@ compose_from_library(const MultiProblem &spec,
     std::ofstream(atom_path) << out.atom_rtl;
   }
   try {
+    // Prove the netlist that is actually written out.  The table-level search
+    // above checked the atom and glue functions, but not the emitted text: a
+    // net-name collision used to survive it.  Above the SOP reference size the
+    // miter is too deep, so that range keeps the table-level check only.
+    const bool prove = spec.vars.size() <= kMaxGlueSignals;
     out.synth = synthesize_rtl_atoms(top_path.string(), atom_path.string(),
-                                     spec, "", 0, true);
+                                     spec, "", 0, !prove);
     out.ok = out.synth.ok;
     out.verified = out.synth.verified;
     if (!out.synth.ok)
