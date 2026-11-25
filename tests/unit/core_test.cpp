@@ -216,3 +216,19 @@ TEST_CASE("glue table matches its declared signal order", "[core]") {
           expected);
   }
 }
+
+TEST_CASE("generated miter wires cannot shadow input names", "[core]") {
+  // A port named like a comparison wire is the same net, so the reference
+  // would drive the input and a wrong design could still prove.
+  const std::vector<std::string> vars = {"y_dut", "ok", "mismatch", "A"};
+  const MiterNames n = miter_names(vars);
+  REQUIRE(n.y_dut == "y_dut_");
+  REQUIRE(n.ok == "ok_");
+  REQUIRE(n.mismatch == "mismatch_");
+  REQUIRE(n.y_ref == "y_ref"); // no input of that name
+  const std::string src = emit_miter(vars);
+  REQUIRE(src.find("output logic mismatch_)") != std::string::npos);
+  REQUIRE(src.find("wire y_ref, y_dut_, ok_;") != std::string::npos);
+  REQUIRE(src.find("wire y_dut;") == std::string::npos);
+  REQUIRE(src.find("wire ok;") == std::string::npos);
+}

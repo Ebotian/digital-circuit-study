@@ -919,8 +919,24 @@ ComposeResult compose_mux2(const MultiProblem &spec,
   for (std::size_t i = 0; i < spec.names.size(); ++i)
     os << ", output logic " << spec.names[i];
   os << ");\n";
+  // Node wires must not collide with a port: a spec input named n4 plus a
+  // mux output n4 puts two drivers on one net, and the composed netlist still
+  // verified against the truth table (which only looks at the RTL expression).
+  std::set<std::string> used_names(spec.vars.begin(), spec.vars.end());
+  used_names.insert(spec.names.begin(), spec.names.end());
+  std::string node_prefix = "n";
+  auto node_collides = [&](const std::string &prefix) {
+    for (int id : mux_nodes)
+      if (used_names.count(prefix + std::to_string(id)))
+        return true;
+    return false;
+  };
+  while (node_collides(node_prefix))
+    node_prefix += "x";
+  auto node_net = [&](int id) { return node_prefix + std::to_string(id); };
+
   for (int id : mux_nodes)
-    os << "  wire n" << id << ";\n";
+    os << "  wire " << node_net(id) << ";\n";
 
   std::function<std::string(int)> expr = [&](int id) -> std::string {
     if (id == 0)
@@ -932,12 +948,12 @@ ComposeResult compose_mux2(const MultiProblem &spec,
       return spec.vars[nd.var];
     if (is_inverted(id))
       return "~" + spec.vars[nd.var];
-    return "n" + std::to_string(id);
+    return node_net(id);
   };
   for (int id : mux_nodes) {
     const Node &nd = bdd.nodes[id];
     os << "  mux2 u" << id << "(.A(" << expr(nd.lo) << "), .B(" << expr(nd.hi)
-       << "), .S(" << spec.vars[nd.var] << "), .Y(n" << id << "));\n";
+       << "), .S(" << spec.vars[nd.var] << "), .Y(" << node_net(id) << "));\n";
   }
   for (std::size_t k = 0; k < roots.size(); ++k)
     os << "  assign " << spec.names[k] << " = " << expr(roots[k]) << ";\n";

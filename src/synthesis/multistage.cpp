@@ -623,6 +623,21 @@ void require_same_ports(ActualPorts actual, ExpectedPorts expected,
     }
 }
 
+// Yosys JSON writes a parameter bit vector as its digits, MSB first: the
+// value 2 of a 4-bit parameter is "0010".  `chparam` reads that verbatim as
+// decimal ten, so keep the width and the base explicit.  A parameter that is
+// really a string passes through unchanged (a string of only 0/1 digits is
+// indistinguishable in the JSON encoding and is read as a bit vector).
+std::string param_literal(const Json &v) {
+  if (!v.is_string())
+    return v.dump();
+  const std::string s = v.as_string();
+  const bool bits = !s.empty() && std::all_of(s.begin(), s.end(), [](char c) {
+    return c == '0' || c == '1' || c == 'x' || c == 'z';
+  });
+  return bits ? std::to_string(s.size()) + "'b" + s : s;
+}
+
 std::string render_params(const Json &cell) {
   if (!cell.contains("parameters"))
     return "";
@@ -630,7 +645,7 @@ std::string render_params(const Json &cell) {
   for (const auto &[k, v] : cell.at("parameters").object()) {
     if (!out.empty())
       out += ',';
-    out += k + "=" + (v.is_string() ? v.as_string() : v.dump());
+    out += k + "=" + param_literal(v);
   }
   return out;
 }
@@ -707,6 +722,23 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
   };
 
   try {
+    // An atom whose module name matches a standard cell is ambiguous: mapping
+    // and cost look the name up in the library, while the miter reads the
+    // atom's own RTL, so the exported netlist resolves the instance to the
+    // library cell and computes a different function.  Refuse the collision
+    // instead of charging and proving two different circuits.
+    {
+      const std::string atoms_src = read_file(dir.path() / "atoms.v");
+      const std::regex re("\\bmodule\\s+([A-Za-z_]\\w*)");
+      for (std::sregex_iterator it(atoms_src.begin(), atoms_src.end(), re), end;
+           it != end; ++it) {
+        const std::string name = (*it)[1].str();
+        if (library.has(name))
+          throw std::runtime_error(
+              "atom " + name +
+              " shadows the standard cell of the same name; rename the atom");
+      }
+    }
     run_yosys("read_verilog -sv -lib atoms.v; read_verilog -sv top.v; "
               "synth -top top; abc -liberty " +
                   lib + " " + dont_use +
@@ -830,6 +862,20 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
           ActualPorts{module_ports(rroot.at("modules").at(ref_mod))},
           ExpectedPorts{module_ports(root.at("modules").at("top"))}, "ref");
       const Json &ports = root.at("modules").at("top").at("ports");
+      // A wire that shares a name with a port is the same net in Verilog, so a
+      // port called r_Z would be driven by the reference output instead of
+      // staying an input and the proof would pass a wrong design.  Every
+      // internal name is generated against the port set.
+      std::set<std::string> used_names;
+      for (const auto &[name, pj] : ports.object())
+        used_names.insert(name);
+      auto fresh = [&](const std::string &base) {
+        std::string out = base;
+        while (!used_names.insert(out).second)
+          out += '_';
+        return out;
+      };
+      std::map<std::string, std::pair<std::string, std::string>> compare;
       std::string header, wires, conns, cmps;
       int n_in = 0, n_out = 0;
       for (const auto &[name, pj] : ports.object()) {
@@ -842,30 +888,15 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
           header += range;
           header += name;
           header += ", ";
-          conns += '.';
-          conns += name;
-          conns += '(';
-          conns += name;
-          conns += "), ";
+          conns += '.' + name + '(' + name + "), ";
           ++n_in;
         } else {
-          wires += "  wire";
-          wires += range;
-          wires += "t_";
-          wires += name;
-          wires += ", r_";
-          wires += name;
-          wires += ";\n";
-          conns += '.';
-          conns += name;
-          conns += "(t_";
-          conns += name;
-          conns += "), ";
-          cmps += " | (t_";
-          cmps += name;
-          cmps += " !== r_";
-          cmps += name;
-          cmps += ')';
+          const std::string t = fresh("t_" + name);
+          const std::string r = fresh("r_" + name);
+          compare[name] = {t, r};
+          wires += "  wire" + range + t + ", " + r + ";\n";
+          conns += '.' + name + '(' + t + "), ";
+          cmps += " | (" + t + " !== " + r + ')';
           if (spec.names.empty())
             out.outputs.push_back(name);
           ++n_out;
@@ -876,34 +907,27 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
       if (n_in > kMaxPorts)
         throw std::runtime_error("too many inputs: " + std::to_string(n_in) +
                                  " (max " + std::to_string(kMaxPorts) + ")");
-      // Reference instance uses r_* outputs: rebuild the connection list for
-      // it by replacing the output wires.
+      // Reference instance uses the r_* wires: rebuild the connection list by
+      // replacing the output nets.
       std::string ref_conns;
       for (const auto &[name, pj] : ports.object()) {
-        if (pj.at("direction").as_string() == "input") {
-          ref_conns += '.';
-          ref_conns += name;
-          ref_conns += '(';
-          ref_conns += name;
-          ref_conns += "), ";
-        } else {
-          ref_conns += '.';
-          ref_conns += name;
-          ref_conns += "(r_";
-          ref_conns += name;
-          ref_conns += "), ";
-        }
+        if (pj.at("direction").as_string() == "input")
+          ref_conns += '.' + name + '(' + name + "), ";
+        else
+          ref_conns += '.' + name + '(' + compare.at(name).second + "), ";
       }
-      std::string miter =
-          "module miter(" + header + "output logic mismatch);\n" + wires +
-          "  top u_top(" + conns + ");\n  " + ref_mod + " u_ref(" + ref_conns +
-          ");\n  assign mismatch = 1'b0" + cmps + ";\nendmodule\n";
+      const std::string mismatch = fresh("mismatch");
+      std::string miter = "module miter(" + header + "output logic " +
+                          mismatch + ");\n" + wires + "  top u_top(" + conns +
+                          ");\n  " + ref_mod + " u_ref(" + ref_conns +
+                          ");\n  assign " + mismatch + " = 1'b0" + cmps +
+                          ";\nendmodule\n";
       write_text(dir.path() / "miter.v", miter);
       run_yosys("read_verilog -sv atoms.v; read_verilog -sv top.v; "
                 "read_verilog -sv ref.v; read_verilog -sv miter.v; "
                 "prep -top miter; flatten; memory; delete t:$scopeinfo; opt "
-                "-full; sat "
-                "-verify -prove mismatch 0 miter",
+                "-full; sat -verify -prove " +
+                    mismatch + " 0 miter",
                 "ref.log");
       out.verified = true;
       out.ok = true;
@@ -942,54 +966,50 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
              spec.outputs[k].func.sop(spec.vars) + ";\n";
     ref += "endmodule\n";
 
+    // Same collision rule as the --ref miter: a comparison wire must not share
+    // a name with a spec input (or output) port.
+    std::set<std::string> used_names(spec.vars.begin(), spec.vars.end());
+    used_names.insert(spec.names.begin(), spec.names.end());
+    auto fresh = [&](const std::string &base) {
+      std::string out = base;
+      while (!used_names.insert(out).second)
+        out += '_';
+      return out;
+    };
+    std::map<std::string, std::pair<std::string, std::string>> compare;
+    for (const auto &n : spec.names)
+      compare[n] = {fresh("t_" + n), fresh("r_" + n)};
+    const std::string mismatch = fresh("mismatch");
+
     std::string miter = "module miter(";
     for (std::size_t i = 0; i < spec.vars.size(); ++i)
       miter += (i ? ", " : "") + std::string("input logic ") + spec.vars[i];
-    miter += ", output logic mismatch);\n";
-    for (const auto &n : spec.names) {
-      miter += "  wire t_";
-      miter += n;
-      miter += ", r_";
-      miter += n;
-      miter += ";\n";
-    }
+    miter += ", output logic " + mismatch + ");\n";
+    for (const auto &n : spec.names)
+      miter += "  wire " + compare[n].first + ", " + compare[n].second + ";\n";
     miter += "  top u_top(";
     for (std::size_t i = 0; i < spec.vars.size(); ++i)
       miter += (i ? ", " : "") + std::string(".") + spec.vars[i] + "(" +
                spec.vars[i] + ")";
-    for (const auto &n : spec.names) {
-      miter += ", .";
-      miter += n;
-      miter += "(t_";
-      miter += n;
-      miter += ')';
-    }
+    for (const auto &n : spec.names)
+      miter += ", ." + n + '(' + compare[n].first + ')';
     miter += ");\n  ref u_ref(";
     for (std::size_t i = 0; i < spec.vars.size(); ++i)
       miter += (i ? ", " : "") + std::string(".") + spec.vars[i] + "(" +
                spec.vars[i] + ")";
-    for (const auto &n : spec.names) {
-      miter += ", .";
-      miter += n;
-      miter += "(r_";
-      miter += n;
-      miter += ')';
-    }
-    miter += ");\n  assign mismatch = 1'b0";
-    for (const auto &n : spec.names) {
-      miter += " | (t_";
-      miter += n;
-      miter += " !== r_";
-      miter += n;
-      miter += ')';
-    }
+    for (const auto &n : spec.names)
+      miter += ", ." + n + '(' + compare[n].second + ')';
+    miter += ");\n  assign " + mismatch + " = 1'b0";
+    for (const auto &n : spec.names)
+      miter += " | (" + compare[n].first + " !== " + compare[n].second + ')';
     miter += ";\nendmodule\n";
     write_text(dir.path() / "ref.v", ref);
     write_text(dir.path() / "miter.v", miter);
     run_yosys("read_verilog -sv top.v; read_verilog -sv atoms.v; "
               "read_verilog -sv ref.v; read_verilog -sv miter.v; "
               "prep -top miter; flatten; delete t:$scopeinfo; opt -full; "
-              "sat -verify -prove mismatch 0 miter",
+              "sat -verify -prove " +
+                  mismatch + " 0 miter",
               "spec.log");
     out.verified = true;
     out.ok = true;

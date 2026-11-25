@@ -1,6 +1,7 @@
 #include "core/verilog.hpp"
 
 #include <algorithm>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -123,22 +124,40 @@ std::string emit_ref(const BoolFunc &target,
   return os.str();
 }
 
+MiterNames miter_names(const std::vector<std::string> &vars) {
+  std::set<std::string> used(vars.begin(), vars.end());
+  auto fresh = [&](const char *base) {
+    std::string name = base;
+    while (!used.insert(name).second)
+      name += '_';
+    return name;
+  };
+  MiterNames out;
+  out.y_ref = fresh("y_ref");
+  out.y_dut = fresh("y_dut");
+  out.ok = fresh("ok");
+  out.mismatch = fresh("mismatch");
+  return out;
+}
+
 std::string emit_miter(const std::vector<std::string> &vars) {
+  const MiterNames n = miter_names(vars);
   std::ostringstream os;
   os << "module miter (";
   for (const auto &v : vars)
     os << "input logic " << v << ", ";
-  os << "output logic mismatch);\n";
-  os << "  wire y_ref, y_dut, ok;\n";
+  os << "output logic " << n.mismatch << ");\n";
+  os << "  wire " << n.y_ref << ", " << n.y_dut << ", " << n.ok << ";\n";
   os << "  ref u_ref(";
   for (const auto &v : vars)
     os << "." << v << "(" << v << "), ";
-  os << ".Y(y_ref));\n";
+  os << ".Y(" << n.y_ref << "));\n";
   os << "  dut u_dut(";
   for (const auto &v : vars)
     os << "." << v << "(" << v << "), ";
-  os << ".Y(y_dut), .ok(ok));\n";
-  os << "  assign mismatch = (y_dut !== y_ref) | ~ok;\n";
+  os << ".Y(" << n.y_dut << "), .ok(" << n.ok << "));\n";
+  os << "  assign " << n.mismatch << " = (" << n.y_dut << " !== " << n.y_ref
+     << ") | ~" << n.ok << ";\n";
   os << "endmodule\n";
   return os.str();
 }

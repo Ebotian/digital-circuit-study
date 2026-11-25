@@ -505,6 +505,91 @@ JSON
 [ "$(jq -r .verified "$TMP/mpath.json")" = "true" ] || fail "multi-output path verification"
 [ "$(jq -r '.outputs | length' "$TMP/mpath.json")" = "2" ] || fail "multi-output path output count"
 [ "$(jq -r .proof "$TMP/mpath.json")" = "true" ] || fail "multi-output path proof"
+
+  # Generated miters and composed netlists must not let a port name shadow an
+  # internal wire: Verilog merges them into one net, so an input r_Z plus
+  # output Z made the reference drive the input and a wrong design still
+  # proved.  Compose had the same bug with a mux output named like an input.
+  cat > "$TMP/collide-top.v" <<'VERILOG'
+module top(input logic r_Z, output logic Z);
+  assign Z = r_Z;
+endmodule
+VERILOG
+  cat > "$TMP/collide-gold.v" <<'VERILOG'
+module golden(input logic r_Z, output logic Z);
+  assign Z = 1'b1;
+endmodule
+VERILOG
+  cat > "$TMP/collide.json" <<'JSON'
+{"name":"collide","inputs":["r_Z"],"outputs":[{"name":"Z","expr":"1"}]}
+JSON
+  : > "$TMP/empty.v"
+  rc=0
+  "$BIN" multi synth --rtl "$TMP/collide-top.v" --atoms "$TMP/empty.v" \
+    --ref "$TMP/collide-gold.v" --json > "$TMP/collide-ref.json" 2>&1 || rc=$?
+  [ "$rc" -eq 1 ] || fail "ref miter accepted a wire/port collision ($rc)"
+  [ "$(jq -r .verified "$TMP/collide-ref.json")" = "false" ] || fail "collided ref verified"
+  rc=0
+  "$BIN" multi synth --rtl "$TMP/collide-top.v" --atoms "$TMP/empty.v" \
+    --spec "$TMP/collide.json" --json > "$TMP/collide-spec.json" 2>&1 || rc=$?
+  [ "$rc" -eq 1 ] || fail "spec miter accepted a wire/port collision ($rc)"
+  [ "$(jq -r .verified "$TMP/collide-spec.json")" = "false" ] || fail "collided spec verified"
+
+  cat > "$TMP/compose-collide.json" <<'JSON'
+{"name":"compose_collide","inputs":["n4","B"],"outputs":[{"name":"Y","expr":"n4^B"}]}
+JSON
+  "$BIN" multi compose --spec "$TMP/compose-collide.json" \
+    --out "$TMP/compose-collide" --json > /dev/null || fail "compose with an n4 input"
+  # Pre-fix the netlist declared the input as a wire and drove it from the mux;
+  # check -assert reports the conflicting drivers, and is clean now.
+  yosys -Q -p "read_verilog -sv $TMP/compose-collide/mux2.v $TMP/compose-collide/compose.v; hierarchy -top top; check -assert" \
+    > "$TMP/compose-check.log" 2>&1 || fail "compose netlist has conflicting drivers"
+  pass "miter/compose name hygiene"
+
+  # An atom module that shadows a standard cell would be costed and mapped as
+  # the library cell while the miter reads the atom's own RTL.
+  cat > "$TMP/atoms-shadow.v" <<'VERILOG'
+module NAND2_X1(input logic A, input logic B, output logic Y);
+  assign Y = A ^ B;
+endmodule
+VERILOG
+  cat > "$TMP/top-shadow.v" <<'VERILOG'
+module top(input logic A, input logic B, output logic Y);
+  NAND2_X1 u(.A(A), .B(B), .Y(Y));
+endmodule
+VERILOG
+  cat > "$TMP/gold-shadow.v" <<'VERILOG'
+module golden(input logic A, input logic B, output logic Y);
+  assign Y = A ^ B;
+endmodule
+VERILOG
+  rc=0
+  "$BIN" multi synth --rtl "$TMP/top-shadow.v" --atoms "$TMP/atoms-shadow.v" \
+    --ref "$TMP/gold-shadow.v" --json > "$TMP/shadow.json" 2>&1 || rc=$?
+  [ "$rc" -eq 1 ] || fail "atom shadowing a standard cell ($rc)"
+  grep -q "shadows the standard cell" "$TMP/shadow.json" || fail "shadow error message"
+
+  # Yosys JSON hands over parameters as bit strings: "0010" is 2, and passing
+  # it to chparam verbatim used to become ten.
+  cat > "$TMP/atoms-param.v" <<'VERILOG'
+module inv2 #(parameter MODE = 1)(input logic A, output logic Y);
+  assign Y = (MODE == 2) ? ~A : A;
+endmodule
+VERILOG
+  cat > "$TMP/top-param.v" <<'VERILOG'
+module top(input logic A, output logic Y);
+  inv2 #(.MODE(2)) u(.A(A), .Y(Y));
+endmodule
+VERILOG
+  cat > "$TMP/gold-param.v" <<'VERILOG'
+module golden(input logic A, output logic Y);
+  assign Y = ~A;
+endmodule
+VERILOG
+  "$BIN" multi synth --rtl "$TMP/top-param.v" --atoms "$TMP/atoms-param.v" \
+    --ref "$TMP/gold-param.v" --json > "$TMP/param.json" || fail "parameter atom"
+  [ "$(jq -r .total "$TMP/param.json")" = "2" ] || fail "binary parameter cost"
+  pass "atom accounting"
 else
   skip_or_fail "multi-output checks (no CDL/yosys/node)"
 fi

@@ -119,7 +119,8 @@ ToolResult prove_yosys(const std::string &dut_source, const BoolFunc &target,
 
   const std::string script =
       "read_verilog -sv ref.v dut.v miter.v; synth -top miter; flatten; "
-      "opt -full; sat -prove mismatch 0 -verify -show-inputs";
+      "opt -full; sat -prove " +
+      miter_names(vars).mismatch + " 0 -verify -show-inputs";
   const std::string cmd = "cd " + shell_quote(dir.path()) + " && yosys -Q -p " +
                           shell_quote(fs::path(script));
   result.exit_code = run_shell(cmd, dir.path() / "yosys.log");
