@@ -308,11 +308,10 @@ compose_from_library(const MultiProblem &spec,
       cost = am.total;
     }
     atom_cost[ai] = cost;
-    if (atom.title == "mux2") {
-      const MultiStageMultiDesign am = synthesize_multistage_static_multi(atom);
-      if (am.ok && am.verified)
-        glue_mux_cost = am.total;
-    }
+    // Already measured above (exact backend or the mapper); mapping the same
+    // atom a second time just for the glue estimate is wasted work.
+    if (atom.title == "mux2" && cost >= 0)
+      glue_mux_cost = cost;
     std::vector<std::size_t> comb(k);
     std::iota(comb.begin(), comb.end(), 0);
     while (true) {
@@ -759,7 +758,10 @@ compose_from_library(const MultiProblem &spec,
   if (!glue_res.first)
     return std::nullopt;
   const MultiProblem &glue_problem = *glue_res.first;
-  const ComposeResult glue = compose_mux2(glue_problem, {});
+  // RTL only: the glue is inlined into the top below and proved there.
+  const ComposeResult glue = compose_mux2(glue_problem, {}, false);
+  if (!glue.ok || glue.rtl.empty())
+    return std::nullopt;
 
   // Emit the final top: atom instances + the glue module.
   std::ostringstream os;
@@ -830,7 +832,8 @@ compose_from_library(const MultiProblem &spec,
 }
 
 ComposeResult compose_mux2(const MultiProblem &spec,
-                           const std::vector<MultiProblem> &library) {
+                           const std::vector<MultiProblem> &library,
+                           bool synthesize) {
   ComposeResult out;
   if (spec.vars.empty() || spec.outputs.empty()) {
     out.reason = "compose needs a non-empty spec";
@@ -1009,6 +1012,13 @@ ComposeResult compose_mux2(const MultiProblem &spec,
       }
   if (!self_check)
     return out;
+  if (!synthesize) {
+    // RTL only: the emitted network is checked against its own tables here,
+    // and the caller proves the composed top it inlines this into.
+    out.ok = true;
+    out.verified = self_check;
+    return out;
+  }
   out.atom_rtl = "module mux2(input logic A, B, S, output logic Y);\n"
                  "  assign Y = (S & B) | (~S & A);\nendmodule\n";
 

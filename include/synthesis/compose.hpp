@@ -24,8 +24,13 @@ struct ComposeResult {
   RtlSynthResult synth; // mapping + cost + verification
 };
 
+// `synthesize = false` stops after emitting the network: the caller only
+// wants the RTL (the library search inlines the glue into its own top and
+// proves that instead), so mapping and paying for the network separately is
+// wasted work.
 ComposeResult compose_mux2(const MultiProblem &spec,
-                           const std::vector<MultiProblem> &library = {});
+                           const std::vector<MultiProblem> &library = {},
+                           bool synthesize = true);
 
 // Build the glue truth table h(S) from signal tables.  h.vars is the declared
 // port order; h.outputs[k].func.value(idx) must correspond to that order with
