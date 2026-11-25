@@ -1,6 +1,7 @@
 #include "z3/z3_solvers.hpp"
 
 #include <cstdint>
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -100,20 +101,23 @@ SwitchSolution z3_solve_switch(const SwitchProblem &p) {
       on.push_back(!val[gi] && (val[di] || val[si]));
   }
 
-  std::vector<std::vector<z3::expr>> edge(
-      N, std::vector<z3::expr>(N, ctx.bool_val(false)));
-  for (std::size_t u = 0; u < N; ++u) {
-    for (std::size_t v = 0; v < N; ++v) {
-      std::vector<z3::expr> terms;
-      for (std::size_t k = 0; k < p.devices.size(); ++k) {
-        const auto di = ni.get(p.devices[k].drain);
-        const auto si = ni.get(p.devices[k].source);
-        if ((di == u && si == v) || (di == v && si == u))
-          terms.push_back(on[k]);
-      }
-      edge[u][v] = or_all(ctx, terms);
-    }
+  // Conduction edges are sparse: one entry per net pair a device actually
+  // connects, built in a single pass over the devices.  A dense N x N matrix
+  // spent most of its time constructing constant-false terms, and the
+  // unrolled reachability then ANDed every node with every other node.
+  std::vector<std::map<std::size_t, std::vector<z3::expr>>> terms_of(N);
+  for (std::size_t k = 0; k < p.devices.size(); ++k) {
+    const auto di = ni.get(p.devices[k].drain);
+    const auto si = ni.get(p.devices[k].source);
+    if (di == si)
+      continue; // a device shorting one net to itself adds no reachability
+    terms_of[di][si].push_back(on[k]);
+    terms_of[si][di].push_back(on[k]);
   }
+  std::vector<std::vector<std::pair<std::size_t, z3::expr>>> edge(N);
+  for (std::size_t u = 0; u < N; ++u)
+    for (const auto &[v, terms] : terms_of[u])
+      edge[u].emplace_back(v, or_all(ctx, terms));
 
   auto reach = [&](std::size_t source) {
     std::vector<std::vector<z3::expr>> r(
@@ -123,8 +127,8 @@ SwitchSolution z3_solve_switch(const SwitchProblem &p) {
       for (std::size_t v = 0; v < N; ++v) {
         std::vector<z3::expr> terms;
         terms.push_back(r[k][v]);
-        for (std::size_t u = 0; u < N; ++u)
-          terms.push_back(r[k][u] && edge[u][v]);
+        for (const auto &[u, conduction] : edge[v])
+          terms.push_back(r[k][u] && conduction);
         r[k + 1][v] = or_all(ctx, terms);
       }
     }
