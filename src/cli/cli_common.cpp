@@ -110,7 +110,9 @@ Json driver_profile_json(const DriverProfile &p) {
     for (std::size_t i = 0; i < r.sources.size(); ++i) {
       sources.push_back(r.sources[i]);
       values.push_back(r.values[i]);
-      strong.push_back(r.strong[i]);
+      // vector<bool> yields a proxy reference; Fil-C/libc++ will not
+      // convert it to Json, so make the bool explicit.
+      strong.push_back(static_cast<bool>(r.strong[i]));
     }
     row["sources"] = std::move(sources);
     row["values"] = std::move(values);
