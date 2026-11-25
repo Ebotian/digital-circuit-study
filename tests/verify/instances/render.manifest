@@ -1,5 +1,6 @@
 # instance  variant     kind    args...
 # variant with * is the default shown by plain `make render`.
+add4s       rtl*        atoms   specs/fa1.json rtl/add4s.v rtl/gold_add4s.v
 decoder38   spec*       synth   specs/decoder38.json
 encoder42   spec*       synth   specs/encoder42.json
 eq4         spec*       synth   specs/eq4.json
