@@ -36,7 +36,7 @@ tests/verify/
 | 4 位相等比较器（eq4） | 8 输入 spec（A3..A0, B3..B0） | synth + miter | 12 cells / 62T，verified |
 | 1 位全加器（fa1） | 3 输入 spec + 2×ha 原子 | synth / exact / ha 组合 | 7 cells/38T；exact 42T；2×14T+OR=34T |
 | 4 位 RCA + 三路七段（rca4_7seg） | 4×fa1 + 3×hex7seg 原子 | 结构 miter | 4×38T+3×162T = 638T，PASS |
-| 4 位补码加法器 + 溢出（add4s） | 8 输入 spec（A3..A0, B3..B0, V=C3⊕C4）+ 4×fa1 原子 | compose + 结构 miter | 93×12T+8T = 1124T；4×38T+14T = 166T，verified |
+| 4 位补码加法器 + 溢出（add4s） | 8 输入 spec（A3..A0, B3..B0, V=C3⊕C4）+ 4×fa1 原子 | compose + 结构 miter | 93×12T+8T = 1124T；4×38T + ≤20T 胶合（≤200T，随 ABC 版本），verified |
 | 4-7 段译码器（hex7seg） | spec | synth（默认 / --max-fanin 2）+ exact | 31 cells/162T；44 cells/192T；180T |
 | 4 位 hex/十进制七段（hex7seg_sel） | 5 输入 spec（D3..D0,SEL） | synth（多级静态 CMOS）+ 原生渲染 | 40 cells / 232T，scheme-0.svg |
 | 4-2 优先编码器（pe42） | spec + library | 开关级 miter + library 整函数匹配 | 16T，verified |
