@@ -715,7 +715,8 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
     // Yosys instead of a regex: it normalises escaped identifiers, so a
     // module written \NAND2_X1 is the library cell NAND2_X1.
     // One Yosys run for both jobs: the module names Yosys parsed (for the
-    // shadow check) and the elaborated hierarchy (for parameter specialisation).
+    // shadow check) and the elaborated hierarchy (for parameter
+    // specialisation).
     run_yosys("read_verilog -sv atoms.v; write_json atoms.json; "
               "read_verilog -sv top.v; hierarchy -top top; "
               "write_json elab.json",
