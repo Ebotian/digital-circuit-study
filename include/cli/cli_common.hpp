@@ -80,4 +80,10 @@ Json cells_json(const std::vector<GateInstance> &instances);
 Json multi_design_json(const MultiStageDesign &m);
 Json multi_design_json(const MultiStageMultiDesign &m);
 
+// Evidence block for the static-CMOS class of a cell-level netlist: scope,
+// the name whitelist, the measured per-cell checks, and the types checked.
+Json static_cmos_json(const std::vector<std::string> &checked,
+                      const std::vector<std::string> &failed, bool whitelist,
+                      bool kappa_linear, bool pun_dual);
+
 } // namespace dcstudy

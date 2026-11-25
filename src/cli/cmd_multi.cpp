@@ -598,6 +598,13 @@ int cmd_multi(const std::string &sub, int argc, char **argv) {
       j["command"] = "multi.synth";
       j["reason"] = m.reason;
       j["verified"] = m.verified;
+      // A failed design still says whether its cells were static CMOS: the
+      // two answers are independent.
+      j["kappa_linear"] = m.kappa_linear;
+      j["pun_dual"] = m.pun_dual;
+      j["static_cmos"] =
+          static_cmos_json(m.static_cells, m.static_cell_failures,
+                           m.static_cell_names, m.kappa_linear, m.pun_dual);
       Json truths;
       for (std::size_t i = 0; i < m.outputs.size() && i < m.truths.size(); ++i)
         truths[m.outputs[i]] = m.truths[i];
@@ -630,6 +637,10 @@ int cmd_multi(const std::string &sub, int argc, char **argv) {
     j["atom_verilog"] = src;
     j["atom_library"] = src;
     j["atom_transistors"] = m.total;
+    // The atom's own static-CMOS class, so a later stage can aggregate it
+    // with its own cells instead of re-deriving it.
+    j["atom_kappa_linear"] = m.kappa_linear;
+    j["atom_pun_dual"] = m.pun_dual;
   }
   j["total"] = m.total;
   j["nfet"] = m.nfet;
@@ -695,6 +706,9 @@ int cmd_multi(const std::string &sub, int argc, char **argv) {
     std::cout << "  outputs: " << join(m.outputs, ", ") << "\n";
     for (std::size_t i = 0; i < m.outputs.size(); ++i)
       std::cout << "  " << m.outputs[i] << " = " << m.truths[i] << "\n";
+    std::cout << "  static cells: " << m.static_cells.size()
+              << " types, kappa-linear=" << (m.kappa_linear ? "yes" : "no")
+              << ", pun-dual=" << (m.pun_dual ? "yes" : "no") << "\n";
     std::cout << "  switch-level: PASS\n";
     if (j.contains("render"))
       std::cout << "  rendered: " << j.at("render").at("index").as_string()

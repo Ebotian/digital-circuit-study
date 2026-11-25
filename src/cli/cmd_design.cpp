@@ -91,9 +91,12 @@ int cmd_design_static(const Args &a, const FuncSpec &spec,
     j["multi_stage"] = true;
     j["optimum"] = m.total;
     j["truth"] = spec.func.truth_string();
-    j["kappa_linear"] = true;
-    j["pun_dual"] = true;
-    j["monotone_complement"] = false;
+    j["kappa_linear"] = m.kappa_linear;
+    j["pun_dual"] = m.pun_dual;
+    j["static_cmos"] =
+        static_cmos_json(m.static_cells, m.static_cell_failures,
+                         m.static_cell_names, m.kappa_linear, m.pun_dual);
+    j["monotone_complement"] = d.realizable;
     j["anf_affine"] = spec.func.is_anf_affine();
     j["designs"] = [&] {
       Json arr = Json::Array{};
@@ -139,7 +142,10 @@ int cmd_design_static(const Args &a, const FuncSpec &spec,
       std::cout << "  cells:";
       for (const auto &c : m.cells)
         std::cout << " " << c.type;
-      std::cout << "\n  switch-level: " << (m.verified ? "PASS" : "FAIL")
+      std::cout << "\n  static cells: " << m.static_cells.size()
+                << " types, kappa-linear=" << (m.kappa_linear ? "yes" : "no")
+                << ", pun-dual=" << (m.pun_dual ? "yes" : "no") << "\n";
+      std::cout << "  switch-level: " << (m.verified ? "PASS" : "FAIL")
                 << "  truth=" << m.truth << "\n";
       if (a.has("emit"))
         std::cout << "  emitted: " << a.get("emit") << "\n";
@@ -226,9 +232,12 @@ int cmd_design_static(const Args &a, const FuncSpec &spec,
   j["multi_stage"] = false;
   j["optimum"] = d.total;
   j["truth"] = spec.func.truth_string();
-  j["monotone_complement"] = true;
-  j["kappa_linear"] = true;
-  j["pun_dual"] = true;
+  j["monotone_complement"] = d.realizable;
+  // The single-stage design entry is measured by static_design_json (its
+  // classification block runs the CDL checker); do not restate it here.
+  j["kappa_linear"] = design.at("kappa_linear");
+  j["pun_dual"] = design.at("pun_dual");
+  j["static_cmos"] = design.at("static_cmos");
   j["anf_affine"] = spec.func.is_anf_affine();
   j["designs"] = [&] {
     Json arr = Json::Array{};

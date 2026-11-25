@@ -7,6 +7,14 @@ J=$("$BIN" multi synth --spec "$S" --json)
 [ "$(jq -r .verified <<<"$J")" = "true" ] || fail "fa1 synth verify"
 [ "$(jq -r .total <<<"$J")" = "38" ] || fail "fa1 synth cost"
 [ "$(jq -r .cells <<<"$J")" = "7" ] || fail "fa1 synth cells"
+# The static-CMOS class is measured on the mapped cells' CDL transistors, not
+# asserted from the name whitelist; the composite class needs both.
+[ "$(jq -r .design.static_cmos.class <<<"$J")" = "static" ] \
+  || fail "fa1 static class"
+[ "$(jq -r .design.static_cmos.whitelist <<<"$J")" = "true" ] \
+  || fail "fa1 static whitelist"
+[ "$(jq -r '.design.static_cmos.failed | length' <<<"$J")" = "0" ] \
+  || fail "fa1 static cell failures"
 E=$("$BIN" multi exact --spec "$S" --json)
 [ "$(jq -r .verified <<<"$E")" = "true" ] || fail "fa1 exact verify"
 [ "$(jq -r .total <<<"$E")" = "42" ] || fail "fa1 exact cost"

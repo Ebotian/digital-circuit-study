@@ -16,6 +16,7 @@ FILC_SOURCES := src/cli/main.cpp src/cli/commands.cpp \
                 src/synthesis/path_search.cpp src/core/limits.cpp \
                 src/core/partial.cpp src/synthesis/static_exact.cpp src/synthesis/compose.cpp \
                 src/synthesis/template_synth.cpp src/switch/switchlevel.cpp \
+                src/switch/static_cells.cpp \
                 src/synthesis/synthesis.cpp src/core/verilog.cpp \
                 src/core/verify.cpp src/cli/worker_client.cpp \
                 src/cli/z3_client.cpp src/cli/render_client.cpp \

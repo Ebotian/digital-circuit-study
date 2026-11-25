@@ -51,6 +51,7 @@ add_library(dcstudy_core STATIC
   src/synthesis/path_search.cpp
   src/synthesis/compose.cpp
   src/switch/switchlevel.cpp
+  src/switch/static_cells.cpp
   src/switch/bdd_switch.cpp
   src/cli/math_client.cpp
   src/cli/worker_client.cpp

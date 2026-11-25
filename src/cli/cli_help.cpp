@@ -52,7 +52,8 @@ Options:
   --png          also rasterise rendered SVGs (needs rsvg-convert)
   --no-logic     skip the logic-abstraction panel (and its LaTeX compile)
   --static-cmos  restrict to static complementary CMOS (kappa-linear; rejects
-                 pass/TG; single-stage, with automatic multi-stage fallback)
+                 pass/TG; single-stage, with automatic multi-stage fallback).
+                 JSON reports the class measured on the mapped cells' CDL
   --graphblas    use the GraphBLAS worker for switch-level reachability closure
   --tri-state    allow high-Z outputs; a 0 in a one-hot output becomes high-Z
   --spec         JSON circuit spec: {"inputs":[...],"outputs":[{"name":...,"expr":...}]}

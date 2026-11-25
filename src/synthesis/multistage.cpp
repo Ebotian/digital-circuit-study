@@ -25,6 +25,7 @@
 #include "core/json.hpp"
 #include "core/parallel.hpp"
 #include "core/verify.hpp"
+#include "switch/static_cells.hpp"
 #include "switch/switchlevel.hpp"
 #include "synthesis/static_exact.hpp"
 
@@ -403,6 +404,27 @@ synthesize_multistage_static_multi_impl(const MultiProblem &p, int max_fanin) {
       return out;
     }
 
+    // Verify the static-CMOS claim on the cells the mapper chose instead of
+    // restating the name whitelist: the CDL transistor network behind each
+    // type decides whether it is kappa-linear and a complementary pair.
+    {
+      std::vector<std::string> types;
+      types.reserve(out.cells.size());
+      for (const auto &c : out.cells)
+        types.push_back(c.type);
+      const StaticCellsCheck sc = check_static_cmos_cells(library, types);
+      out.kappa_linear = sc.kappa_linear;
+      out.pun_dual = sc.pun_dual;
+      // The name whitelist is the mapper's condition; keep it as its own
+      // reported fact so the composite class is not read as fully measured.
+      out.static_cell_names =
+          std::all_of(types.begin(), types.end(),
+                      [](const std::string &t) { return static_cell(t); });
+      out.static_cells = sc.checked;
+      out.static_cell_failures = sc.failed;
+      out.static_cell_reasons = sc.reasons;
+    }
+
     Subckt flat;
     flat.name = "MULTI_STAGE_STATIC_CMOS";
     for (const auto &v : vars) {
@@ -525,6 +547,12 @@ MultiStageDesign synthesize_multistage_static(
   out.cdl = std::move(m.cdl);
   out.truth = m.truths.empty() ? "" : m.truths.front();
   out.verified = m.verified;
+  out.kappa_linear = m.kappa_linear;
+  out.pun_dual = m.pun_dual;
+  out.static_cell_names = m.static_cell_names;
+  out.static_cells = std::move(m.static_cells);
+  out.static_cell_failures = std::move(m.static_cell_failures);
+  out.static_cell_reasons = std::move(m.static_cell_reasons);
   return out;
 }
 

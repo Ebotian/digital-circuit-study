@@ -362,3 +362,101 @@ TEST_CASE("switch graph path closure handles shared internal nodes",
   REQUIRE_FALSE(p.valid);
   REQUIRE(p.rows[0].sources == std::vector<std::string>{"A", "B"});
 }
+
+TEST_CASE("static-CMOS class is measured on the cell transistors",
+          "[switchlevel]") {
+  auto n = [](const std::string &name, const std::string &d,
+              const std::string &g, const std::string &s) {
+    return Device{name, d, g, s, "NMOS", false};
+  };
+  auto p = [](const std::string &name, const std::string &d,
+              const std::string &g, const std::string &s) {
+    return Device{name, d, g, s, "PMOS", true};
+  };
+  auto base = [](const char *name) {
+    Subckt c;
+    c.name = name;
+    c.ports = {"A", "B", "Y", "VDD", "VSS"};
+    c.pin_dir = {{"A", PinDir::Input},
+                 {"B", PinDir::Input},
+                 {"Y", PinDir::Output},
+                 {"VDD", PinDir::Power},
+                 {"VSS", PinDir::Ground}};
+    return c;
+  };
+
+  // NAND2: two series NMOS, two parallel PMOS.  Every cell input is a gate
+  // only, and every row drives Y to exactly one rail.
+  {
+    Subckt c = base("NAND2_T");
+    c.devices = {p("P1", "Y", "A", "VDD"), p("P2", "Y", "B", "VDD"),
+                 n("N1", "Y", "A", "m"), n("N2", "m", "B", "VSS")};
+    const auto r = check_static_cmos_cell(c);
+    REQUIRE(r.kappa_linear);
+    REQUIRE(r.pun_dual);
+    REQUIRE(r.reasons.empty());
+  }
+
+  // Pass transistor: B is a channel terminal, so the conduction depends on the
+  // channel potential instead of the gate alone.
+  {
+    Subckt c = base("PASS_T");
+    c.devices = {p("P1", "Y", "A", "VDD"), n("N1", "Y", "A", "VSS"),
+                 n("N2", "Y", "B", "A")};
+    const auto r = check_static_cmos_cell(c);
+    REQUIRE_FALSE(r.kappa_linear);
+    REQUIRE_FALSE(r.reasons.empty());
+  }
+
+  // Pull-down only: A=B=0 leaves Y floating, so the pull-up is not the
+  // complement of the pull-down.
+  {
+    Subckt c = base("PDONLY_T");
+    c.devices = {n("N1", "Y", "A", "m"), n("N2", "m", "B", "VSS")};
+    const auto r = check_static_cmos_cell(c);
+    REQUIRE(r.kappa_linear);
+    REQUIRE_FALSE(r.pun_dual);
+  }
+}
+
+TEST_CASE("static-CMOS class aggregates over instantiated cell types",
+          "[switchlevel]") {
+  const auto dir =
+      std::filesystem::temp_directory_path() / "dcstudy-test-static-cells";
+  std::filesystem::create_directories(dir);
+  const auto path = dir / "cells.cdl";
+  std::ofstream(path) << R"(.SUBCKT GOOD A B Y VDD VSS
+*.PININFO A:I B:I Y:O VDD:P VSS:G
+M0 Y A m VSS NMOS_VTL W=1 L=1
+M1 m B VSS VSS NMOS_VTL W=1 L=1
+M2 Y A VDD VDD PMOS_VTL W=1 L=1
+M3 Y B VDD VDD PMOS_VTL W=1 L=1
+.ENDS
+.SUBCKT BAD A B Y VDD VSS
+*.PININFO A:I B:I Y:O VDD:P VSS:G
+M0 Y A m VSS NMOS_VTL W=1 L=1
+M1 m B VSS VSS NMOS_VTL W=1 L=1
+.ENDS
+)";
+  const auto lib = CdlLibrary::load(path.string());
+
+  const auto ok = check_static_cmos_cells(lib, {"GOOD", "GOOD"});
+  REQUIRE(ok.kappa_linear);
+  REQUIRE(ok.pun_dual);
+  REQUIRE(ok.checked == std::vector<std::string>{"GOOD"});
+  REQUIRE(ok.failed.empty());
+
+  const auto bad = check_static_cmos_cells(lib, {"GOOD", "BAD"});
+  REQUIRE(bad.checked == std::vector<std::string>{"BAD", "GOOD"});
+  REQUIRE(bad.failed == std::vector<std::string>{"BAD"});
+  REQUIRE(bad.kappa_linear); // a floating output is still gate-driven
+  REQUIRE_FALSE(bad.pun_dual);
+  REQUIRE_FALSE(bad.reasons.empty());
+
+  // A type the library does not have cannot be verified: it fails both.
+  const auto missing = check_static_cmos_cells(lib, {"GOOD", "MISSING"});
+  REQUIRE(missing.failed == std::vector<std::string>{"MISSING"});
+  REQUIRE_FALSE(missing.kappa_linear);
+  REQUIRE_FALSE(missing.pun_dual);
+  std::filesystem::remove_all(dir);
+}

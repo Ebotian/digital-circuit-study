@@ -1,5 +1,6 @@
 #include "cli/cli_common.hpp"
 #include "cli/cli_includes.hpp"
+#include "switch/static_cells.hpp"
 
 namespace fs = std::filesystem;
 using namespace dcstudy;
@@ -164,6 +165,33 @@ std::vector<std::string> cube_names(const Cube &c,
   return out;
 }
 
+// Evidence block for the static-CMOS class of a cell-level netlist.  The
+// booleans also live at the top level; this records how they were obtained, so
+// a checked claim is distinguishable from an assumed one.  The name whitelist
+// (the mapper's condition) is reported separately: the measured checks are
+// necessary but not sufficient to classify an arbitrary cell (a CPL XOR2 is
+// gate-driven and drives both rails, yet has no dual PUN/PDN pair).
+Json static_cmos_json(const std::vector<std::string> &checked,
+                      const std::vector<std::string> &failed, bool whitelist,
+                      bool kappa_linear, bool pun_dual) {
+  Json j;
+  j["scope"] = "per cell, composed";
+  j["whitelist"] = whitelist;
+  j["kappa_linear"] = kappa_linear;
+  j["pun_dual"] = pun_dual;
+  j["class"] =
+      (whitelist && kappa_linear && pun_dual) ? "static" : "not static";
+  Json c = Json::Array{};
+  for (const auto &s : checked)
+    c.push_back(s);
+  j["checked"] = std::move(c);
+  Json f = Json::Array{};
+  for (const auto &s : failed)
+    f.push_back(s);
+  j["failed"] = std::move(f);
+  return j;
+}
+
 Json static_design_json(const CmosDesign &d,
                         const std::vector<std::string> &vars) {
   Json j;
@@ -171,8 +199,27 @@ Json static_design_json(const CmosDesign &d,
   j["cost"] = d.total;
   j["nfet"] = d.nfet;
   j["pfet"] = d.pfet;
-  j["kappa_linear"] = true;
-  j["pun_dual"] = true;
+  // Measure the built network instead of restating the construction rule.
+  bool kappa_linear = false;
+  bool pun_dual = false;
+  if (d.realizable) {
+    try {
+      const CellStaticCheck c =
+          check_static_cmos_cell(build_static_cmos_subckt(d, vars));
+      kappa_linear = c.kappa_linear;
+      pun_dual = c.pun_dual;
+    } catch (const std::exception &) {
+      // not realisable after all: the flags stay false
+    }
+  }
+  j["kappa_linear"] = kappa_linear;
+  j["pun_dual"] = pun_dual;
+  {
+    Json sc;
+    sc["scope"] = "single stage";
+    sc["class"] = (kappa_linear && pun_dual) ? "static" : "not static";
+    j["static_cmos"] = std::move(sc);
+  }
   j["inverters"] = Json::Array{};
   j["branches"] = Json::Array{};
   Json pd = Json::Array{};
@@ -323,7 +370,11 @@ Json multi_design_json(const MultiStageDesign &m) {
   j["pfet"] = m.pfet;
   j["inverters"] = Json::Array{};
   j["branches"] = Json::Array{};
-  j["kappa_linear"] = true;
+  j["kappa_linear"] = m.kappa_linear;
+  j["pun_dual"] = m.pun_dual;
+  j["static_cmos"] =
+      static_cmos_json(m.static_cells, m.static_cell_failures,
+                       m.static_cell_names, m.kappa_linear, m.pun_dual);
   j["single_stage"] = false;
   j["cells"] = cells_json(m.cells);
   std::string topology;
@@ -344,7 +395,11 @@ Json multi_design_json(const MultiStageMultiDesign &m) {
   j["pfet"] = m.pfet;
   j["inverters"] = Json::Array{};
   j["branches"] = Json::Array{};
-  j["kappa_linear"] = true;
+  j["kappa_linear"] = m.kappa_linear;
+  j["pun_dual"] = m.pun_dual;
+  j["static_cmos"] =
+      static_cmos_json(m.static_cells, m.static_cell_failures,
+                       m.static_cell_names, m.kappa_linear, m.pun_dual);
   j["single_stage"] = false;
   Json outs = Json::Array{};
   for (const auto &o : m.outputs)

@@ -19,6 +19,7 @@
 #include "core/limits.hpp"
 #include "core/parallel.hpp"
 #include "core/verilog.hpp"
+#include "switch/static_cells.hpp"
 #include "switch/switchlevel.hpp"
 #include "synthesis/static_exact.hpp"
 #include "synthesis/synthesis.hpp"

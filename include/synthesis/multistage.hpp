@@ -30,6 +30,14 @@ struct MultiStageDesign {
   std::string cdl;
   std::string truth;
   bool verified = false;
+  // Measured on the CDL of the cells the mapper actually instantiated, never
+  // copied from the name whitelist: see switch/static_cells.hpp.
+  bool kappa_linear = false;
+  bool pun_dual = false;
+  bool static_cell_names = false; // every type passed the static-name whitelist
+  std::vector<std::string> static_cells;         // distinct types, sorted
+  std::vector<std::string> static_cell_failures; // types failing either check
+  std::vector<std::string> static_cell_reasons;  // "TYPE: reason"
 };
 
 // General multi-output variant: one gate-level netlist with shared logic.
@@ -47,6 +55,14 @@ struct MultiStageMultiDesign {
   std::string rtl; // behavioural module fed to the mapper (reusable as atom)
   std::vector<std::string> truths; // parallel to outputs
   bool verified = false;
+  // Same measured facts as the single-output variant, aggregated over the
+  // shared multi-output netlist.
+  bool kappa_linear = false;
+  bool pun_dual = false;
+  bool static_cell_names = false;
+  std::vector<std::string> static_cells;
+  std::vector<std::string> static_cell_failures;
+  std::vector<std::string> static_cell_reasons;
 };
 
 std::string default_liberty_path();
