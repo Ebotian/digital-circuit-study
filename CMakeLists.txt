@@ -50,6 +50,7 @@ add_library(dcstudy_core STATIC
   src/synthesis/multistage.cpp
   src/synthesis/path_search.cpp
   src/synthesis/compose.cpp
+  src/synthesis/abc_backend.cpp
   src/switch/switchlevel.cpp
   src/switch/static_cells.cpp
   src/switch/bdd_switch.cpp
@@ -114,7 +115,7 @@ if(Catch2_FOUND)
   add_executable(dcstudy_tests ${DCSTUDY_UNIT_SOURCES})
   target_link_libraries(dcstudy_tests PRIVATE dcstudy_core Catch2::Catch2WithMain)
   # One ctest entry per module: tags in tests/unit/<module>_test.cpp select it.
-  set(DCSTUDY_UNIT_MODULES core switchlevel cdl infra)
+  set(DCSTUDY_UNIT_MODULES core switchlevel cdl infra abc)
   foreach(mod ${DCSTUDY_UNIT_MODULES})
     add_test(NAME unit_${mod} COMMAND dcstudy_tests "[${mod}]")
     if(DCSTUDY_BUILD_Z3_HELPER)
