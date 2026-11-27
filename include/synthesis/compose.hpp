@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "core/partial.hpp"
+#include "synthesis/abc_backend.hpp"
 #include "synthesis/multistage.hpp"
 
 namespace dcstudy {
@@ -40,10 +41,17 @@ struct ComposeResult {
   std::string rtl;                // emitted top module
   std::string atom_rtl;           // atom modules used by the top
   std::string mode;               // library | atom | bdd-mux2
+  std::string glue;               // mux2 | abc (how the glue was synthesised)
   RtlSynthResult synth;           // mapping + cost + verification
   std::vector<AtomInstance> plan; // atoms the search selected
-  bool timed_out = false;         // the search hit its time budget
-  long long time_budget_ms = 0;   // budget the search ran under (0 = none)
+  int glue_estimated = 0;   // search estimate for the glue, in transistors
+  std::string abc_version;  // ABC banner, when a rewrite was attempted
+  std::string abc_commands; // rewrite commands, when attempted
+  std::string abc_reason;   // why the rewrite was rejected, when it was
+  std::size_t abc_nodes_before = 0;
+  std::size_t abc_nodes_after = 0;
+  bool timed_out = false;       // the search hit its time budget
+  long long time_budget_ms = 0; // budget the search ran under (0 = none)
 };
 
 struct ComposeOptions {
@@ -54,6 +62,10 @@ struct ComposeOptions {
   // Wall-clock limit for the library search; on expiry the best complete plan
   // found so far is emitted and timed_out is set.  0 = no deadline.
   long long time_budget_ms = 0;
+  // Rewrite the mux2 glue network with ABC before mapping (the ABC backend
+  // draft's M1).  Off by default: the inline mux2 network is the baseline.
+  bool abc = false;
+  AbcOptions abc_options;
 };
 
 // Shape signature of one Boolean function, independent of variable names.

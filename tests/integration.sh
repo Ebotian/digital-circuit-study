@@ -619,6 +619,53 @@ JSON
   [ "$(jq -r .timed_out "$TMP/no-budget.json")" = "false" ] || fail "unbounded search cut"
   [ "$(jq -r .total "$TMP/no-budget.json")" = "66" ] || fail "prio8 library plan"
   pass "compose search"
+  # M1: the mux2 glue network is rewritten by a separate ABC process.  The same
+  # miter has to prove the rewrite, and it must not cost more than the mux2
+  # network it replaced.
+  if command -v abc >/dev/null 2>&1; then
+    "$BIN" multi compose --spec "$ROOT/bench/fixtures/prio8.json" \
+      --library "$SPEC/library.json" --abc --json > "$TMP/abc.json" \
+      || fail "compose abc"
+    [ "$(jq -r .glue "$TMP/abc.json")" = "abc" ] || fail "abc glue not used"
+    [ "$(jq -r .verified "$TMP/abc.json")" = "true" ] || fail "abc verify"
+    [ "$(jq -r .total "$TMP/abc.json")" -le 66 ] || fail "abc cost"
+    [ "$(jq -r '.abc.version | test("ABC")' "$TMP/abc.json")" = "true" ] || fail "abc version"
+    [ "$(jq -r '.abc.nodes_after <= .abc.nodes_before' "$TMP/abc.json")" = "true" ] \
+      || fail "abc grew the glue"
+    # A failing rewrite falls back to the mux2 network, still verified, with a
+    # machine-readable reason.
+    "$BIN" multi compose --spec "$ROOT/bench/fixtures/prio8.json" \
+      --library "$SPEC/library.json" --abc --abc-commands bogus_cmd --json \
+      > "$TMP/abc-fail.json" || fail "compose abc fallback"
+    [ "$(jq -r .glue "$TMP/abc-fail.json")" = "mux2" ] || fail "abc fallback glue"
+    [ "$(jq -r .verified "$TMP/abc-fail.json")" = "true" ] || fail "abc fallback verify"
+    [ "$(jq -r '.abc.reason | length' "$TMP/abc-fail.json")" -gt 0 ] || fail "abc fallback reason"
+    # --abc has nothing to rewrite without a library; say so instead of ignoring.
+    "$BIN" multi compose --spec "$SPEC/mux4_3bit.json" --abc --json \
+      > "$TMP/abc-nolib.json" || fail "compose abc without library"
+    [ "$(jq -r .glue "$TMP/abc-nolib.json")" = "mux2" ] || fail "abc without library glue"
+    [ "$(jq -r '.abc.reason | length' "$TMP/abc-nolib.json")" -gt 0 ] || fail "abc without library reason"
+    [ "$(jq -r .total "$TMP/abc-nolib.json")" = "108" ] || fail "abc without library cost"
+    rc=0
+    "$BIN" multi compose --spec "$SPEC/pe42.json" --abc --abc-timeout 0 --json \
+      >/dev/null 2>&1 || rc=$?
+    [ "$rc" -eq 2 ] || fail "abc timeout validation ($rc)"
+    # ABC pays off when the glue is bigger than a couple of muxes: the same
+    # 6-atom plan maps to far fewer transistors once the 39-mux glue network is
+    # rewritten (measured on this machine: 546T -> 258T).
+    "$BIN" multi compose --spec "$SPEC/hex7seg_sel.json" --library "$SPEC/library.json" \
+      --json > "$TMP/plain-hex.json" || fail "compose hex7seg_sel"
+    "$BIN" multi compose --spec "$SPEC/hex7seg_sel.json" --library "$SPEC/library.json" \
+      --abc --json > "$TMP/abc-hex.json" || fail "compose abc hex7seg_sel"
+    [ "$(jq -r .verified "$TMP/abc-hex.json")" = "true" ] || fail "abc hex verify"
+    [ "$(jq -r .glue "$TMP/abc-hex.json")" = "abc" ] || fail "abc hex glue"
+    [ "$(jq -r .total "$TMP/abc-hex.json")" -le 400 ] || fail "abc hex cost"
+    [ "$(jq -r .total "$TMP/abc-hex.json")" -lt "$(jq -r .total "$TMP/plain-hex.json")" ] \
+      || fail "abc hex did not reduce the measured cost"
+    pass "compose abc glue"
+  else
+    skip_or_fail "compose abc glue (no abc)"
+  fi
 
   # An atom module that shadows a standard cell would be costed and mapped as
   # the library cell while the miter reads the atom's own RTL.

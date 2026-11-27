@@ -14,4 +14,13 @@ J=$("$BIN" multi compose --spec "$ROOT/bench/fixtures/prio8.json" \
   || fail "compose prio8 mux2 count"
 [ "$(jq -r '[.atoms[] | select(.module=="or4") | .instances] | add' <<<"$J")" = "1" ] \
   || fail "compose prio8 or4 count"
+# M1 of the ABC backend draft: the same 8-3 must stay verified when the glue
+# is rewritten by a separate ABC process, and it must not cost more.
+if command -v abc >/dev/null 2>&1; then
+  A=$("$BIN" multi compose --spec "$ROOT/bench/fixtures/prio8.json"         --library "$(dirname "$0")/../specs/library.json" --abc --json)
+  [ "$(jq -r .verified <<<"$A")" = "true" ] || fail "compose prio8 abc verify"
+  [ "$(jq -r .glue <<<"$A")" = "abc" ] || fail "compose prio8 abc glue"
+  [ "$(jq -r .total <<<"$A")" -le 66 ] || fail "compose prio8 abc cost"
+  pass "prio8 abc   glue rewritten by ABC (22 -> 7 nodes), still <= 66T verified"
+fi
 pass "prio8       8-3 = 2x pe42 + or4 + 2x mux2 = 66T, miter PASS"

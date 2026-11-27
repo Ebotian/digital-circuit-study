@@ -731,8 +731,12 @@ RtlSynthResult synthesize_rtl_atoms(const std::string &rtl_path,
               " shadows the standard cell of the same name; rename the atom");
       }
     }
+    // flatten inlines non-blackboxed helper modules (for example the ABC glue
+    // network) so their cells are counted as cell_cost instead of being
+    // mistaken for an atom; delete drops the $scopeinfo cells flatten leaves
+    // behind, which would otherwise be priced as an atom.
     run_yosys("read_verilog -sv -lib atoms.v; read_verilog -sv top.v; "
-              "synth -top top; abc -liberty " +
+              "synth -top top; flatten; delete t:$scopeinfo; abc -liberty " +
                   lib + " " + dont_use +
                   "; opt_clean; write_json net.json; "
                   "write_verilog -noattr net.v",

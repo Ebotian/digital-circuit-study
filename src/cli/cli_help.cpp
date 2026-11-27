@@ -34,6 +34,7 @@ Commands:
                  [--rtl TOP.v --atoms ATOMS.v] [--json]
   multi exact    --spec FILE [--out DIR] [--json]
   multi compose  --spec FILE [--library LIB.json] [--time-budget-ms N]
+                 [--abc] [--abc-commands CMD] [--abc-timeout SEC]
                  [--out DIR] [--json]  (atom search, else BDD -> mux2)
   multi path     --spec FILE [--max-cost N] [--max-chain N] [--max-ops N] [--tri-state] [--json]
   multi template --spec FILE [--json]
@@ -62,6 +63,11 @@ Options:
   --library FILE JSON array of atom specs; multi compose searches them instead
                  of only synthesising a BDD -> mux2 network
   --time-budget-ms N  wall-clock limit for the compose search; 0 = no deadline
+  --abc          rewrite the mux2 glue network through a separate abc process
+                 (structure only; mapping and the miter stay in the flow)
+  --abc-commands CMD  override the rewrite script (default: balance; rewrite -l;
+                 refactor -l; resub -K 6 -N 2; drw -l)
+  --abc-timeout SEC   wall-clock limit per ABC step (default 5)
   --rtl FILE     hierarchical Verilog (top module `top`) to map instead of spec RTL
   --atoms FILE   atom modules read as blackboxes; "-" pipes in a previous stage
   --ref FILE     verify structurally against module FILE (spec optional)

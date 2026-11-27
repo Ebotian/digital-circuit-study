@@ -285,6 +285,20 @@ int cmd_multi_path(const Args &a, const MultiProblem &spec) {
 int cmd_multi_compose(const Args &a, const MultiProblem &spec,
                       const std::vector<MultiProblem> &library) {
   ComposeOptions opt;
+  if (a.is("abc") || a.has("abc-commands")) {
+    opt.abc = true;
+    if (a.has("abc-commands"))
+      opt.abc_options.commands = a.get("abc-commands");
+  }
+  if (a.has("abc-timeout")) {
+    try {
+      opt.abc_options.timeout_seconds = std::stoi(a.get("abc-timeout"));
+    } catch (const std::exception &) {
+      throw CliError("--abc-timeout must be an integer");
+    }
+    if (opt.abc_options.timeout_seconds <= 0)
+      throw CliError("--abc-timeout must be > 0");
+  }
   if (a.has("time-budget-ms")) {
     try {
       opt.time_budget_ms = std::stoll(a.get("time-budget-ms"));
@@ -335,6 +349,18 @@ int cmd_multi_compose(const Args &a, const MultiProblem &spec,
     j["atoms"] = std::move(atoms);
     j["verified"] = r.verified;
     j["timed_out"] = r.timed_out;
+    j["glue"] = r.glue;
+    j["glue_estimated"] = r.glue_estimated;
+    if (!r.abc_version.empty() || !r.abc_reason.empty()) {
+      Json abc;
+      abc["version"] = r.abc_version;
+      abc["commands"] = r.abc_commands;
+      abc["nodes_before"] = r.abc_nodes_before;
+      abc["nodes_after"] = r.abc_nodes_after;
+      if (!r.abc_reason.empty())
+        abc["reason"] = r.abc_reason;
+      j["abc"] = std::move(abc);
+    }
     j["time_budget_ms"] = static_cast<std::int64_t>(r.time_budget_ms);
     Json plan = Json::Array{};
     for (const auto &inst : r.plan) {

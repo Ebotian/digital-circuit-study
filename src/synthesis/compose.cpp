@@ -26,6 +26,11 @@ namespace dcstudy {
 namespace {
 constexpr std::size_t kMaxGlueSignals = 12;
 constexpr int kMux2FallbackCost = 12;
+// The glue network instantiates this module.  The flow blackboxes it, so the
+// glue is charged per mux2 instance unless ABC rewrote the network into gates.
+constexpr char kMux2Module[] =
+    "module mux2(input logic A, B, S, output logic Y);\n"
+    "  assign Y = (S & B) | (~S & A);\nendmodule\n";
 } // namespace
 namespace {
 
@@ -258,6 +263,19 @@ bool fill_dc(MaskBuffers buffers, DcRange range) {
 // Signal nets in the emitted top must not collide with a spec port: an input
 // named s0 plus an atom output s0 puts two drivers on one net, and the mapped
 // netlist then computes something else while the tables still match.
+// Give the glue its own module name: with ABC it is emitted next to the top
+// instead of inlined, so it must not collide with an atom module.
+std::string rename_module(const std::string &src, const std::string &from,
+                          const std::string &to) {
+  const std::string needle = "module " + from + "(";
+  const auto pos = src.find(needle);
+  if (pos == std::string::npos)
+    return src;
+  std::string out = src;
+  out.replace(pos, needle.size(), "module " + to + "(");
+  return out;
+}
+
 std::string signal_prefix(const MultiProblem &spec, std::size_t count) {
   std::set<std::string> used(spec.vars.begin(), spec.vars.end());
   used.insert(spec.names.begin(), spec.names.end());
@@ -1084,12 +1102,12 @@ void polish(Problem &p, Plan &plan) {
 std::optional<ComposeResult>
 compose_from_library(const MultiProblem &spec,
                      const std::vector<MultiProblem> &library,
-                     long long time_budget_ms, bool *timed_out) {
+                     const ComposeOptions &options, bool *timed_out) {
   const std::size_t n = spec.vars.size();
   if (library.empty() || spec.outputs.empty())
     return std::nullopt;
   Problem p(spec, library);
-  p.budget.start(time_budget_ms);
+  p.budget.start(options.time_budget_ms);
   generate_candidates(p);
   std::optional<Plan> plan = greedy_search(p);
   if (!plan)
@@ -1111,10 +1129,39 @@ compose_from_library(const MultiProblem &spec,
   if (!glue_res.first)
     return std::nullopt;
   // RTL only: the glue is inlined into the top below and proved there.
-  const ComposeResult glue =
-      compose_mux2(*glue_res.first, {}, {.synthesize = false});
+  ComposeOptions glue_options;
+  glue_options.synthesize = false;
+  const ComposeResult glue = compose_mux2(*glue_res.first, {}, glue_options);
   if (!glue.ok || glue.rtl.empty())
     return std::nullopt;
+  const int glue_muxes = glue_res.second;
+  std::string glue_name = "glue_net";
+  bool name_taken = true;
+  while (name_taken) {
+    name_taken = false;
+    for (int ci : plan->chosen)
+      if (library[static_cast<std::size_t>(
+                      p.cands[static_cast<std::size_t>(ci)].atom)]
+              .title == glue_name)
+        name_taken = true;
+    if (name_taken)
+      glue_name += "x";
+  }
+  // Optional M1 pass: hand the mux2 glue network to ABC.  The rewrite becomes
+  // its own module (not in atoms.v), so the flow maps it to library cells and
+  // charges cell_cost; on any failure the inline mux2 network is kept.
+  std::string abc_glue;
+  AbcResult abc;
+  if (options.abc && glue_muxes == 0)
+    abc.reason = "no glue network to rewrite";
+  if (options.abc && glue_muxes > 0) {
+    std::string glue_src = rename_module(glue.rtl, "top", glue_name);
+    glue_src += "\n";
+    glue_src += kMux2Module;
+    abc = abc_rewrite(glue_src, glue_name, options.abc_options);
+    if (abc.ok)
+      abc_glue = abc.verilog;
+  }
 
   // Emit the final top: atom instances + the glue module.
   std::ostringstream os;
@@ -1149,26 +1196,48 @@ compose_from_library(const MultiProblem &spec,
     if (emitted.insert(atom.title).second)
       atoms_rtl << atom_module_rtl(atom) << "\n";
   }
-  // Inline the glue network (mux2 instances) into the top module; the flow
-  // blackboxes mux2, so the glue is charged by the atom measurement.
-  const std::string &glue_rtl = glue.rtl;
-  const auto body_begin = glue_rtl.find(");");
-  const auto body_end = glue_rtl.rfind("endmodule");
-  if (body_begin == std::string::npos || body_end == std::string::npos)
-    return std::nullopt;
-  os << glue_rtl.substr(body_begin + 2, body_end - (body_begin + 2));
-  os << "endmodule\n";
-  if (emitted.insert("mux2").second)
-    atoms_rtl << "module mux2(input logic A, B, S, output logic Y);\n"
-                 "  assign Y = (S & B) | (~S & A);\nendmodule\n";
+  if (!abc_glue.empty()) {
+    // The glue is a separate module and stays out of atoms.v, so the flow maps
+    // it to library cells (cell_cost) instead of charging mux2 atoms.
+    os << "  " << glue_name << " u_glue(";
+    bool first = true;
+    for (std::size_t j = 0; j < ns; ++j) {
+      os << (first ? "" : ", ") << "." << prefix << j << "(" << prefix << j
+         << ")";
+      first = false;
+    }
+    for (const auto &name : spec.names)
+      os << ", ." << name << "(" << name << ")";
+    os << ");\n";
+    os << "endmodule\n\n" << abc_glue << "\n";
+  } else {
+    // Inline the glue network (mux2 instances) into the top module; the flow
+    // blackboxes mux2, so the glue is charged by the atom measurement.
+    const std::string &glue_rtl = glue.rtl;
+    const auto body_begin = glue_rtl.find(");");
+    const auto body_end = glue_rtl.rfind("endmodule");
+    if (body_begin == std::string::npos || body_end == std::string::npos)
+      return std::nullopt;
+    os << glue_rtl.substr(body_begin + 2, body_end - (body_begin + 2));
+    os << "endmodule\n";
+    if (emitted.insert("mux2").second)
+      atoms_rtl << kMux2Module;
+  }
 
   ComposeResult out;
   out.rtl = os.str();
   out.atom_rtl = atoms_rtl.str();
   out.mode = "library";
+  out.glue = !abc_glue.empty() ? "abc" : (glue_muxes == 0 ? "direct" : "mux2");
+  out.glue_estimated = p.mux_cost * glue_muxes;
+  out.abc_version = abc.version;
+  out.abc_commands = abc.commands;
+  out.abc_reason = abc.ok ? std::string() : abc.reason;
+  out.abc_nodes_before = abc.nodes_before;
+  out.abc_nodes_after = abc.nodes_after;
   out.nodes = static_cast<int>(ns);
   out.plan = std::move(plan_atoms);
-  out.time_budget_ms = time_budget_ms;
+  out.time_budget_ms = options.time_budget_ms;
   out.timed_out = p.budget.expired;
   const std::string dir = temp_dir();
   const fs::path top_path = fs::path(dir) / "top.v";
@@ -1215,9 +1284,9 @@ ComposeResult compose_mux2(const MultiProblem &spec,
   // its signals leave undetermined.  timed_out survives the fallback to the
   // pure mux2 network so callers can tell an exhaustive search from a cut one.
   bool timed_out = false;
-  if (auto lib = compose_from_library(spec, library, options.time_budget_ms,
-                                      &timed_out);
-      lib)
+  if (options.abc && library.empty())
+    out.abc_reason = "abc rewrites the library glue only; pass --library";
+  if (auto lib = compose_from_library(spec, library, options, &timed_out); lib)
     return *lib;
   out.timed_out = timed_out;
 
@@ -1265,6 +1334,7 @@ ComposeResult compose_mux2(const MultiProblem &spec,
     out.rtl = top.str();
     out.atom_rtl = at.str();
     out.mode = "atom";
+    out.glue = "direct";
     out.nodes = 1;
     out.plan.push_back({atom.title, spec.vars, atom.names});
     const std::string dir = temp_dir();
@@ -1364,6 +1434,7 @@ ComposeResult compose_mux2(const MultiProblem &spec,
 
   out.rtl = os.str();
   out.mode = "bdd-mux2";
+  out.glue = "mux2";
   out.nodes = static_cast<int>(mux_nodes.size());
 
   // Exhaustively evaluate the composed network against the spec rows; this is

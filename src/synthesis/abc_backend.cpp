@@ -73,9 +73,17 @@ void write_file(const fs::path &path, const std::string &text) {
   out << text;
 }
 
-std::string first_line(const std::string &text) {
-  const std::size_t end = text.find('\n');
-  return text.substr(0, end == std::string::npos ? text.size() : end);
+// ABC echoes the -c command line before its banner, so the version is the
+// first line that is neither blank nor an echoed command.
+std::string version_line(const std::string &text) {
+  std::istringstream is(text);
+  std::string line;
+  while (std::getline(is, line)) {
+    if (line.empty() || line.rfind("=====", 0) == 0)
+      continue;
+    return line;
+  }
+  return {};
 }
 
 std::string tail(const std::string &text, std::size_t max_lines = 20) {
@@ -217,7 +225,7 @@ AbcResult abc_rewrite(const std::string &verilog, const std::string &top,
                  tail(read_file(work / "abc_version.log"));
     return out;
   }
-  out.version = first_line(read_file(work / "abc_version.log"));
+  out.version = version_line(read_file(work / "abc_version.log"));
   while (!out.version.empty() && out.version.back() == '\r')
     out.version.pop_back();
 
