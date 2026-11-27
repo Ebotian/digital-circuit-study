@@ -26,6 +26,7 @@ Commands:
   design min     --expr EXPR | --tt BITS [--max-cost N] [--max-chain N]
                  [--all] [--limit N] [--canonical] [--emit DIR]
                  [--verify none|yosys|sim|both|static] [--static-cmos] [--keep]
+  seq check      --spec FILE [--dut FILE] [--cdl FILE] [--dff CELL] [--json]
   verify equiv   --dut FILE --expr EXPR | --tt BITS [--vars A,B] [--keep]
   verify sim     --dut FILE --expr EXPR | --tt BITS [--vars A,B] [--keep]
   pipeline       --funcs 'name=EXPR,...' [--max-cost N] [--out DIR]
@@ -59,6 +60,9 @@ Options:
   --graphblas    use the GraphBLAS worker for switch-level reachability closure
   --tri-state    allow high-Z outputs; a 0 in a one-hot output becomes high-Z
   --spec         JSON circuit spec: {"inputs":[...],"outputs":[{"name":...,"expr":...}]}
+  --cdl FILE     standard-cell CDL library (default: NANGATE45_CDL / PDK_ROOT)
+  --dut FILE     design under test (seq check: product-machine comparison)
+  --dff CELL     flip-flop cell for seq pricing (default DFF_X1 / DFFR_X1)
   --max-fanin N  static CMOS cell fan-in limit (e.g. 2); 0 = library default
   --library FILE JSON array of atom specs; multi compose searches them instead
                  of only synthesising a BDD -> mux2 network

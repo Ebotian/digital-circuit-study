@@ -125,6 +125,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: shellcheck
         run: shellcheck -x -S warning $(find . -name '*.sh' -not -path './build*' -not -path './.git/*')
+      - name: rvtm
+        run: make rvtm-check
 
   python:
     runs-on: ubuntu-24.04

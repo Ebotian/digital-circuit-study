@@ -1,0 +1,313 @@
+{
+  "baseline": {
+    "design": "docs/sequential-design.md",
+    "date": "2026-11-27",
+    "note": "S0: spec loader, reachability/DC, DFF pricing, product machine, multi seq check"
+  },
+  "defaults": {
+    "status": "not_implemented"
+  },
+  "requirements": {
+    "REQ-SEQ-001": {
+      "status": "verified",
+      "phase": "S0",
+      "updated": "2026-11-27",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/fsm_test.cpp",
+          "case": "FSM specs load with the documented shape"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/verify/instances/scripts/fsm_seq.sh"
+        }
+      ]
+    },
+    "REQ-SEQ-002": {
+      "status": "in_progress",
+      "phase": "S0",
+      "updated": "2026-11-27",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/fsm_test.cpp",
+          "case": "FSM spec validation rejects malformed machines"
+        }
+      ],
+      "note": "spec encoding is explicit and validated; --encoding candidates are S3 (REQ-SEQ-023)"
+    },
+    "REQ-SEQ-003": {
+      "status": "verified",
+      "phase": "S0",
+      "updated": "2026-11-27",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/fsm_test.cpp",
+          "case": "FSM spec validation rejects malformed machines"
+        }
+      ]
+    },
+    "REQ-SEQ-004": {
+      "status": "verified",
+      "phase": "S0",
+      "updated": "2026-11-27",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/fsm_test.cpp",
+          "case": "FSM outputs may be Moore or Mealy"
+        }
+      ]
+    },
+    "REQ-SEQ-005": {
+      "status": "in_progress",
+      "phase": "S1",
+      "updated": "2026-11-27",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/fsm_test.cpp",
+          "case": "FSM spec validation rejects malformed machines"
+        }
+      ],
+      "note": "S0 rejects registered outputs with a REQ-SEQ-005 message; semantics land in S1"
+    },
+    "REQ-SEQ-006": {
+      "status": "verified",
+      "phase": "S0",
+      "updated": "2026-11-27",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/fsm_test.cpp",
+          "case": "FSM arity and encoding limits are enforced"
+        }
+      ]
+    },
+    "REQ-SEQ-010": {
+      "status": "verified",
+      "phase": "S0",
+      "updated": "2026-11-27",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/fsm_test.cpp",
+          "case": "FSM specs load with the documented shape"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/verify/instances/scripts/fsm_seq.sh"
+        }
+      ]
+    },
+    "REQ-SEQ-011": {
+      "status": "verified",
+      "phase": "S0",
+      "updated": "2026-11-27",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/fsm_test.cpp",
+          "case": "unreachable FSM states become don't-care rows"
+        }
+      ]
+    },
+    "REQ-SEQ-012": {
+      "status": "not_implemented",
+      "phase": "S0",
+      "updated": "2026-11-27",
+      "note": "S0 does not emit a netlist yet; the deterministic write-out is S1"
+    },
+    "REQ-SEQ-013": {
+      "status": "in_progress",
+      "phase": "S0",
+      "updated": "2026-11-27",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/verify/instances/scripts/fsm_seq.sh"
+        }
+      ],
+      "note": "counts are reported; the state diagram (grey unreachable states) is S2"
+    },
+    "REQ-SEQ-040": {
+      "status": "verified",
+      "phase": "S0",
+      "updated": "2026-11-27",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/fsm_test.cpp",
+          "case": "product machine checks sequential equivalence"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/verify/instances/scripts/fsm_seq.sh"
+        }
+      ]
+    },
+    "REQ-SEQ-044": {
+      "status": "in_progress",
+      "phase": "S0",
+      "updated": "2026-11-27",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/fsm_test.cpp",
+          "case": "FSM spec validation rejects malformed machines"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/verify/instances/scripts/fsm_seq.sh"
+        }
+      ],
+      "note": "NC-03 (missing transition) and NC-08 (bad spec) covered; reset value/mode, latch, undefined init, DC misuse and output delay need S1"
+    },
+    "REQ-SEQ-050": {
+      "status": "in_progress",
+      "phase": "S1",
+      "updated": "2026-11-27",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/integration.sh"
+        }
+      ],
+      "note": "seq check exists; seq exact/synth are S1"
+    },
+    "REQ-SEQ-051": {
+      "status": "in_progress",
+      "phase": "S1",
+      "updated": "2026-11-27",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/integration.sh"
+        }
+      ],
+      "note": "seq check returns 0/1/2 (success, mismatch, usage); other seq commands S1"
+    },
+    "REQ-SEQ-052": {
+      "status": "in_progress",
+      "phase": "S1",
+      "updated": "2026-11-27",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/integration.sh"
+        }
+      ],
+      "note": "analysis and dff fields exist; comb_cost and proof fields arrive with S1/S2"
+    },
+    "REQ-SEQ-057": {
+      "status": "verified",
+      "phase": "S0",
+      "updated": "2026-11-27",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/integration.sh"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/verify/instances/scripts/fsm_seq.sh"
+        }
+      ]
+    },
+    "REQ-SEQ-060": {
+      "status": "in_progress",
+      "phase": "全程",
+      "updated": "2026-11-27",
+      "note": "the S0 commit cites REQ-SEQ ids; ongoing for every later commit"
+    },
+    "REQ-SEQ-061": {
+      "status": "in_progress",
+      "phase": "全程",
+      "updated": "2026-11-27",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/verify/instances/scripts/fsm_seq.sh"
+        }
+      ],
+      "note": "FSM assertions pin reachability/DC and the CDL price; mapping bounds are S1"
+    },
+    "REQ-SEQ-062": {
+      "status": "in_progress",
+      "phase": "全程",
+      "updated": "2026-11-27",
+      "note": "no benchmark logic in src/; review-based, rechecked per commit"
+    },
+    "REQ-SEQ-063": {
+      "status": "in_progress",
+      "phase": "S0",
+      "updated": "2026-11-27",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/fsm_test.cpp",
+          "case": "FSM arity and encoding limits are enforced"
+        }
+      ],
+      "note": "width cap tested; the product-machine pair budget path is untested"
+    },
+    "REQ-SEQ-064": {
+      "status": "in_progress",
+      "phase": "全程",
+      "updated": "2026-11-27",
+      "note": "S0 adds no external process; limits are inherited for free, to re-verify at S1"
+    },
+    "REQ-SEQ-065": {
+      "status": "verified",
+      "phase": "全程",
+      "updated": "2026-11-27",
+      "evidence": [
+        {
+          "kind": "doc",
+          "ref": "tests/verify/README.md"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/verify/instances/scripts/fsm_seq.sh"
+        }
+      ]
+    },
+    "REQ-SEQ-066": {
+      "status": "in_progress",
+      "phase": "全程",
+      "updated": "2026-11-27",
+      "note": "design doc, README and RVTM updated in the S0 commit; ongoing"
+    },
+    "REQ-SEQ-080": {
+      "status": "in_progress",
+      "phase": "全程",
+      "updated": "2026-11-27",
+      "note": "the schema has no clock field, so multi-clock specs cannot be expressed; explicit rejection is S1"
+    },
+    "REQ-SEQ-081": {
+      "status": "verified",
+      "phase": "全程",
+      "updated": "2026-11-27",
+      "evidence": [
+        {
+          "kind": "doc",
+          "ref": "docs/sequential-design.md"
+        }
+      ]
+    },
+    "REQ-SEQ-082": {
+      "status": "waived",
+      "phase": "v1",
+      "updated": "2026-11-27",
+      "reason": "v1 has no stateful-atom input path; revisit at S5 (REQ-SEQ-082 is a non-goal until then)"
+    },
+    "REQ-SEQ-083": {
+      "status": "in_progress",
+      "phase": "v1",
+      "updated": "2026-11-27",
+      "note": "no DFF reaches static_cmos yet; the split lands with S1 mapping"
+    }
+  }
+}

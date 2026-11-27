@@ -16,6 +16,7 @@ FILC_SOURCES := src/cli/main.cpp src/cli/commands.cpp \
                 src/synthesis/path_search.cpp src/core/limits.cpp \
                 src/core/partial.cpp src/synthesis/static_exact.cpp src/synthesis/compose.cpp \
                 src/synthesis/abc_backend.cpp \
+                src/synthesis/fsm.cpp src/cli/cmd_seq.cpp \
                 src/synthesis/template_synth.cpp src/switch/switchlevel.cpp \
                 src/switch/static_cells.cpp \
                 src/synthesis/synthesis.cpp src/core/verilog.cpp \
@@ -64,7 +65,7 @@ format-check: $(CCDB)
 	clice format --check src include tests
 
 # Full gate for CI: format, lint, unit+smoke, instances+formal+integration.
-ci: format-check lint werror test verify-all
+ci: format-check lint werror test verify-all rvtm-check
 
 # clice lint (LLVM/Clang toolkit; needs build/compile_commands.json).
 lint: $(CCDB)
@@ -159,6 +160,14 @@ fuzz:
 	$(BUILD)/fuzz_expr -max_total_time=$(FUZZ_TIME) fuzz/corpus/expr
 
 # Non-C++ assets: skip when the tool is missing (fail under CI=1).
+rvtm-gen:
+	python3 tools/rvtm.py generate
+
+rvtm-check:
+	python3 tools/rvtm.py check
+
+rvtm: rvtm-gen rvtm-check
+
 shellcheck:
 	shellcheck -x -S warning $$(find . -name '*.sh' -not -path './build*' -not -path './.git/*')
 

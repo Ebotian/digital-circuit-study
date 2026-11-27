@@ -1,0 +1,24 @@
+{
+ "name": "fsm_seqdet10_mut",
+ "state_bits": 2,
+ "reset": "S0",
+ "inputs": [
+  "A"
+ ],
+ "state": {
+  "S0": 0,
+  "S1": 1,
+  "S2": 2,
+  "S3": 3
+ },
+ "next": {
+  "s1": "~s1 & s0",
+  "s0": "A"
+ },
+ "outputs": [
+  {
+   "name": "Y",
+   "expr": "s1 & ~s0"
+  }
+ ]
+}

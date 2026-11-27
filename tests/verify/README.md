@@ -43,6 +43,7 @@ tests/verify/
 | 16-4 优先编码器 | RTL + 原子 + --ref | 结构 miter（无真值表） | 172T = 4x16T + 108T，PASS |
 | 前导/尾随 0/1 计数（lzcount16） | RTL + 4x pe16 + --ref | 结构 miter + Verilator 激励 | 866T = 4x172T + 178T；16392 → LZ=1, TZ=3 |
 | 开关级 XOR6（仿真） | Verilator testbench | 4/4 正例 + 注入故障必须被检出 | 动态仿真，非穷举 |
+| 时序 FSM 分析（fsm_seq） | FSM spec（2-bit counter、10 检测器）+ 变异 DUT | 可达性/DC + product machine + CDL 触发器计价 | 4/4 可达、3/4 + 2 DC 行；变异 DUT exit 1 |
 | NOR2（可直接综合） | spec | `bool info` realizable=true，exact/synth/path | 4T，verified |
 | XOR2（不可直接综合） | spec | realizable=false，但仍可自动设计（输入反相器） | exact 12T / synth 14T / path 12T |
 | XNOR2（不可直接综合） | spec | 同 XOR2 | exact 12T / synth 14T / path 12T |

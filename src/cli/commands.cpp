@@ -6,6 +6,7 @@
 #include "cli/cmd_multi.hpp"
 #include "cli/cmd_pipeline.hpp"
 #include "cli/cmd_render.hpp"
+#include "cli/cmd_seq.hpp"
 
 namespace fs = std::filesystem;
 using namespace dcstudy;
@@ -110,6 +111,8 @@ int dcstudy_cli_main(int argc, char **argv) {
       return cmd_verify(sub, argc, argv);
     if (cmd == "multi")
       return cmd_multi(sub, argc, argv);
+    if (cmd == "seq")
+      return cmd_seq(sub, argc, argv);
     if (cmd == "render")
       return cmd_render(argc, argv);
     if (cmd == "pipeline")

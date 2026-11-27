@@ -1,0 +1,28 @@
+{
+ "name": "fsm_counter2",
+ "state_bits": 2,
+ "reset": "S0",
+ "inputs": [
+  "en"
+ ],
+ "state": {
+  "S0": 0,
+  "S1": 1,
+  "S2": 2,
+  "S3": 3
+ },
+ "next": {
+  "s1": "s1 ^ (s0 & en)",
+  "s0": "s0 ^ en"
+ },
+ "outputs": [
+  {
+   "name": "Q1",
+   "expr": "s1"
+  },
+  {
+   "name": "Q0",
+   "expr": "s0"
+  }
+ ]
+}

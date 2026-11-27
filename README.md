@@ -23,6 +23,7 @@
 
 相关调研：[`docs/transistor-synthesis-survey.md`](docs/transistor-synthesis-survey.md) — 晶体管级/多输出/pass-transistor 综合的现有实现与来源。
 相关设计基线：[`docs/sequential-design.md`](docs/sequential-design.md) — 时序逻辑的需求编码（`REQ-SEQ`）与验证交叉矩阵（VCRM），S0–S5 计划（设计基线，未实现）。
+跟踪记录：[`docs/sequential-rvtm.md`](docs/sequential-rvtm.md) — 由 `requirements/rvtm.json` 经 `make rvtm-gen` 生成、`make rvtm-check` 校验（CI 同款检查）。
 
 ---
 

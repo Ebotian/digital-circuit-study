@@ -663,6 +663,38 @@ JSON
     [ "$(jq -r .total "$TMP/abc-hex.json")" -lt "$(jq -r .total "$TMP/plain-hex.json")" ] \
       || fail "abc hex did not reduce the measured cost"
     pass "compose abc glue"
+  # Sequential analysis at S0 (REQ-SEQ-010..013, 040, 044, 057): reachability,
+  # don't-care rows, product-machine equivalence, CDL-priced state register.
+  "$BIN" seq check --spec "$SPEC/fsm_counter2.json" --json > "$TMP/fsm-counter.json" \
+    || fail "seq check counter"
+  [ "$(jq -r .reachable_states "$TMP/fsm-counter.json")" = "4" ] || fail "seq counter reachable"
+  [ "$(jq -r .dc_rows "$TMP/fsm-counter.json")" = "0" ] || fail "seq counter dc rows"
+  [ "$(jq -r '.dff.bits' "$TMP/fsm-counter.json")" = "2" ] || fail "seq counter dff bits"
+  T=$(jq -r '.dff.transistors // empty' "$TMP/fsm-counter.json")
+  if [ -n "$T" ]; then
+    [ "$(jq -r '.dff.cost' "$TMP/fsm-counter.json")" = "$((T * 2))" ] || fail "seq dff cost"
+  fi
+  "$BIN" seq check --spec "$SPEC/fsm_seqdet.json" --json > "$TMP/fsm-seqdet.json" \
+    || fail "seq check seqdet"
+  [ "$(jq -r .reachable_states "$TMP/fsm-seqdet.json")" = "3" ] || fail "seqdet reachable"
+  [ "$(jq -r .dc_rows "$TMP/fsm-seqdet.json")" = "2" ] || fail "seqdet dc rows"
+  [ "$(jq -r '.unreachable_states[0]' "$TMP/fsm-seqdet.json")" = "S3" ] || fail "seqdet unreachable"
+  "$BIN" seq check --spec "$SPEC/fsm_seqdet.json" --dut "$SPEC/fsm_seqdet.json" \
+    --json > "$TMP/fsm-self.json" || fail "seq check self"
+  [ "$(jq -r '.dut.equivalent' "$TMP/fsm-self.json")" = "true" ] || fail "seq self equivalent"
+  rc=0
+  "$BIN" seq check --spec "$SPEC/fsm_seqdet.json" --dut "$SPEC/fsm_seqdet_mut.json" \
+    --json > "$TMP/fsm-mut.json" 2>/dev/null || rc=$?
+  [ "$rc" -eq 1 ] || fail "mutated FSM accepted ($rc)"
+  [ "$(jq -r '.dut.counterexample.steps | length' "$TMP/fsm-mut.json")" -gt 0 ] \
+    || fail "seq counterexample missing"
+  cat > "$TMP/fsm-bad.json" <<'JSON'
+{"name":"bad","state_bits":1,"reset":"S9","inputs":["A"],"state":{"S0":0},"next":{"s0":"A"},"outputs":[]}
+JSON
+  rc=0
+  "$BIN" seq check --spec "$TMP/fsm-bad.json" --json > "$TMP/fsm-bad.out" 2>/dev/null || rc=$?
+  [ "$rc" -eq 2 ] || fail "bad FSM spec accepted ($rc)"
+  pass "seq check"
   else
     skip_or_fail "compose abc glue (no abc)"
   fi
