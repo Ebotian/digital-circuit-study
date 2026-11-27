@@ -695,6 +695,23 @@ JSON
   "$BIN" seq check --spec "$TMP/fsm-bad.json" --json > "$TMP/fsm-bad.out" 2>/dev/null || rc=$?
   [ "$rc" -eq 2 ] || fail "bad FSM spec accepted ($rc)"
   pass "seq check"
+  # S1: mapped FSM with the dff/comb cost split and a BMC proof (REQ-SEQ-020..024,
+  # 030..033, 041..043, 050..052).  Verilator is covered by the unit/instance tests.
+  if command -v yosys >/dev/null 2>&1 && [ -f "${NANGATE45_CDL:-$HOME/yosys-sta/pdk/nangate45/cdl/NangateOpenCellLibrary.cdl}" ]; then
+    "$BIN" seq synth --spec "$SPEC/fsm_seqdet.json" --out "$TMP/seq-synth" \
+      --cycles 6 --no-sim --json > "$TMP/seq-synth.json" || fail "seq synth"
+    [ "$(jq -r .verified "$TMP/seq-synth.json")" = "true" ] || fail "seq synth verify"
+    [ "$(jq -r .bmc "$TMP/seq-synth.json")" = "true" ] || fail "seq synth bmc"
+    [ "$(jq -r .sim "$TMP/seq-synth.json")" = "false" ] || fail "seq synth no-sim"
+    [ "$(jq -r .dffs "$TMP/seq-synth.json")" = "2" ] || fail "seq synth dffs"
+    [ "$(jq -r .dc_rows "$TMP/seq-synth.json")" = "2" ] || fail "seq synth dc rows"
+    [ "$(jq -r .total "$TMP/seq-synth.json")" = "$(( $(jq -r .dff_cost "$TMP/seq-synth.json") + $(jq -r .comb_cost "$TMP/seq-synth.json") ))" ] \
+      || fail "seq synth split"
+    [ -f "$TMP/seq-synth/top.v" ] && [ -f "$TMP/seq-synth/net.v" ] || fail "seq synth files"
+    pass "seq synth"
+  else
+    skip_or_fail "seq synth (no yosys/Nangate45)"
+  fi
   else
     skip_or_fail "compose abc glue (no abc)"
   fi

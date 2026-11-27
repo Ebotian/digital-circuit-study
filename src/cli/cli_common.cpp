@@ -11,9 +11,9 @@ using namespace dcstudy;
 namespace dcstudy {
 
 constexpr std::string_view kBoolFlags[] = {
-    "json",     "all",         "canonical", "exact",     "keep",
-    "help",     "verbose",     "no-tg",     "heavy",     "png",
-    "no-logic", "static-cmos", "graphblas", "tri-state", "abc"};
+    "json",      "all",       "canonical", "exact", "keep",     "help",
+    "verbose",   "no-tg",     "heavy",     "png",   "no-logic", "static-cmos",
+    "graphblas", "tri-state", "abc",       "no-sim"};
 
 Args parse_args(int argc, char **argv, int start) {
   Args a;

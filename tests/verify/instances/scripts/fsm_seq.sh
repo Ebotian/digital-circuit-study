@@ -35,3 +35,23 @@ rc=0
   || fail "mutation has no counterexample"
 
 pass "fsm_seq     counter2 4/4 reachable; 10-detector 3/4 + 2 DC rows; mutation exit 1"
+
+# S1: mapped RTL with the dff/comb split, BMC and Verilator (REQ-SEQ-020..024,
+# 030..033, 041..043).  Needs the whole mapping stack, so it skips cleanly.
+if command -v yosys >/dev/null 2>&1 && command -v verilator >/dev/null 2>&1 \
+   && [ -f "${NANGATE45_CDL:-$HOME/yosys-sta/pdk/nangate45/cdl/NangateOpenCellLibrary.cdl}" ]; then
+  W=$(mktemp -d)
+  Y=$("$BIN" seq synth --spec "$S/fsm_counter2.json" --out "$W" --cycles 8 --json)
+  [ "$(jq -r .verified <<<"$Y")" = "true" ] || fail "seq synth counter verify"
+  [ "$(jq -r .bmc <<<"$Y")" = "true" ] || fail "seq synth bmc"
+  [ "$(jq -r .sim <<<"$Y")" = "true" ] || fail "seq synth sim"
+  [ "$(jq -r .dffs <<<"$Y")" = "2" ] || fail "seq synth dffs"
+  [ "$(jq -r .dff_cost <<<"$Y")" = "56" ] || fail "seq synth dff cost"
+  [ "$(jq -r .total <<<"$Y")" = "$(( $(jq -r .dff_cost <<<"$Y") + $(jq -r .comb_cost <<<"$Y") ))" ] \
+    || fail "seq synth cost split"
+  [ -f "$W/top.v" ] && [ -f "$W/gold.v" ] && [ -f "$W/net.v" ] || fail "seq synth files"
+  rm -rf "$W"
+  pass "fsm_seq     seq synth counter2: 2 DFF (56T) + comb, bmc+sim PASS"
+else
+  echo "skip fsm_seq seq synth (yosys/verilator/Nangate45 missing)"
+fi

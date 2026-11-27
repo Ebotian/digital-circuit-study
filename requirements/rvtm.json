@@ -62,8 +62,8 @@
       ]
     },
     "REQ-SEQ-005": {
-      "status": "in_progress",
-      "phase": "S1",
+      "status": "not_implemented",
+      "phase": "S2",
       "updated": "2026-11-27",
       "evidence": [
         {
@@ -72,7 +72,7 @@
           "case": "FSM spec validation rejects malformed machines"
         }
       ],
-      "note": "S0 rejects registered outputs with a REQ-SEQ-005 message; semantics land in S1"
+      "note": "S2 (registered outputs); S0 and S1 reject them with a REQ-SEQ-005 message"
     },
     "REQ-SEQ-006": {
       "status": "verified",
@@ -115,10 +115,21 @@
       ]
     },
     "REQ-SEQ-012": {
-      "status": "not_implemented",
+      "status": "verified",
       "phase": "S0",
       "updated": "2026-11-27",
-      "note": "S0 does not emit a netlist yet; the deterministic write-out is S1"
+      "note": "emitted RTL uses the total spec functions (no X/Z); seq synth JSON reports dc_rows",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/seq_rtl_test.cpp",
+          "case": "sequential RTL is emitted with flops and reset"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/integration.sh"
+        }
+      ]
     },
     "REQ-SEQ-013": {
       "status": "in_progress",
@@ -160,25 +171,34 @@
         },
         {
           "kind": "test",
+          "ref": "tests/unit/seq_rtl_test.cpp",
+          "case": "BMC and the testbench reject a mutated netlist"
+        },
+        {
+          "kind": "test",
           "ref": "tests/verify/instances/scripts/fsm_seq.sh"
         }
       ],
-      "note": "NC-03 (missing transition) and NC-08 (bad spec) covered; reset value/mode, latch, undefined init, DC misuse and output delay need S1"
+      "note": "NC-01 (wrong reset), NC-03 (missing transition) and NC-08 (bad spec) covered; latch, undefined init, DC misuse and output delay remain"
     },
     "REQ-SEQ-050": {
-      "status": "in_progress",
+      "status": "verified",
       "phase": "S1",
       "updated": "2026-11-27",
       "evidence": [
         {
           "kind": "test",
           "ref": "tests/integration.sh"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/verify/instances/scripts/fsm_seq.sh"
         }
       ],
-      "note": "seq check exists; seq exact/synth are S1"
+      "note": "seq check (S0) and seq synth (S1) with --out/--cycles/--no-sim/--json"
     },
     "REQ-SEQ-051": {
-      "status": "in_progress",
+      "status": "verified",
       "phase": "S1",
       "updated": "2026-11-27",
       "evidence": [
@@ -187,19 +207,23 @@
           "ref": "tests/integration.sh"
         }
       ],
-      "note": "seq check returns 0/1/2 (success, mismatch, usage); other seq commands S1"
+      "note": "0 verified, 1 mismatch/failed proof, 2 usage/spec error"
     },
     "REQ-SEQ-052": {
-      "status": "in_progress",
+      "status": "verified",
       "phase": "S1",
       "updated": "2026-11-27",
       "evidence": [
         {
           "kind": "test",
           "ref": "tests/integration.sh"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/verify/instances/scripts/fsm_seq.sh"
         }
       ],
-      "note": "analysis and dff fields exist; comb_cost and proof fields arrive with S1/S2"
+      "note": "name/states/rows/dc_rows/dffs/dff_cost/comb_cost/total/bmc/sim/proof_method/cells/files"
     },
     "REQ-SEQ-057": {
       "status": "verified",
@@ -223,16 +247,20 @@
       "note": "the S0 commit cites REQ-SEQ ids; ongoing for every later commit"
     },
     "REQ-SEQ-061": {
-      "status": "in_progress",
+      "status": "verified",
       "phase": "全程",
       "updated": "2026-11-27",
       "evidence": [
         {
           "kind": "test",
           "ref": "tests/verify/instances/scripts/fsm_seq.sh"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/integration.sh"
         }
       ],
-      "note": "FSM assertions pin reachability/DC and the CDL price; mapping bounds are S1"
+      "note": "FSM assertions pin reachability/DC and the CDL flop price; combinational cost is only bounded by the split identity"
     },
     "REQ-SEQ-062": {
       "status": "in_progress",
@@ -257,7 +285,7 @@
       "status": "in_progress",
       "phase": "全程",
       "updated": "2026-11-27",
-      "note": "S0 adds no external process; limits are inherited for free, to re-verify at S1"
+      "note": "yosys/verilator/abc steps run under timeout (240s/600s) and inherit RLIMIT_AS; to be exercised by a capped run"
     },
     "REQ-SEQ-065": {
       "status": "verified",
@@ -308,6 +336,211 @@
       "phase": "v1",
       "updated": "2026-11-27",
       "note": "no DFF reaches static_cmos yet; the split lands with S1 mapping"
+    },
+    "REQ-SEQ-020": {
+      "status": "verified",
+      "phase": "S1",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/seq_rtl_test.cpp",
+          "case": "mapped FSM splits dff and comb cost and verifies"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/integration.sh"
+        }
+      ],
+      "note": "same Yosys/ABC + CDL pricing pipeline as the combinational flow",
+      "updated": "2026-11-27"
+    },
+    "REQ-SEQ-021": {
+      "status": "verified",
+      "phase": "S1",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/seq_rtl_test.cpp",
+          "case": "mapped FSM splits dff and comb cost and verifies"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/unit/seq_rtl_test.cpp",
+          "case": "async reset maps to set/reset flops"
+        }
+      ],
+      "note": "dfflibmap maps the flops; DFF_X1/DFFR_X1/DFFS_X1 appear as library cells",
+      "updated": "2026-11-27"
+    },
+    "REQ-SEQ-022": {
+      "status": "verified",
+      "phase": "S1",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/seq_rtl_test.cpp",
+          "case": "sequential RTL is emitted with flops and reset"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/unit/seq_rtl_test.cpp",
+          "case": "async reset maps to set/reset flops"
+        }
+      ],
+      "note": "sync and async reset emitted per spec; async maps to DFFR/DFFS cells",
+      "updated": "2026-11-27"
+    },
+    "REQ-SEQ-024": {
+      "status": "verified",
+      "phase": "S1",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/seq_rtl_test.cpp",
+          "case": "mapped FSM splits dff and comb cost and verifies"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/integration.sh"
+        }
+      ],
+      "note": "mapping + CDL cost + SAT/simulation; no proven_by_spec shortcut",
+      "updated": "2026-11-27"
+    },
+    "REQ-SEQ-030": {
+      "status": "verified",
+      "phase": "S1",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/seq_rtl_test.cpp",
+          "case": "mapped FSM splits dff and comb cost and verifies"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/verify/instances/scripts/fsm_seq.sh"
+        }
+      ],
+      "updated": "2026-11-27"
+    },
+    "REQ-SEQ-031": {
+      "status": "verified",
+      "phase": "S1",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/seq_rtl_test.cpp",
+          "case": "mapped FSM splits dff and comb cost and verifies"
+        }
+      ],
+      "note": "DFF_X1 = 28T measured from the Nangate45 CDL",
+      "updated": "2026-11-27"
+    },
+    "REQ-SEQ-032": {
+      "status": "verified",
+      "phase": "S1",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/integration.sh"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/verify/instances/scripts/fsm_seq.sh"
+        }
+      ],
+      "note": "JSON separates dffs/dff_unit/dff_cost/comb_cost/total and lists cells",
+      "updated": "2026-11-27"
+    },
+    "REQ-SEQ-033": {
+      "status": "verified",
+      "phase": "S1",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/seq_rtl_test.cpp",
+          "case": "mapped FSM splits dff and comb cost and verifies"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/unit/seq_rtl_test.cpp",
+          "case": "async reset maps to set/reset flops"
+        }
+      ],
+      "note": "sequential cells flagged and priced into dff_cost; the FSM flow does not run static_cmos",
+      "updated": "2026-11-27"
+    },
+    "REQ-SEQ-041": {
+      "status": "verified",
+      "phase": "S1",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/seq_rtl_test.cpp",
+          "case": "mapped FSM splits dff and comb cost and verifies"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/unit/seq_rtl_test.cpp",
+          "case": "BMC and the testbench reject a mutated netlist"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/integration.sh"
+        }
+      ],
+      "note": "sat -seq cycles+2 -prove mismatch 0; a wrong reset value is rejected",
+      "updated": "2026-11-27"
+    },
+    "REQ-SEQ-042": {
+      "status": "verified",
+      "phase": "S1",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/seq_rtl_test.cpp",
+          "case": "mapped FSM with simulation passes and prices files"
+        }
+      ],
+      "note": "Verilator: 1 reset edge + cycles of seeded LCG stimulus, PASS/FAIL in the log",
+      "updated": "2026-11-27"
+    },
+    "REQ-SEQ-043": {
+      "status": "verified",
+      "phase": "S1",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/seq_rtl_test.cpp",
+          "case": "mapped FSM splits dff and comb cost and verifies"
+        }
+      ],
+      "note": "the sequential path never sets proven_by_spec; proof_method is bmc / bmc+sim",
+      "updated": "2026-11-27"
+    },
+    "REQ-SEQ-053": {
+      "status": "verified",
+      "phase": "S2",
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "tests/unit/seq_rtl_test.cpp",
+          "case": "mapped FSM splits dff and comb cost and verifies"
+        },
+        {
+          "kind": "test",
+          "ref": "tests/unit/seq_rtl_test.cpp",
+          "case": "mapped FSM with simulation passes and prices files"
+        }
+      ],
+      "note": "proof_method distinguishes bmc and bmc+sim; product-machine and induction arrive later",
+      "updated": "2026-11-27"
+    },
+    "REQ-SEQ-046": {
+      "status": "in_progress",
+      "phase": "S2",
+      "note": "product machine, BMC and simulation all exist; the product machine still compares spec-vs-spec, so a true three-way cross-check needs the S2 RTL->FSM extraction",
+      "updated": "2026-11-27"
     }
   }
 }

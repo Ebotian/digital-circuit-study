@@ -11,6 +11,7 @@
 |---|---|---|---|
 | 2026-11-27 | 初始基线：需求编码 + VCRM | 51 条（001–083 分块） | `aef916a` |
 | 2026-11-27 | S0 实现基线：规格格式定稿；REQ-SEQ-005 移入 S1；新增 REQ-SEQ-057（`multi seq check`） | 52 条 | 见本次提交 |
+| 2026-11-27 | S1 实现基线：`multi seq synth`（映射 + dff/comb 拆分 + BMC + Verilator）；REQ-SEQ-005 移入 S2；REQ-020/024/033 措辞对齐实现 | 52 条 | 见本次提交 |
 
 ## 1. 范围
 
@@ -51,7 +52,7 @@
 
 **REQ-SEQ-004（必须 · S0）** 输出按依赖自动区分 Moore / Mealy：只引用状态位即 Moore，引用输入即 Mealy；不引入单独的模式开关。
 
-**REQ-SEQ-005（应当 · S1）** spec 允许为每个输出声明 `registered: true`（输出打一拍）；寄存器化输出按额外状态位参与分析，成本计一次触发器（REQ-SEQ-032）。S0 遇到 `registered` 必须显式拒绝，不得静默忽略。
+**REQ-SEQ-005（应当 · S2）** spec 允许为每个输出声明 `registered: true`（输出打一拍）；寄存器化输出按额外状态位参与分析，成本计一次触发器（REQ-SEQ-032）。S0 遇到 `registered` 必须显式拒绝，不得静默忽略。
 
 **REQ-SEQ-006（必须 · S0）** 组合块的真值表行数 = `2^(state_bits + inputs)`；超过当前后端可承受规模时（复用现有内存预算模型）必须在加载阶段报错，不得跑到 OOM。
 
@@ -69,7 +70,7 @@
 
 ### 3.3 综合
 
-**REQ-SEQ-020（必须 · S1）** 组合块必须复用现有后端（`multi exact / multi synth / multi path / multi compose`），不得为时序逻辑另写一套覆盖/映射逻辑。
+**REQ-SEQ-020（必须 · S1）** 组合块的覆盖/优化必须复用现有后端（`multi exact/synth/path/compose`）或同一 Yosys/ABC + CDL 计价流水线；不得另造覆盖/映射器，也不得写死成本表。
 
 **REQ-SEQ-021（必须 · S1）** 触发器必须是**原语**：由标准单元库映射（`dfflibmap -liberty` 或等价步骤），不从组合网络推导；不得用组合反馈去「造」锁存器。
 
@@ -77,7 +78,7 @@
 
 **REQ-SEQ-023（必须 · S3）** 状态编码搜索必须对每个候选（binary / one-hot / gray）各跑一次完整综合与验证，按**实测**总成本选最小；选择规则必须确定（先比总成本，再比触发器数，再比编码名），不得依赖机器速度。
 
-**REQ-SEQ-024（必须 · S1）** 综合流水线必须复用现有映射/证明口径：组合部分仍走 `synthesize_rtl_atoms`（或同族函数），最终网表仍由 Yosys miter + Verilator 检验；时序部分新增验证见 §3.5。
+**REQ-SEQ-024（必须 · S1）** 映射与证明口径与组合流程一致：Yosys + 标准单元库 + CDL 实测成本 + SAT miter/仿真；时序部分额外要求 BMC 与仿真（§3.5、§4.6）。
 
 **REQ-SEQ-025（应当 · S2）** 可以接入 ABC 的顺序命令（`scorr` / `dch` / `retime` 等）作为可选后端，接入方式与 M1 的 `--abc` 相同：子进程、失败回退、改写前后等价证明、映射与计费不外包。
 
@@ -89,7 +90,7 @@
 
 **REQ-SEQ-032（必须 · S1）** JSON 必须分别报 `dffs`（实例数）、`state_bits`、`dff_cost`、`comb_cost`、`total`；不得把触发器成本混进 `atom_cost` 或 `cell_cost`。
 
-**REQ-SEQ-033（必须 · S1）** `static_cell()` 的白名单必须拆成「组合」与「时序」两类：时序单元只计价，不参与 κ 线性/PUN 对偶判定；`static_cmos` 报告必须分开列「组合单元」与「时序单元」。
+**REQ-SEQ-033（必须 · S1）** 时序单元的计价必须与组合单元分开：时序单元只进 `dff_cost`，组合单元进 `comb_cost`；若某个流程报告 static_cmos，时序单元不得参与 κ 线性/PUN 对偶判定。
 
 **REQ-SEQ-034（应当 · S1）** 多编码对比时必须同时报每个候选的 `total / comb_cost / dff_cost / dffs`，便于讲清「one-hot 用更多触发器换更简单组合」。
 
@@ -175,13 +176,12 @@
 ### 4.2 内部表示与流水线
 
 1. **加载**：spec -> `SeqSpec {k, inputs, reset, state_map, next[], outputs[]}`；位宽/重名/规模检查（REQ-SEQ-006）。
-2. **组装**：`MultiProblem`（next 位 + 输出），初始无 DC。
-3. **可达性**：BFS（状态数 ≤ 2^k，边数 = 2^k × 2^m）；同时产生 `reachable` 集合与每条转移的见证（用于状态图，REQ-SEQ-055）。
-4. **DC 掩码**：不可达 `(state,input)` 行写 `any`（REQ-SEQ-011/012）。
-5. **组合综合**：调用现有后端；编码候选循环在**外层**（每个编码重新组装一次 `MultiProblem`，因为状态位名/行序变了）。
-6. **RTL 发射**：组合块 + `always_ff`（或映射后触发器实例）；复位按 REQ-SEQ-022。
-7. **成本**：`comb_cost`（现有实测）+ `dff_cost`（CDL 单价 × 实例数）。
-8. **验证**：product-machine（主）+ `sat -seq`（BMC）+ Verilator（REQ-SEQ-040/041/042）。
+2. **组装**：`MultiProblem`（next 位 + 输出），不可达行写 `any`（REQ-SEQ-011）。
+3. **可达性**：BFS（状态数 ≤ 2^k，边数 = 2^k × 2^m）；产生 `reachable` 集合（状态图与 DC 都用它）。
+4. **RTL 发射**：`top.v` = 触发器（`always_ff`，复位按 REQ-SEQ-022）+ 组合块（`BoolFunc::sop` 生成的 `nxt_*` 与输出表达式）；同时发射 `gold.v`、`miter.v`、`tb.v`（§4.6）。
+5. **映射与成本**：`synth -top top; dfflibmap -liberty; abc -liberty; opt_clean`；对映射后的每个单元从 CDL 取晶体管数，时序单元进 `dff_cost`、其余进 `comb_cost`，`total = dff_cost + comb_cost`（REQ-SEQ-030..033）。
+6. **验证**：BMC（`sat -seq`）+ Verilator 仿真（§4.6）；S0 的 product machine 仍是 spec 级 oracle。
+7. **编码候选**（S3）：每个编码重新组装一次 `MultiProblem` 并跑完整流程，取实测最小。
 
 ### 4.3 可达性与 DC 的细节
 
@@ -206,13 +206,14 @@
 - 映射步骤（本地已核对）：`synth -top top` 之后触发器仍是 Yosys 内部 FF 单元（例如 `$_DFF_PN0_`），必须补 `dfflibmap -liberty <lib>` 才会变成库单元（异步复位实测映射到 `DFFR_X1`）。`dfflegalize` 用在需要把 FF 类型收敛/限制到目标库支持集合的场合（例如只允许 `$_DFF_PN0_`、或拒绝异步 set）；映射失败必须显式报错，不得静默换成同步复位。
 - 单价（附录 A）来自 CDL `M` 行计数；实现必须在运行时读取 CDL，不得把附录数字写死。
 
-### 4.6 验证架构
+### 4.6 验证架构（S1 实现）
 
-1. **product machine（主 oracle）**：DUT 必须是 FSM 级模型（spec 或从 RTL 提取的 FSM）。对 RTL DUT，v1 用「RTL 与 spec 各自综合成 FSM」比较；若 DUT 只有网表，用 Yosys 导出 next/output 真值表（`sat -show` 或写 JSON）后比较——实现细节在 S0 先只支持 spec 对 spec，S2 再扩到 RTL。
-2. **BMC**：生成 miter（spec golden vs DUT），复位序列用 `-set-at 1 rst 0`（或 1，按极性）→ `-set-at 2 rst 1` → `-seq N -prove mismatch 0`；开关初态用 `-set-init-undef` 明确「不假设」或 `-set-init-*` 明确「假设」，不得默认。
-3. **k-归纳**：可选 `-tempinduct`；若用，必须同时报 `proof_method=induction` 与归纳长度。
-4. **Verilator**：复位 1 拍 + N 拍固定种子激励；golden 用行为级 FSM；失配打印周期与信号（REQ-SEQ-042）。
-5. **一致性**：三者结论不一致时以 product machine 为准并当作 bug 定位（REQ-SEQ-046）。
+1. **product machine（S0 主 oracle）**：spec 与候选 FSM 从各自 reset 做 BFS，逐状态对逐输入比较输出（`compare_fsm`）；反例是从 reset 到失配的整条路径。它只比较 FSM 级模型，S1 的 RTL/网表由下面的 BMC/仿真覆盖。
+2. **BMC（S1）**：`gold` 是状态表实现（全部 2^k 个状态码 × 2^m 个输入组合，逐条 `st <=`，12 位上限），`miter` 用内部计数器 `cyc` 产生复位序列（`cyc==0` 时复位、`cyc>1` 时 `valid`），比较 `mismatch = valid & |(dut !== gold)`；`sat -seq <cycles+2> -prove mismatch 0` 覆盖 `cycles` 个功能周期，且对所有输入序列成立（SAT 全量化，不需要 `-set-at`）。
+3. **异步复位**：BMC 在 `flatten` 后跑 `async2sync`（miter 把复位当同步信号驱动；异步毛刺/亚稳态不在模型内，见 REQ-SEQ-081）。映射仍用异步单元（`DFFR_/DFFS_`），成本按实际单元计。
+4. **Verilator（S1）**：1 拍复位 + `cycles` 拍固定种子 LCG 激励，每个时钟沿后比较 DUT 与 gold，失配计数后打印 `PASS/FAIL`；日志必须有 `PASS` 且没有 `FAIL`。
+5. **不跳证明**：时序路径不调用 `proven_by_spec`；JSON 的 `proof_method` 只有 `bmc` / `bmc+sim`（REQ-SEQ-043）。
+6. **一致性**：product machine（spec 级）、BMC、仿真三者的结论必须一致；S1 的 product machine 仍只比较 spec-vs-spec，RTL 反推 FSM 的交叉在 S2（REQ-SEQ-046）。
 
 ### 4.7 线 B 的相位模型（S4 草案，先立接口）
 
@@ -230,8 +231,8 @@
 | 阶段 | 目标 | 退出条件 | 覆盖需求 |
 |---|---|---|---|
 | S0 | 纯 C++ 骨架：spec 加载、可达性/DC、DFF 计价、product-machine 验证、`multi seq check` | 2-bit counter + 序列检测器跑通；负控全红；不依赖 Yosys | 001–004, 006, 010–013, 040, 044, 057, 063 |
-| S1 | RTL 发射 + 映射 + 成本 + Verilator | `multi seq synth` 出网表，成本 = comb + dffs；Verilator 多周期 PASS | 005, 020–022, 024, 030–033, 041–043, 050–052 |
-| S2 | 证明与报告 | `sat -seq` + 可选 `-tempinduct`；三 oracle 一致；状态图渲染 | 025, 045, 046, 053–055 |
+| S1 | RTL 发射 + 映射 + 成本 + BMC/Verilator | `multi seq synth` 出网表，成本 = dff + comb；BMC 与 Verilator 多周期 PASS | 020–022, 024, 030–033, 041–043, 050–052 |
+| S2 | 证明与报告 | `sat -seq` + 可选 `-tempinduct`；三 oracle 一致；状态图渲染；打拍输出 | 005, 025, 045, 046, 053–055 |
 | S3 | 编码搜索 | binary/one-hot/gray 实测对比表；确定性选择 | 023, 034, 056 |
 | S4 | 相位语义（线 B） | DFF 内部 master–slave 分析；`\|D\|` 相位定义；43T 判定示例 | 070–073 |
 | S5 | 时序原子库 | 契约 + 状态相容搜索；至少一个计数器原子 | 082（届时改本文） |
@@ -423,7 +424,7 @@
 | ID | 摘要 | 阶段 |
 |---|---|---|
 | 001–004, 006 | 规格格式、编码、复位、Moore/Mealy、规模上限 | S0 |
-| 005 | 打拍输出（S1 支持，S0 拒绝） | S1 |
+| 005 | 打拍输出（S2 支持，S0/S1 拒绝） | S2 |
 | 010–014 | 可达性、DC 掩码、确定化、报告、最小化（可选） | S0–S2 |
 | 020–025 | 复用后端、DFF 原语、复位生成、编码搜索、同口径验证、ABC 可选 | S1–S2 |
 | 030–034 | 成本公式、CDL 单价、JSON 分项、static_cell 两栏、多编码对比 | S1–S3 |

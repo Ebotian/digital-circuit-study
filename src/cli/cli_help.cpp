@@ -27,6 +27,7 @@ Commands:
                  [--all] [--limit N] [--canonical] [--emit DIR]
                  [--verify none|yosys|sim|both|static] [--static-cmos] [--keep]
   seq check      --spec FILE [--dut FILE] [--cdl FILE] [--dff CELL] [--json]
+  seq synth      --spec FILE --out DIR [--cycles N] [--no-sim] [--json]
   verify equiv   --dut FILE --expr EXPR | --tt BITS [--vars A,B] [--keep]
   verify sim     --dut FILE --expr EXPR | --tt BITS [--vars A,B] [--keep]
   pipeline       --funcs 'name=EXPR,...' [--max-cost N] [--out DIR]

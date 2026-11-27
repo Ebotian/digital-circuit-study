@@ -3,6 +3,7 @@
 #include "cli/cli_common.hpp"
 #include "cli/cli_includes.hpp"
 #include "synthesis/fsm.hpp"
+#include "synthesis/seq_rtl.hpp"
 
 namespace dcstudy {
 
@@ -154,10 +155,105 @@ int cmd_seq_check(const Args &a) {
 
 } // namespace
 
+int cmd_seq_synth(const Args &a) {
+  const FsmSpec fsm = load_fsm_spec(a.need("spec"));
+  SeqSynthOptions opt;
+  opt.out_dir = a.get("out");
+  opt.liberty = a.get("liberty");
+  opt.cdl = a.get("cdl");
+  opt.simulate = !a.is("no-sim");
+  if (a.has("cycles")) {
+    try {
+      opt.cycles = std::stoi(a.get("cycles"));
+    } catch (const std::exception &) {
+      throw CliError("--cycles must be an integer");
+    }
+    if (opt.cycles < 1)
+      throw CliError("--cycles must be >= 1");
+  }
+  if (a.has("seed")) {
+    try {
+      opt.seed =
+          static_cast<std::uint32_t>(std::stoul(a.get("seed"), nullptr, 0));
+    } catch (const std::exception &) {
+      throw CliError("--seed must be an integer");
+    }
+  }
+  const FsmAnalysis analysis = analyze_fsm(fsm);
+  const SeqSynthResult r = synthesize_fsm(fsm, opt);
+  const bool json = a.is("json");
+  if (json) {
+    Json j;
+    j["ok"] = r.ok;
+    j["command"] = "seq.synth";
+    j["name"] = fsm.name;
+    j["state_bits"] = fsm.state_bits;
+    j["states"] = fsm.states.size();
+    Json inputs = Json::Array{};
+    for (const auto &name : fsm.inputs)
+      inputs.push_back(name);
+    j["inputs"] = std::move(inputs);
+    Json outputs = Json::Array{};
+    for (const auto &out : fsm.outputs)
+      outputs.push_back(out.name);
+    j["outputs"] = std::move(outputs);
+    j["rows"] = analysis.rows;
+    j["reachable_states"] = analysis.reachable.size();
+    j["dc_rows"] = analysis.dc_rows;
+    j["cycles"] = r.cycles;
+    j["verified"] = r.verified;
+    j["bmc"] = r.bmc;
+    j["sim"] = r.sim;
+    j["proof_method"] = r.proof_method;
+    j["dffs"] = r.dffs;
+    j["dff_unit"] = r.dff_unit;
+    j["dff_cost"] = r.dff_cost;
+    j["comb_cost"] = r.comb_cost;
+    j["total"] = r.total;
+    Json cells = Json::Array{};
+    for (const auto &use : r.cells) {
+      Json c;
+      c["cell"] = use.cell;
+      c["instances"] = use.instances;
+      c["transistors"] = use.transistors;
+      c["sequential"] = use.sequential;
+      cells.push_back(std::move(c));
+    }
+    j["cells"] = std::move(cells);
+    if (!r.files.empty()) {
+      Json files = Json::Array{};
+      for (const auto &name : r.files)
+        files.push_back(name);
+      j["files"] = std::move(files);
+    }
+    if (!r.reason.empty())
+      j["reason"] = r.reason;
+    std::cout << j.dump() << "\n";
+  } else if (!r.ok) {
+    std::cerr << "seq synth failed: " << r.reason << "\n";
+  } else {
+    std::cout << "seq synth " << fsm.name << "\n";
+    std::cout << "  " << fsm.state_bits << " state bits, " << fsm.inputs.size()
+              << " input(s), " << fsm.outputs.size() << " output(s)\n";
+    std::cout << "  dffs: " << r.dffs << " (" << r.dff_unit
+              << "T each) = " << r.dff_cost << "T\n";
+    std::cout << "  comb: " << r.comb_cost << "T, total: " << r.total << "T\n";
+    std::cout << "  proof: " << r.proof_method << " (" << r.cycles
+              << " cycles)\n";
+    if (r.verified)
+      std::cout << "  verified: yes\n";
+    else
+      std::cout << "  verified: no -- " << r.reason << "\n";
+  }
+  return r.verified ? 0 : 1;
+}
+
 int cmd_seq(const std::string &sub, int argc, char **argv) {
   const Args a = parse_args(argc, argv, 3);
   if (sub == "check")
     return cmd_seq_check(a);
+  if (sub == "synth")
+    return cmd_seq_synth(a);
   throw CliError("unknown seq subcommand: " + sub);
 }
 

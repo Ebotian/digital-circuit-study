@@ -139,7 +139,21 @@ FsmSpec load_fsm_spec(const std::string &path) {
     throw std::runtime_error("reset state '" + fsm.reset + "' is not in state");
 
   // Names must be unambiguous in the emitted RTL.
+  static const std::set<std::string> kRtlReserved = {
+      "clk", "rst", "rst_n", "top",   "gold",    "miter",
+      "tb",  "st",  "cyc",   "valid", "mismatch"};
+  for (const auto &name : fsm.inputs) {
+    if (kRtlReserved.count(name))
+      throw std::runtime_error("input '" + name +
+                               "' is reserved for the emitted RTL");
+    if (name.rfind("nxt_", 0) == 0)
+      throw std::runtime_error("input '" + name +
+                               "' collides with the next-state wire prefix");
+  }
   std::set<std::string> reserved(fsm.inputs.begin(), fsm.inputs.end());
+  for (const auto &var : fsm.state_vars)
+    if (reserved.count(var))
+      throw std::runtime_error("input '" + var + "' collides with a state bit");
   reserved.insert(fsm.state_vars.begin(), fsm.state_vars.end());
   for (const auto &[name, code] : fsm.states) {
     (void)code;
@@ -190,6 +204,9 @@ FsmSpec load_fsm_spec(const std::string &path) {
     const std::string name = need_string(o, "name");
     if (name.empty() || name == "VDD" || name == "VSS")
       throw std::runtime_error("bad output name: " + name);
+    if (kRtlReserved.count(name) || name.rfind("nxt_", 0) == 0)
+      throw std::runtime_error("output '" + name +
+                               "' is reserved for the emitted RTL");
     if (reserved.count(name) || !output_names.insert(name).second)
       throw std::runtime_error("output '" + name +
                                "' collides with another name");

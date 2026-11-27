@@ -17,6 +17,7 @@ FILC_SOURCES := src/cli/main.cpp src/cli/commands.cpp \
                 src/core/partial.cpp src/synthesis/static_exact.cpp src/synthesis/compose.cpp \
                 src/synthesis/abc_backend.cpp \
                 src/synthesis/fsm.cpp src/cli/cmd_seq.cpp \
+                src/synthesis/seq_rtl.cpp \
                 src/synthesis/template_synth.cpp src/switch/switchlevel.cpp \
                 src/switch/static_cells.cpp \
                 src/synthesis/synthesis.cpp src/core/verilog.cpp \
