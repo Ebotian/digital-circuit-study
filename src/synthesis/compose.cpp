@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -98,12 +99,14 @@ std::string temp_dir() {
 
 namespace {
 
-// Greedy library composition: pick atom instances that reduce the number of
-// output conflicts (row pairs with equal selected signals but different
-// outputs), then synthesize the remaining glue as a mux2 network.
+// One library instance wired to a set of spec inputs, with the signal table of
+// every output.  The search prices these, keeps the cheapest instance per
+// distinct signal tuple, and then looks for the cheapest set whose signals
+// determine all spec outputs; the undetermined rest becomes mux2 glue.
 struct Cand {
   int atom = -1;
-  std::vector<std::size_t> vars;                // target variable indices
+  int cost = 0;
+  std::vector<std::size_t> vars;                // atom var -> spec var
   std::vector<std::vector<unsigned char>> outs; // [output][row]
 };
 
@@ -143,7 +146,66 @@ std::string atom_module_rtl(const MultiProblem &atom) {
 }
 
 } // namespace
-
+FuncSignature canonical_signature(const std::vector<unsigned char> &table,
+                                  std::size_t n) {
+  FuncSignature sig;
+  const std::size_t rows = std::size_t{1} << n;
+  if (n == 0 || table.size() < rows)
+    return sig;
+  std::vector<std::size_t> essential;
+  for (std::size_t v = 0; v < n; ++v) {
+    const std::size_t bit = std::size_t{1} << (n - 1 - v);
+    for (std::size_t m = 0; m < rows; ++m) {
+      if (table[m] != table[m ^ bit]) {
+        essential.push_back(v);
+        break;
+      }
+    }
+  }
+  const std::size_t a = essential.size();
+  sig.arity = a;
+  if (a == 0) {
+    sig.table.assign(1, table[0]);
+    sig.exact = true;
+    return sig;
+  }
+  // f restricted to its essential variables, big-endian in ascending order.
+  std::vector<unsigned char> projected(std::size_t{1} << a);
+  for (std::size_t p = 0; p < projected.size(); ++p) {
+    std::size_t m = 0;
+    for (std::size_t i = 0; i < a; ++i)
+      if (((p >> (a - 1 - i)) & 1u) != 0)
+        m |= std::size_t{1} << (n - 1 - essential[i]);
+    projected[p] = table[m];
+  }
+  sig.order = essential;
+  sig.table = projected;
+  sig.exact = a <= kMaxSignatureVars;
+  if (!sig.exact)
+    return sig;
+  // Rename the essential variables: keep the order with the smallest table.
+  std::vector<std::size_t> order = essential;
+  while (std::next_permutation(order.begin(), order.end())) {
+    std::vector<std::size_t> pos(a, 0); // essential index -> canonical slot
+    for (std::size_t j = 0; j < a; ++j)
+      for (std::size_t i = 0; i < a; ++i)
+        if (essential[i] == order[j])
+          pos[i] = j;
+    std::vector<unsigned char> perm(projected.size());
+    for (std::size_t p = 0; p < perm.size(); ++p) {
+      std::size_t q = 0;
+      for (std::size_t i = 0; i < a; ++i)
+        if (((p >> (a - 1 - pos[i])) & 1u) != 0)
+          q |= std::size_t{1} << (a - 1 - i);
+      perm[p] = projected[q];
+    }
+    if (perm < sig.table) {
+      sig.table = std::move(perm);
+      sig.order = order;
+    }
+  }
+  return sig;
+}
 // Complete a partially-specified truth table: subtrees without care rows are
 // filled to match their sibling, so the BDD collapses free coordinates.
 struct MaskBuffers {
@@ -210,7 +272,6 @@ std::string signal_prefix(const MultiProblem &spec, std::size_t count) {
     prefix += "x";
   return prefix;
 }
-
 std::optional<MultiProblem>
 glue_from_signals(const MultiProblem &spec,
                   const std::vector<std::vector<unsigned char>> &signals,
@@ -264,502 +325,794 @@ glue_from_signals(const MultiProblem &spec,
   }
   return h;
 }
+namespace {
 
-std::optional<ComposeResult>
-compose_from_library(const MultiProblem &spec,
-                     const std::vector<MultiProblem> &library) {
-  const std::size_t n = spec.vars.size();
-  const std::size_t rows = std::size_t{1} << n;
-  if (library.empty() || spec.outputs.empty())
-    return std::nullopt;
+constexpr int kUnreachable = std::numeric_limits<int>::max();
+// Deterministic work caps: a default run must not depend on the machine's
+// speed, and --time-budget-ms adds a wall-clock cut on top.  200k conflict
+// evaluations is roughly a third of a second on the development machine.
+constexpr std::size_t kMaxSearchNodes = 200000;
+// Greedy starts: the empty plan, the strongest exact covers, and pairs of
+// disjoint covers.  Covers are cheap to rank (one set bit per covered output),
+// so a bigger seed list costs little; the pair list is capped because it grows
+// quadratically.
+constexpr std::size_t kMaxCoverSeeds = 16;
+constexpr std::size_t kMaxCoverPairs = 4;
+constexpr std::size_t kMaxGreedySteps = 6;
+// Each plan evaluation builds a BDD glue network, so the lookahead sweep stops
+// evaluating after this many completions; the cheapest ones found so far win.
+constexpr std::size_t kMaxPlanEvaluations = 64;
 
-  std::vector<unsigned char> tgt_rows(spec.outputs.size() * rows);
-  for (std::size_t k = 0; k < spec.outputs.size(); ++k)
-    for (std::size_t m = 0; m < rows; ++m)
-      tgt_rows[k * rows + m] =
-          spec.outputs[k].func.value(static_cast<std::uint32_t>(m)) ? 1 : 0;
-  std::vector<std::vector<unsigned char>> tvars(
-      n, std::vector<unsigned char>(rows));
-  for (std::size_t v = 0; v < n; ++v)
-    for (std::size_t m = 0; m < rows; ++m)
-      tvars[v][m] = (m >> (n - 1 - v)) & 1u;
+// Wall-clock limit shared by every phase of the library search.  The clock is
+// read on candidate and expansion boundaries only, so an unlimited run (0) does
+// not pay for it in the inner loops.
+struct SearchBudget {
+  bool bounded = false;
+  bool expired = false;
+  std::chrono::steady_clock::time_point deadline;
 
+  void start(long long ms) {
+    if (ms <= 0)
+      return;
+    bounded = true;
+    deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+  }
+  bool check() {
+    if (!bounded || expired)
+      return expired;
+    if (std::chrono::steady_clock::now() >= deadline)
+      expired = true;
+    return expired;
+  }
+};
+
+// The measured problem: atom prices, every candidate instance, and the target
+// output tables.  Candidate output tables live in a vector by value, so beam
+// states hold pointers into elements that never move during the search.
+struct Problem {
+  Problem(const MultiProblem &spec_, const std::vector<MultiProblem> &library_)
+      : spec(spec_), library(library_), n(spec_.vars.size()),
+        rows(std::size_t{1} << n), atom_cost(library_.size(), -1) {
+    tgt_rows.resize(spec.outputs.size() * rows);
+    for (std::size_t k = 0; k < spec.outputs.size(); ++k)
+      for (std::size_t m = 0; m < rows; ++m)
+        tgt_rows[k * rows + m] =
+            spec.outputs[k].func.value(static_cast<std::uint32_t>(m)) ? 1 : 0;
+    tvars.assign(n, std::vector<unsigned char>(rows));
+    for (std::size_t v = 0; v < n; ++v)
+      for (std::size_t m = 0; m < rows; ++m)
+        tvars[v][m] = static_cast<unsigned char>((m >> (n - 1 - v)) & 1u);
+  }
+
+  const MultiProblem &spec;
+  const std::vector<MultiProblem> &library;
+  std::size_t n;
+  std::size_t rows;
+  std::vector<unsigned char> tgt_rows;
+  std::vector<std::vector<unsigned char>> tvars;
+  std::vector<int> atom_cost;
   std::vector<Cand> cands;
-  std::set<std::string> cand_sig;
-  int glue_mux_cost = kMux2FallbackCost; // used only if no measured mux2
-  std::vector<int> atom_cost(library.size(), -1);
-  for (std::size_t ai = 0; ai < library.size(); ++ai) {
-    const MultiProblem &atom = library[ai];
-    const std::size_t k = atom.vars.size();
-    if (k == 0 || k > n)
-      continue;
-    // <=4-input atoms can be costed by the exact backend (no Yosys process);
-    // the final mapping still re-measures every atom it actually uses.
-    int cost = -1;
-    if (atom.vars.size() <= 4) {
-      const StaticExactResult ex = synthesize_static_exact_multi(atom);
-      if (ex.ok && ex.verified)
-        cost = ex.total;
-    }
-    if (cost < 0) {
-      const MultiStageMultiDesign am = synthesize_multistage_static_multi(atom);
-      if (!am.ok || !am.verified)
-        continue;
-      cost = am.total;
-    }
-    atom_cost[ai] = cost;
-    // Already measured above (exact backend or the mapper); mapping the same
-    // atom a second time just for the glue estimate is wasted work.
-    if (atom.title == "mux2" && cost >= 0)
-      glue_mux_cost = cost;
-    std::vector<std::size_t> comb(k);
-    std::iota(comb.begin(), comb.end(), 0);
-    while (true) {
-      Cand c;
-      c.atom = static_cast<int>(ai);
-      c.vars = comb;
-      c.outs.assign(atom.outputs.size(), std::vector<unsigned char>(rows));
-      for (std::size_t m = 0; m < rows; ++m) {
-        std::uint32_t idx = 0;
-        for (std::size_t j = 0; j < k; ++j)
-          idx = (idx << 1u) | static_cast<std::uint32_t>(tvars[comb[j]][m]);
-        for (std::size_t o = 0; o < atom.outputs.size(); ++o)
-          c.outs[o][m] = atom.outputs[o].func.value(idx) ? 1 : 0;
-      }
-      auto add_candidate = [&](Cand &&cand) {
-        std::string key = std::to_string(cand.atom) + ":";
-        for (const auto &o : cand.outs)
-          key.append(reinterpret_cast<const char *>(o.data()), o.size());
-        if (cand_sig.insert(std::move(key)).second)
-          cands.push_back(std::move(cand));
-      };
-      add_candidate(std::move(c));
-      if (k == 4 && n == 3 * k) {
-        std::vector<std::size_t> rv(comb.rbegin(), comb.rend());
-        Cand rc;
-        rc.atom = static_cast<int>(ai);
-        rc.vars = rv;
-        rc.outs.assign(atom.outputs.size(), std::vector<unsigned char>(rows));
-        for (std::size_t m = 0; m < rows; ++m) {
-          std::uint32_t idx = 0;
-          for (std::size_t j = 0; j < k; ++j)
-            idx = (idx << 1u) | static_cast<std::uint32_t>(tvars[rv[j]][m]);
-          for (std::size_t o = 0; o < atom.outputs.size(); ++o)
-            rc.outs[o][m] = atom.outputs[o].func.value(idx) ? 1 : 0;
-        }
-        add_candidate(std::move(rc));
-      }
-      // permutations for small atoms (k<=3); k=4 stayed identity because the
-      // 24x candidate growth outweighed the search benefit on the current set.
-      if (k <= 3) {
-        auto perm = comb;
-        while (std::next_permutation(perm.begin(), perm.end())) {
-          Cand pc;
-          pc.atom = static_cast<int>(ai);
-          pc.vars = perm;
-          pc.outs.assign(atom.outputs.size(), std::vector<unsigned char>(rows));
-          for (std::size_t m = 0; m < rows; ++m) {
-            std::uint32_t idx = 0;
-            for (std::size_t j = 0; j < k; ++j)
-              idx = (idx << 1u) | static_cast<std::uint32_t>(tvars[perm[j]][m]);
-            for (std::size_t o = 0; o < atom.outputs.size(); ++o)
-              pc.outs[o][m] = atom.outputs[o].func.value(idx) ? 1 : 0;
-          }
-          add_candidate(std::move(pc));
-        }
-      }
-      // next combination
-      std::size_t i = k;
-      while (i > 0) {
-        --i;
-        if (comb[i] + 1 < n - (k - 1 - i)) {
-          ++comb[i];
-          break;
-        }
-        if (i == 0) {
-          comb.clear();
-          break;
-        }
-      }
-      if (comb.empty())
-        break;
-      for (std::size_t j = i + 1; j < k; ++j)
-        comb[j] = comb[j - 1] + 1;
-    }
-  }
-  if (cands.empty())
-    return std::nullopt;
+  std::unordered_map<std::string, std::size_t> cand_index;
+  std::vector<unsigned> cover_mask; // spec outputs a candidate realises exactly
+  std::vector<int> zero;            // conflict scratch, reused per call
+  std::vector<int> one;
+  std::vector<int> touched;
+  std::size_t nodes = 0;
+  int mux_cost = kMux2FallbackCost;
+  SearchBudget budget;
+};
 
-  auto conflicts =
-      [&](const std::vector<const std::vector<unsigned char> *> &sigs) {
-        long long total = 0;
-        for (std::size_t k = 0; k < spec.outputs.size(); ++k) {
-          std::unordered_map<std::uint64_t, std::pair<int, int>> buckets;
-          for (std::size_t m = 0; m < rows; ++m) {
-            std::uint64_t key = 0;
-            for (const auto *s : sigs)
-              key = (key << 1u) | ((*s)[m] ? 1u : 0u);
-            auto &b = buckets[key];
-            if (tgt_rows[k * rows + m])
-              ++b.second;
-            else
-              ++b.first;
-          }
-          for (const auto &[_, b] : buckets)
-            total += 1LL * b.first * b.second;
-        }
-        return total;
-      };
+struct Plan {
+  std::vector<int> chosen;
+  int atoms = 0;
+  int muxes = 0;
+  int total = 0;
+};
 
-  auto build_h =
-      [&](const std::vector<const std::vector<unsigned char> *> &sigs,
-          const std::vector<std::size_t> &order = {})
-      -> std::optional<MultiProblem> {
-    std::vector<std::vector<unsigned char>> tables;
-    tables.reserve(sigs.size());
-    for (const auto *s : sigs)
-      tables.push_back(*s);
-    return glue_from_signals(spec, tables, order);
-  };
-
-  auto best_h = [&](const std::vector<const std::vector<unsigned char> *> &sigs)
-      -> std::pair<std::optional<MultiProblem>, int> {
-    const std::size_t ns = sigs.size();
-    std::optional<MultiProblem> best;
-    int best_count = std::numeric_limits<int>::max();
-    std::vector<std::size_t> id(ns);
-    std::iota(id.begin(), id.end(), 0);
-    std::vector<std::vector<std::size_t>> orders;
-    orders.push_back(id);
-    for (std::size_t j = 0; j < ns; ++j) {
-      std::vector<std::size_t> o;
-      o.reserve(ns);
-      o.push_back(j);
-      for (std::size_t k = 0; k < ns; ++k)
-        if (k != j)
-          o.push_back(k);
-      orders.push_back(std::move(o));
-    }
-    std::vector<std::size_t> rev(id.rbegin(), id.rend());
-    orders.push_back(std::move(rev));
-    for (const auto &order : orders) {
-      auto h = build_h(sigs, order);
-      if (!h)
-        continue;
-      const int c = bdd_mux_count(*h);
-      if (c < best_count) {
-        best = std::move(h);
-        best_count = c;
-      }
-    }
-    return {best, best_count};
-  };
-
-  // Partition constructor for a multi-output atom of width k on n = 2k:
-  // two disjoint groups + optional single-output atoms, costed exactly.
-  std::optional<std::vector<int>> partition_best;
-  int partition_total = std::numeric_limits<int>::max();
-  for (std::size_t ai = 0; ai < library.size(); ++ai) {
-    const std::size_t k = library[ai].vars.size();
-    if (library[ai].outputs.size() < 2 || k < 2 || n != 2 * k)
-      continue;
-    std::vector<int> molist, solist;
-    for (std::size_t ci = 0; ci < cands.size(); ++ci) {
-      if (cands[ci].atom == static_cast<int>(ai))
-        molist.push_back(static_cast<int>(ci));
-      else if (cands[ci].vars.size() == k &&
-               library[cands[ci].atom].outputs.size() == 1)
-        solist.push_back(static_cast<int>(ci));
-    }
-    for (std::size_t i = 0; i < molist.size(); ++i)
-      for (std::size_t j = i + 1; j < molist.size(); ++j) {
-        const auto &a = cands[molist[i]].vars;
-        const auto &b = cands[molist[j]].vars;
-        std::vector<bool> used(n, false);
-        bool ok = true;
-        for (auto v : a) {
-          if (used[v])
-            ok = false;
-          used[v] = true;
-        }
-        for (auto v : b) {
-          if (used[v])
-            ok = false;
-          used[v] = true;
-        }
-        for (bool u : used)
-          ok = ok && u;
-        if (!ok)
-          continue;
-        for (unsigned mask = 0; mask < 4u; ++mask) {
-          std::vector<int> plan{molist[i], molist[j]};
-          for (int g = 0; g < 2; ++g) {
-            if (!(mask & (1u << static_cast<unsigned>(g))))
-              continue;
-            for (int ci : solist) {
-              if (cands[ci].vars != (g == 0 ? a : b))
-                continue;
-              plan.push_back(ci);
-              break;
-            }
-          }
-          std::vector<const std::vector<unsigned char> *> sv;
-          int cost = 0;
-          for (int ci : plan) {
-            for (const auto &o : cands[ci].outs)
-              sv.push_back(&o);
-            cost += atom_cost[cands[ci].atom];
-          }
-          if (conflicts(sv) != 0)
-            continue;
-          const auto [h, mux] = best_h(sv);
-          if (!h)
-            continue;
-          const int total = cost + glue_mux_cost * mux;
-          if (total < partition_total) {
-            partition_total = total;
-            partition_best = plan;
-          }
-        }
-      }
-  }
-
+struct State {
   std::vector<int> chosen;
   std::vector<const std::vector<unsigned char> *> sigs;
-  long long cur = conflicts(sigs);
-  if (partition_best) {
-    chosen = *partition_best;
-    for (int ci : chosen)
-      for (const auto &o : cands[ci].outs)
-        sigs.push_back(&o);
-    cur = 0;
-  }
+  long long conf = 0;
+  int atoms = 0;
+};
 
-  // g=3 direct cover: atom output tables that equal spec output tables.
-  if (!partition_best) {
-    for (std::size_t ai = 0; ai < library.size(); ++ai) {
-      const std::size_t k = library[ai].vars.size();
-      if (library[ai].outputs.size() < 2 || n != 3 * k)
-        continue;
-      std::map<std::string, int> spec_key;
-      for (std::size_t o = 0; o < spec.outputs.size(); ++o)
-        spec_key[std::string(
-            reinterpret_cast<const char *>(tgt_rows.data() + o * rows), rows)] =
-            static_cast<int>(o);
-      struct Hit {
-        int ci;
-        unsigned mask;
-      };
-      std::vector<Hit> hits;
-      std::set<std::pair<int, std::string>> hit_seen;
-      for (std::size_t ci = 0; ci < cands.size(); ++ci) {
-        if (cands[ci].atom != static_cast<int>(ai))
-          continue;
-        unsigned mask = 0;
-        bool all = true;
-        for (const auto &o : cands[ci].outs) {
-          auto it = spec_key.find(
-              std::string(reinterpret_cast<const char *>(o.data()), rows));
-          if (it == spec_key.end() ||
-              (mask & (1u << static_cast<unsigned>(it->second)))) {
-            all = false;
-            break;
-          }
-          mask |= 1u << static_cast<unsigned>(it->second);
-        }
-        if (!all)
-          continue;
-        std::vector<std::size_t> key_vars = cands[ci].vars;
-        std::sort(key_vars.begin(), key_vars.end());
-        std::string key(reinterpret_cast<const char *>(key_vars.data()),
-                        key_vars.size() * sizeof(std::size_t));
-        if (hit_seen.emplace(static_cast<int>(mask), key).second)
-          hits.push_back({static_cast<int>(ci), mask});
-      }
-      const unsigned full_mask = (1u << spec.outputs.size()) - 1u;
-      // Expand each hit over its don't-care inputs: an atom output may not
-      // depend on every input (pe42 ignores a0), so the same function can
-      // occupy any k-set containing its essential vars. The unused slots are
-      // filled with the vars left over by the other groups.
-      std::vector<Hit> expanded;
-      for (const auto &hh : hits) {
-        const Cand &c = cands[hh.ci];
-        std::vector<int> free_pos;
-        std::vector<std::size_t> essential;
-        for (std::size_t j = 0; j < k; ++j) {
-          bool dep = false;
-          const std::uint32_t bit = 1u << (n - 1 - c.vars[j]);
-          for (std::size_t m = 0; m < rows && !dep; ++m)
-            for (const auto &o : c.outs)
-              if (o[m] != o[m ^ bit]) {
-                dep = true;
-                break;
-              }
-          if (dep)
-            essential.push_back(c.vars[j]);
-          else
-            free_pos.push_back(static_cast<int>(j));
-        }
-        if (!free_pos.empty()) {
-          std::vector<std::size_t> free_vars;
-          for (std::size_t v = 0; v < n; ++v)
-            if (std::find(essential.begin(), essential.end(), v) ==
-                essential.end())
-              free_vars.push_back(v);
-          std::vector<std::size_t> pick(free_pos.size());
-          std::function<void(std::size_t, std::size_t)> rec =
-              [&](std::size_t at, std::size_t from) {
-                if (at == pick.size()) {
-                  Cand nc = c;
-                  for (std::size_t t = 0; t < pick.size(); ++t)
-                    nc.vars[free_pos[t]] = pick[t];
-                  cands.push_back(std::move(nc));
-                  expanded.push_back(
-                      {static_cast<int>(cands.size() - 1), hh.mask});
-                  return;
-                }
-                for (std::size_t v = from; v < free_vars.size(); ++v) {
-                  pick[at] = free_vars[v];
-                  rec(at + 1, v + 1);
-                }
-              };
-          rec(0, 0);
-        } else {
-          expanded.push_back(hh);
-        }
-      }
-      hits = std::move(expanded);
-      for (std::size_t i = 0; i < hits.size() && !partition_best; ++i)
-        for (std::size_t j = i + 1; j < hits.size() && !partition_best; ++j)
-          for (std::size_t l = j + 1; l < hits.size() && !partition_best; ++l) {
-            if ((hits[i].mask & hits[j].mask) ||
-                (hits[i].mask & hits[l].mask) || (hits[j].mask & hits[l].mask))
-              continue;
-            if ((hits[i].mask | hits[j].mask | hits[l].mask) != full_mask)
-              continue;
-            std::vector<int> plan{hits[i].ci, hits[j].ci, hits[l].ci};
-            std::vector<bool> used(n, false);
-            bool ok = true;
-            for (int ci : plan) {
-              for (auto v : cands[ci].vars) {
-                if (used[v])
-                  ok = false;
-                used[v] = true;
-              }
-            }
-            for (bool u : used)
-              ok = ok && u;
-            if (!ok)
-              continue;
-            std::vector<const std::vector<unsigned char> *> sv;
-            for (int ci : plan)
-              for (const auto &o : cands[ci].outs)
-                sv.push_back(&o);
-            if (conflicts(sv) != 0)
-              continue;
-            const auto [h, mux] = best_h(sv);
-            if (!h)
-              continue;
-            partition_best = plan;
-          }
-    }
-  }
+std::string signal_key(const std::vector<std::vector<unsigned char>> &outs) {
+  std::string key;
+  for (const auto &o : outs)
+    key.append(reinterpret_cast<const char *>(o.data()), o.size());
+  return key;
+}
 
-  if (!partition_best) {
-    struct State {
-      std::vector<int> chosen;
-      long long conf = 0;
-      int cost = 0;
-    };
-    std::vector<State> beam{
-        {},
-    };
-    beam[0].conf = conflicts({});
-    const int width =
-        std::min(16, std::max(4, static_cast<int>(std::sqrt(cands.size()))));
-    std::optional<State> best_state;
-    for (std::size_t depth = 0; depth < cands.size() && !beam.empty();
-         ++depth) {
-      std::vector<State> next;
-      std::set<std::string> seen;
-      for (const auto &st : beam) {
-        for (std::size_t ci = 0; ci < cands.size(); ++ci) {
-          if (std::find(st.chosen.begin(), st.chosen.end(),
-                        static_cast<int>(ci)) != st.chosen.end())
-            continue;
-          State ns = st;
-          ns.chosen.push_back(static_cast<int>(ci));
-          ns.cost += atom_cost[cands[ci].atom];
-          std::vector<const std::vector<unsigned char> *> sv;
-          for (int x : ns.chosen)
-            for (const auto &o : cands[x].outs)
-              sv.push_back(&o);
-          ns.conf = conflicts(sv);
-          if (ns.conf == 0) {
-            if (!best_state || ns.cost < best_state->cost)
-              best_state = ns;
-            continue;
-          }
-          std::string key;
-          for (int x : ns.chosen)
-            key += std::to_string(x) + ",";
-          if (!seen.insert(key).second)
-            continue;
-          next.push_back(std::move(ns));
-        }
-      }
-      std::sort(next.begin(), next.end(), [](const State &a, const State &b) {
-        return a.conf != b.conf ? a.conf < b.conf : a.cost < b.cost;
-      });
-      if (static_cast<int>(next.size()) > width)
-        next.resize(width);
-      beam = std::move(next);
+// Signals identical on every spec row are interchangeable, so only the cheapest
+// instance that produces them stays in the candidate list.  This is what keeps
+// the search independent of variable names: permutations that realise the same
+// function collapse into one candidate.
+void add_candidate(Problem &p, int ai, const std::vector<std::size_t> &vars) {
+  const MultiProblem &atom = p.library[static_cast<std::size_t>(ai)];
+  Cand c;
+  c.atom = ai;
+  c.cost = p.atom_cost[static_cast<std::size_t>(ai)];
+  c.vars = vars;
+  c.outs.assign(atom.outputs.size(), std::vector<unsigned char>(p.rows, 0));
+  for (std::size_t m = 0; m < p.rows; ++m) {
+    std::uint32_t idx = 0;
+    for (std::size_t j = 0; j < vars.size(); ++j)
+      idx = (idx << 1u) | static_cast<std::uint32_t>(p.tvars[vars[j]][m]);
+    for (std::size_t o = 0; o < atom.outputs.size(); ++o)
+      c.outs[o][m] = atom.outputs[o].func.value(idx) ? 1 : 0;
+  }
+  std::string key = signal_key(c.outs);
+  const auto [it, fresh] = p.cand_index.emplace(std::move(key), p.cands.size());
+  if (!fresh) {
+    Cand &old = p.cands[it->second];
+    if (c.cost < old.cost || (c.cost == old.cost && c.vars < old.vars)) {
+      old.atom = ai;
+      old.cost = c.cost;
+      old.vars = std::move(c.vars);
     }
-    if (best_state) {
-      chosen = best_state->chosen;
-      for (int ci : chosen)
-        for (const auto &o : cands[ci].outs)
-          sigs.push_back(&o);
-      cur = 0;
+    return;
+  }
+  p.cands.push_back(std::move(c));
+}
+
+// The glue network instantiates the hard-coded mux2 module emitted below, so a
+// library module called mux2 has to be that same 2:1 mux with the same ports.
+// Anything else would either be redefined in atoms.v or silently mapped as the
+// glue cell, so it is not a usable atom.
+bool glue_mux_compatible(const MultiProblem &atom) {
+  if (atom.vars.size() != 3 || atom.outputs.size() != 1)
+    return false;
+  if (atom.vars != std::vector<std::string>{"A", "B", "S"} ||
+      atom.names.size() != 1 || atom.names[0] != "Y")
+    return false;
+  for (std::size_t x = 0; x < 8; ++x) {
+    const bool a = (x >> 2u) & 1u;
+    const bool b = (x >> 1u) & 1u;
+    const bool sel = x & 1u;
+    const bool expected = (sel && b) || (!sel && a);
+    if (atom.outputs[0].func.value(static_cast<std::uint32_t>(x)) != expected)
+      return false;
+  }
+  return true;
+}
+
+int measure_atom_cost(const MultiProblem &atom) {
+  if (atom.vars.size() <= 4) {
+    const StaticExactResult ex = synthesize_static_exact_multi(atom);
+    if (ex.ok && ex.verified)
+      return ex.total;
+  }
+  const MultiStageMultiDesign am = synthesize_multistage_static_multi(atom);
+  if (!am.ok || !am.verified)
+    return -1;
+  return am.total;
+}
+void add_candidate_combinations(Problem &p, std::size_t ai) {
+  const std::size_t k = p.library[ai].vars.size();
+  const int a = static_cast<int>(ai);
+  std::vector<std::size_t> comb(k);
+  std::iota(comb.begin(), comb.end(), 0);
+  while (true) {
+    if (p.budget.check())
+      return;
+    add_candidate(p, a, comb);
+    if (k <= 3) {
+      std::vector<std::size_t> perm = comb;
+      while (std::next_permutation(perm.begin(), perm.end())) {
+        if (p.budget.check())
+          return;
+        add_candidate(p, a, perm);
+      }
+    } else if (k == 4) {
+      // k=4 stays identity + reverse: the signature pass below adds exactly
+      // the permutations that realise a spec output, without 24x the cost.
+      std::vector<std::size_t> rev(comb.rbegin(), comb.rend());
+      add_candidate(p, a, rev);
+    }
+    std::size_t i = k;
+    while (i > 0) {
+      --i;
+      if (comb[i] + 1 < p.n - (k - 1 - i)) {
+        ++comb[i];
+        break;
+      }
+      if (i == 0)
+        return;
+    }
+    for (std::size_t j = i + 1; j < k; ++j)
+      comb[j] = comb[j - 1] + 1;
+  }
+}
+
+// Equality of canonical tables means the atom output realises the spec output
+// when essential atom var a.order[j] is wired to essential spec var t.order[j].
+bool signature_match(const FuncSignature &a, const FuncSignature &t,
+                     std::vector<std::size_t> &vars) {
+  if (a.arity != t.arity || a.table != t.table)
+    return false;
+  if (a.exact != t.exact)
+    return false; // canonical and non-canonical orders are incomparable
+  for (std::size_t j = 0; j < a.arity; ++j)
+    vars[a.order[j]] = t.order[j];
+  return true;
+}
+
+// Wire the atom inputs the matched function does not depend on to the lowest
+// spec variables nobody claimed yet.  They cannot change the signal value, but
+// they do have to name an existing net.
+std::optional<std::vector<std::size_t>>
+complete_vars(const Problem &p, std::vector<std::size_t> vars,
+              std::vector<bool> set) {
+  std::vector<bool> used(p.n, false);
+  for (std::size_t j = 0; j < vars.size(); ++j)
+    if (set[j])
+      used[vars[j]] = true;
+  std::size_t next = 0;
+  for (std::size_t j = 0; j < vars.size(); ++j) {
+    if (set[j])
+      continue;
+    while (next < p.n && used[next])
+      ++next;
+    if (next >= p.n)
+      return std::nullopt;
+    vars[j] = next;
+    used[next] = true;
+    set[j] = true;
+  }
+  return vars;
+}
+void add_signature_matches(Problem &p) {
+  std::vector<FuncSignature> tgt(p.spec.outputs.size());
+  for (std::size_t t = 0; t < p.spec.outputs.size(); ++t) {
+    const unsigned char *base = p.tgt_rows.data() + t * p.rows;
+    tgt[t] = canonical_signature(
+        std::vector<unsigned char>(base, base + p.rows), p.n);
+  }
+  for (std::size_t ai = 0; ai < p.library.size(); ++ai) {
+    const MultiProblem &atom = p.library[ai];
+    const std::size_t k = atom.vars.size();
+    if (p.atom_cost[ai] < 0 || k == 0 || k > p.n)
+      continue;
+    std::vector<FuncSignature> sigs(atom.outputs.size());
+    for (std::size_t o = 0; o < atom.outputs.size(); ++o) {
+      std::vector<unsigned char> own(std::size_t{1} << k);
+      for (std::size_t x = 0; x < own.size(); ++x)
+        own[x] =
+            atom.outputs[o].func.value(static_cast<std::uint32_t>(x)) ? 1 : 0;
+      sigs[o] = canonical_signature(own, k);
+    }
+    for (std::size_t o = 0; o < sigs.size(); ++o) {
+      for (std::size_t t = 0; t < tgt.size(); ++t) {
+        std::vector<std::size_t> vars(k, 0);
+        if (!signature_match(sigs[o], tgt[t], vars))
+          continue;
+        std::vector<bool> set(k, false);
+        for (std::size_t j = 0; j < sigs[o].arity; ++j)
+          set[sigs[o].order[j]] = true;
+        if (auto full = complete_vars(p, vars, set))
+          add_candidate(p, static_cast<int>(ai), *full);
+      }
+    }
+    // One mapping consistent across every output turns a multi-output atom into
+    // a single instance instead of one instance per output.
+    std::vector<std::size_t> merged(k, 0);
+    std::vector<bool> set(k, false);
+    bool consistent = true;
+    for (std::size_t o = 0; o < sigs.size() && consistent; ++o) {
+      for (std::size_t t = 0; t < tgt.size(); ++t) {
+        std::vector<std::size_t> vars(k, 0);
+        if (!signature_match(sigs[o], tgt[t], vars))
+          continue;
+        bool clash = false;
+        for (std::size_t j = 0; j < sigs[o].arity && !clash; ++j) {
+          const std::size_t av = sigs[o].order[j];
+          clash = set[av] && merged[av] != vars[av];
+        }
+        if (clash) {
+          consistent = false;
+          break;
+        }
+        for (std::size_t j = 0; j < sigs[o].arity; ++j) {
+          const std::size_t av = sigs[o].order[j];
+          merged[av] = vars[av];
+          set[av] = true;
+        }
+        break;
+      }
+    }
+    if (consistent) {
+      if (auto full = complete_vars(p, merged, set))
+        add_candidate(p, static_cast<int>(ai), *full);
     }
   }
-  while (cur > 0 && sigs.size() < kMaxGlueSignals) {
-    int best = -1;
-    long long best_conf = cur;
-    int best_cost = std::numeric_limits<int>::max();
-    for (std::size_t ci = 0; ci < cands.size(); ++ci) {
+}
+
+void generate_candidates(Problem &p) {
+  for (std::size_t ai = 0; ai < p.library.size(); ++ai) {
+    const MultiProblem &atom = p.library[ai];
+    if (atom.vars.empty() || atom.vars.size() > p.n)
+      continue;
+    if (atom.title == "mux2" && !glue_mux_compatible(atom))
+      continue;
+    const int cost = measure_atom_cost(atom);
+    if (cost < 0)
+      continue;
+    p.atom_cost[ai] = cost;
+    if (atom.title == "mux2")
+      p.mux_cost = cost;
+    add_candidate_combinations(p, ai);
+  }
+  if (!p.budget.expired)
+    add_signature_matches(p);
+}
+
+long long
+conflicts(Problem &p,
+          const std::vector<const std::vector<unsigned char> *> &sigs) {
+  if (sigs.size() > kMaxGlueSignals)
+    return kUnreachable;
+  const std::size_t buckets = std::size_t{1} << sigs.size();
+  if (p.zero.size() < buckets) {
+    p.zero.resize(buckets, 0);
+    p.one.resize(buckets, 0);
+  }
+  long long total = 0;
+  for (std::size_t k = 0; k < p.spec.outputs.size(); ++k) {
+    p.touched.clear();
+    for (std::size_t m = 0; m < p.rows; ++m) {
+      std::size_t key = 0;
+      for (const auto *s : sigs)
+        key = (key << 1u) | ((*s)[m] ? 1u : 0u);
+      if (p.zero[key] == 0 && p.one[key] == 0)
+        p.touched.push_back(static_cast<int>(key));
+      if (p.tgt_rows[k * p.rows + m])
+        ++p.one[key];
+      else
+        ++p.zero[key];
+    }
+    // Only the buckets this output touched are cleared again.
+    for (int key : p.touched) {
+      const std::size_t at = static_cast<std::size_t>(key);
+      total += 1LL * p.zero[at] * p.one[at];
+      p.zero[at] = 0;
+      p.one[at] = 0;
+    }
+  }
+  return total;
+}
+
+std::optional<MultiProblem>
+glue_for(const Problem &p,
+         const std::vector<const std::vector<unsigned char> *> &sigs,
+         const std::vector<std::size_t> &order) {
+  std::vector<std::vector<unsigned char>> tables;
+  tables.reserve(sigs.size());
+  for (const auto *s : sigs)
+    tables.push_back(*s);
+  return glue_from_signals(p.spec, tables, order);
+}
+
+// The BDD glue cost depends on the variable order; try the natural one, each
+// single signal first, and the reversed order, and keep the cheapest.
+std::pair<std::optional<MultiProblem>, int>
+best_glue(Problem &p,
+          const std::vector<const std::vector<unsigned char> *> &sigs) {
+  const std::size_t ns = sigs.size();
+  std::optional<MultiProblem> best;
+  int best_count = std::numeric_limits<int>::max();
+  std::vector<std::size_t> id(ns);
+  std::iota(id.begin(), id.end(), 0);
+  std::vector<std::vector<std::size_t>> orders;
+  orders.push_back(id);
+  for (std::size_t j = 0; j < ns; ++j) {
+    std::vector<std::size_t> first;
+    first.reserve(ns);
+    first.push_back(j);
+    for (std::size_t k = 0; k < ns; ++k)
+      if (k != j)
+        first.push_back(k);
+    orders.push_back(std::move(first));
+  }
+  std::vector<std::size_t> rev(id.rbegin(), id.rend());
+  orders.push_back(std::move(rev));
+  for (const auto &order : orders) {
+    if (p.budget.check())
+      break;
+    auto h = glue_for(p, sigs, order);
+    if (!h)
+      continue;
+    const int c = bdd_mux_count(*h);
+    if (c < best_count) {
+      best = std::move(h);
+      best_count = c;
+    }
+  }
+  return {best, best_count};
+}
+
+int estimate_total(Problem &p, const std::vector<int> &chosen, int *muxes) {
+  std::vector<const std::vector<unsigned char> *> sigs;
+  int atoms = 0;
+  for (int ci : chosen) {
+    const Cand &c = p.cands[static_cast<std::size_t>(ci)];
+    atoms += c.cost;
+    for (const auto &o : c.outs)
+      sigs.push_back(&o);
+  }
+  if (sigs.size() > kMaxGlueSignals)
+    return kUnreachable;
+  if (conflicts(p, sigs) != 0)
+    return kUnreachable;
+  const auto [h, mux] = best_glue(p, sigs);
+  if (!h)
+    return kUnreachable;
+  if (muxes)
+    *muxes = mux;
+  return atoms + p.mux_cost * mux;
+}
+
+std::optional<Plan> make_plan(Problem &p, const std::vector<int> &chosen) {
+  int muxes = 0;
+  const int total = estimate_total(p, chosen, &muxes);
+  if (total == kUnreachable)
+    return std::nullopt;
+  Plan plan;
+  plan.chosen = chosen;
+  for (int ci : chosen)
+    plan.atoms += p.cands[static_cast<std::size_t>(ci)].cost;
+  plan.muxes = muxes;
+  plan.total = total;
+  return plan;
+}
+
+bool better_plan(const Plan &a, const Plan &b) {
+  if (a.total != b.total)
+    return a.total < b.total;
+  if (a.chosen.size() != b.chosen.size())
+    return a.chosen.size() < b.chosen.size();
+  return a.chosen < b.chosen;
+}
+
+// A candidate whose output table equals a spec output table covers that output:
+// the glue needs no mux for it, only a wire.  The mask makes the value of an
+// exact match visible to the seed selection below.
+void compute_cover_masks(Problem &p) {
+  p.cover_mask.assign(p.cands.size(), 0);
+  for (std::size_t ci = 0; ci < p.cands.size(); ++ci) {
+    unsigned mask = 0;
+    for (const auto &o : p.cands[ci].outs)
+      for (std::size_t t = 0; t < p.spec.outputs.size(); ++t) {
+        const unsigned char *base = p.tgt_rows.data() + t * p.rows;
+        if (std::equal(o.begin(), o.end(), base))
+          mask |= 1u << static_cast<unsigned>(t);
+      }
+    p.cover_mask[ci] = mask;
+  }
+}
+
+// Extend a plan one atom at a time, always taking the candidate with the best
+// conflict reduction; per_cost splits the score by transistor, so a cheap
+// signal wins over an expensive one with the same effect.
+std::optional<Plan> extend_greedy(Problem &p, std::vector<int> chosen,
+                                  bool per_cost) {
+  std::vector<const std::vector<unsigned char> *> sigs;
+  for (int ci : chosen)
+    for (const auto &o : p.cands[static_cast<std::size_t>(ci)].outs)
+      sigs.push_back(&o);
+  long long conf = conflicts(p, sigs);
+  while (conf > 0) {
+    if (p.budget.check() || chosen.size() >= kMaxGreedySteps)
+      return std::nullopt;
+    int pick = -1;
+    long long pick_gain = 0;
+    int pick_cost = 0;
+    for (std::size_t ci = 0; ci < p.cands.size(); ++ci) {
       if (std::find(chosen.begin(), chosen.end(), static_cast<int>(ci)) !=
           chosen.end())
         continue;
-      std::vector<const std::vector<unsigned char> *> tmp = sigs;
-      for (const auto &o : cands[ci].outs)
-        tmp.push_back(&o);
-      const long long c = conflicts(tmp);
-      const int cost = atom_cost[cands[ci].atom];
-      if (c < best_conf || (c == best_conf && cost < best_cost)) {
-        best = static_cast<int>(ci);
-        best_conf = c;
-        best_cost = cost;
+      const Cand &c = p.cands[ci];
+      if (sigs.size() + c.outs.size() > kMaxGlueSignals)
+        continue;
+      if (++p.nodes > kMaxSearchNodes)
+        return std::nullopt;
+      auto child = sigs;
+      for (const auto &o : c.outs)
+        child.push_back(&o);
+      const long long gain = conf - conflicts(p, child);
+      if (gain <= 0)
+        continue;
+      bool better = pick < 0;
+      if (!better && per_cost) {
+        // gain/cost compared as integers, so the choice is deterministic
+        const long long lhs = gain * pick_cost;
+        const long long rhs = pick_gain * c.cost;
+        better = lhs > rhs || (lhs == rhs && c.cost < pick_cost);
+      } else if (!better) {
+        better = gain > pick_gain || (gain == pick_gain && c.cost < pick_cost);
+      }
+      if (better) {
+        pick = static_cast<int>(ci);
+        pick_gain = gain;
+        pick_cost = c.cost;
       }
     }
-    if (best < 0 || best_conf >= cur)
-      break;
-    chosen.push_back(best);
-    for (const auto &o : cands[best].outs)
+    if (pick < 0)
+      return std::nullopt;
+    const Cand &c = p.cands[static_cast<std::size_t>(pick)];
+    chosen.push_back(pick);
+    for (const auto &o : c.outs)
       sigs.push_back(&o);
-    cur = best_conf;
+    conf -= pick_gain;
   }
-  if (cur != 0 || chosen.empty())
-    return std::nullopt;
+  return make_plan(p, chosen);
+}
 
+int atom_total(const Problem &p, const std::vector<int> &chosen) {
+  int total = 0;
+  for (int ci : chosen)
+    total += p.cands[static_cast<std::size_t>(ci)].cost;
+  return total;
+}
+
+// One step of lookahead from every seed: a seed plus one atom that already
+// determines the outputs is often the cheapest plan, and the greedy ordering
+// can walk past it by preferring a single bigger conflict reduction.  Plan
+// evaluations are capped because each one builds a BDD glue network.
+std::optional<Plan> pair_search(Problem &p,
+                                const std::vector<std::vector<int>> &seeds,
+                                std::optional<Plan> best) {
+  std::size_t evaluated = 0;
+  for (const auto &seed : seeds) {
+    std::vector<const std::vector<unsigned char> *> sigs;
+    for (int ci : seed)
+      for (const auto &o : p.cands[static_cast<std::size_t>(ci)].outs)
+        sigs.push_back(&o);
+    const int seed_atoms = atom_total(p, seed);
+    for (std::size_t ci = 0; ci < p.cands.size(); ++ci) {
+      const Cand &c = p.cands[ci];
+      if (std::find(seed.begin(), seed.end(), static_cast<int>(ci)) !=
+          seed.end())
+        continue;
+      if (sigs.size() + c.outs.size() > kMaxGlueSignals)
+        continue;
+      if (best && seed_atoms + c.cost >= best->total)
+        continue;
+      if (p.budget.check() || ++p.nodes > kMaxSearchNodes)
+        return best;
+      auto child = sigs;
+      for (const auto &o : c.outs)
+        child.push_back(&o);
+      if (conflicts(p, child) != 0)
+        continue;
+      if (evaluated++ >= kMaxPlanEvaluations)
+        continue;
+      std::vector<int> chosen = seed;
+      chosen.push_back(static_cast<int>(ci));
+      if (auto plan = make_plan(p, chosen);
+          plan && (!best || better_plan(*plan, *best)))
+        best = std::move(plan);
+    }
+  }
+  return best;
+}
+
+// Multi-start greedy: the empty plan, every strong exact cover, and pairs of
+// disjoint covers.  A covered output costs no glue at all, so covers are the
+// most valuable starting points; the two scoring modes hedge against a locally
+// attractive atom that blocks a cheaper plan.
+std::optional<Plan> greedy_search(Problem &p) {
+  compute_cover_masks(p);
+  std::vector<std::size_t> covers;
+  for (std::size_t ci = 0; ci < p.cands.size(); ++ci)
+    if (p.cover_mask[ci] != 0)
+      covers.push_back(ci);
+  std::sort(covers.begin(), covers.end(), [&](std::size_t a, std::size_t b) {
+    const int pa = std::popcount(p.cover_mask[a]);
+    const int pb = std::popcount(p.cover_mask[b]);
+    if (pa != pb)
+      return pa > pb;
+    if (p.cands[a].cost != p.cands[b].cost)
+      return p.cands[a].cost < p.cands[b].cost;
+    return a < b;
+  });
+  // Take one cover per mask class first, so the seed list spans different
+  // outputs instead of repeating the same function with another wiring.
+  std::vector<std::size_t> diverse;
+  std::set<unsigned> masks;
+  for (std::size_t ci : covers)
+    if (masks.insert(p.cover_mask[ci]).second)
+      diverse.push_back(ci);
+  for (std::size_t ci : covers)
+    if (std::find(diverse.begin(), diverse.end(), ci) == diverse.end())
+      diverse.push_back(ci);
+  covers = std::move(diverse);
+  if (covers.size() > kMaxCoverSeeds)
+    covers.resize(kMaxCoverSeeds);
+  std::vector<std::vector<int>> seeds;
+  seeds.push_back({});
+  for (std::size_t ci : covers)
+    seeds.push_back({static_cast<int>(ci)});
+  const std::size_t pairs = std::min(covers.size(), kMaxCoverPairs);
+  for (std::size_t i = 0; i < pairs; ++i)
+    for (std::size_t j = i + 1; j < pairs; ++j)
+      if ((p.cover_mask[covers[i]] & p.cover_mask[covers[j]]) == 0)
+        seeds.push_back(
+            {static_cast<int>(covers[i]), static_cast<int>(covers[j])});
+  std::optional<Plan> best = pair_search(p, seeds, std::nullopt);
+  for (const auto &seed : seeds) {
+    for (bool per_cost : {true, false}) {
+      if (p.budget.check() || p.nodes > kMaxSearchNodes)
+        return best;
+      if (auto plan = extend_greedy(p, seed, per_cost);
+          plan && (!best || better_plan(*plan, *best)))
+        best = std::move(plan);
+    }
+  }
+  return best;
+}
+
+// Extend a partial state greedily until the signals determine every output.
+std::optional<Plan> greedy_complete(Problem &p, State st) {
+  while (st.conf > 0) {
+    if (p.budget.check() || st.chosen.size() >= kMaxGreedySteps)
+      return std::nullopt;
+    int pick = -1;
+    long long pick_conf = st.conf;
+    int pick_cost = kUnreachable;
+    for (std::size_t ci = 0; ci < p.cands.size(); ++ci) {
+      if (std::find(st.chosen.begin(), st.chosen.end(), static_cast<int>(ci)) !=
+          st.chosen.end())
+        continue;
+      const Cand &c = p.cands[ci];
+      if (st.sigs.size() + c.outs.size() > kMaxGlueSignals)
+        continue;
+      if (++p.nodes > kMaxSearchNodes)
+        return std::nullopt;
+      auto sigs = st.sigs;
+      for (const auto &o : c.outs)
+        sigs.push_back(&o);
+      const long long conf = conflicts(p, sigs);
+      if (conf < pick_conf || (conf == pick_conf && c.cost < pick_cost)) {
+        pick = static_cast<int>(ci);
+        pick_conf = conf;
+        pick_cost = c.cost;
+      }
+    }
+    if (pick < 0)
+      return std::nullopt;
+    const Cand &c = p.cands[static_cast<std::size_t>(pick)];
+    st.chosen.push_back(pick);
+    st.atoms += c.cost;
+    for (const auto &o : c.outs)
+      st.sigs.push_back(&o);
+    st.conf = pick_conf;
+  }
+  return make_plan(p, st.chosen);
+}
+
+// Fallback when the greedy starts all fail: breadth-first layers of additions
+// keep the cheapest states per conflict count, so a plan that needs a locally
+// unattractive atom is still reachable.
+std::optional<Plan> beam_search(Problem &p) {
+  if (p.cands.empty())
+    return std::nullopt;
+  State start;
+  start.conf = conflicts(p, {});
+  std::vector<State> beam{start};
+  std::optional<Plan> best;
+  State best_partial = start;
+  const int width = std::clamp(
+      static_cast<int>(std::sqrt(static_cast<double>(p.cands.size()))), 4, 16);
+  for (std::size_t depth = 0; depth < p.cands.size() && !beam.empty();
+       ++depth) {
+    if (p.budget.check())
+      break;
+    std::vector<State> next;
+    std::set<std::string> seen;
+    for (const State &st : beam) {
+      for (std::size_t ci = 0; ci < p.cands.size(); ++ci) {
+        const Cand &c = p.cands[ci];
+        if (std::find(st.chosen.begin(), st.chosen.end(),
+                      static_cast<int>(ci)) != st.chosen.end())
+          continue;
+        if (best && st.atoms + c.cost >= best->total)
+          continue;
+        if (st.sigs.size() + c.outs.size() > kMaxGlueSignals)
+          continue;
+        if (++p.nodes > kMaxSearchNodes)
+          return best;
+        State ns = st;
+        ns.chosen.push_back(static_cast<int>(ci));
+        ns.atoms += c.cost;
+        for (const auto &o : c.outs)
+          ns.sigs.push_back(&o);
+        ns.conf = conflicts(p, ns.sigs);
+        if (ns.conf == 0) {
+          if (auto plan = make_plan(p, ns.chosen);
+              plan && (!best || better_plan(*plan, *best)))
+            best = std::move(plan);
+          continue; // complete states only get cheaper by removing atoms
+        }
+        if (ns.conf < best_partial.conf ||
+            (ns.conf == best_partial.conf && ns.atoms < best_partial.atoms))
+          best_partial = ns;
+        std::string key;
+        for (int x : ns.chosen)
+          key += std::to_string(x) + ",";
+        if (!seen.insert(std::move(key)).second)
+          continue;
+        next.push_back(std::move(ns));
+      }
+    }
+    std::sort(next.begin(), next.end(), [](const State &a, const State &b) {
+      if (a.conf != b.conf)
+        return a.conf < b.conf;
+      if (a.atoms != b.atoms)
+        return a.atoms < b.atoms;
+      return a.chosen < b.chosen;
+    });
+    if (static_cast<int>(next.size()) > width)
+      next.resize(static_cast<std::size_t>(width));
+    beam = std::move(next);
+  }
+  if (!best)
+    best = greedy_complete(p, best_partial);
+  return best;
+}
+
+// Drop instances the signals do not need: removing one is a win whenever the
+// glue grows by less than the atom it removes.
+void polish(Problem &p, Plan &plan) {
+  bool changed = true;
+  while (changed && !p.budget.check()) {
+    changed = false;
+    for (std::size_t i = 0; i < plan.chosen.size(); ++i) {
+      std::vector<int> trial = plan.chosen;
+      trial.erase(trial.begin() + static_cast<std::ptrdiff_t>(i));
+      auto smaller = make_plan(p, trial);
+      if (smaller && smaller->total < plan.total) {
+        plan = std::move(*smaller);
+        changed = true;
+        break;
+      }
+    }
+  }
+}
+
+} // namespace
+
+std::optional<ComposeResult>
+compose_from_library(const MultiProblem &spec,
+                     const std::vector<MultiProblem> &library,
+                     long long time_budget_ms, bool *timed_out) {
+  const std::size_t n = spec.vars.size();
+  if (library.empty() || spec.outputs.empty())
+    return std::nullopt;
+  Problem p(spec, library);
+  p.budget.start(time_budget_ms);
+  generate_candidates(p);
+  std::optional<Plan> plan = greedy_search(p);
+  if (!plan)
+    plan = beam_search(p);
+  if (!plan) {
+    *timed_out = p.budget.expired;
+    return std::nullopt;
+  }
+  polish(p, *plan);
+  *timed_out = p.budget.expired;
+
+  std::vector<const std::vector<unsigned char> *> sigs;
+  for (int ci : plan->chosen)
+    for (const auto &o : p.cands[static_cast<std::size_t>(ci)].outs)
+      sigs.push_back(&o);
   const std::size_t ns = sigs.size();
   const std::string prefix = signal_prefix(spec, ns);
-  const auto glue_res = best_h(sigs);
+  const auto glue_res = best_glue(p, sigs);
   if (!glue_res.first)
     return std::nullopt;
-  const MultiProblem &glue_problem = *glue_res.first;
   // RTL only: the glue is inlined into the top below and proved there.
-  const ComposeResult glue = compose_mux2(glue_problem, {}, false);
+  const ComposeResult glue =
+      compose_mux2(*glue_res.first, {}, {.synthesize = false});
   if (!glue.ok || glue.rtl.empty())
     return std::nullopt;
 
@@ -776,15 +1129,23 @@ compose_from_library(const MultiProblem &spec,
   std::ostringstream atoms_rtl;
   std::set<std::string> emitted;
   std::size_t out_idx = 0;
-  for (std::size_t i = 0; i < chosen.size(); ++i) {
-    const Cand &c = cands[chosen[i]];
-    const MultiProblem &atom = library[c.atom];
+  std::vector<AtomInstance> plan_atoms;
+  for (std::size_t i = 0; i < plan->chosen.size(); ++i) {
+    const Cand &c = p.cands[static_cast<std::size_t>(plan->chosen[i])];
+    const MultiProblem &atom = library[static_cast<std::size_t>(c.atom)];
     os << "  " << atom.title << " a" << i << "(";
-    for (std::size_t j = 0; j < c.vars.size(); ++j)
+    AtomInstance inst;
+    inst.module = atom.title;
+    for (std::size_t j = 0; j < c.vars.size(); ++j) {
       os << (j ? ", " : "") << spec.vars[c.vars[j]];
-    for (std::size_t o = 0; o < c.outs.size(); ++o)
+      inst.inputs.push_back(spec.vars[c.vars[j]]);
+    }
+    for (std::size_t o = 0; o < c.outs.size(); ++o) {
       os << ", " << prefix << (out_idx++);
+      inst.outputs.push_back(atom.names[o]);
+    }
     os << ");\n";
+    plan_atoms.push_back(std::move(inst));
     if (emitted.insert(atom.title).second)
       atoms_rtl << atom_module_rtl(atom) << "\n";
   }
@@ -797,13 +1158,18 @@ compose_from_library(const MultiProblem &spec,
     return std::nullopt;
   os << glue_rtl.substr(body_begin + 2, body_end - (body_begin + 2));
   os << "endmodule\n";
-  atoms_rtl << "module mux2(input logic A, B, S, output logic Y);\n"
-               "  assign Y = (S & B) | (~S & A);\nendmodule\n";
+  if (emitted.insert("mux2").second)
+    atoms_rtl << "module mux2(input logic A, B, S, output logic Y);\n"
+                 "  assign Y = (S & B) | (~S & A);\nendmodule\n";
 
   ComposeResult out;
   out.rtl = os.str();
   out.atom_rtl = atoms_rtl.str();
+  out.mode = "library";
   out.nodes = static_cast<int>(ns);
+  out.plan = std::move(plan_atoms);
+  out.time_budget_ms = time_budget_ms;
+  out.timed_out = p.budget.expired;
   const std::string dir = temp_dir();
   const fs::path top_path = fs::path(dir) / "top.v";
   const fs::path atom_path = fs::path(dir) / "atoms.v";
@@ -833,8 +1199,9 @@ compose_from_library(const MultiProblem &spec,
 
 ComposeResult compose_mux2(const MultiProblem &spec,
                            const std::vector<MultiProblem> &library,
-                           bool synthesize) {
+                           ComposeOptions options) {
   ComposeResult out;
+  out.time_budget_ms = options.time_budget_ms;
   if (spec.vars.empty() || spec.outputs.empty()) {
     out.reason = "compose needs a non-empty spec";
     return out;
@@ -844,8 +1211,15 @@ ComposeResult compose_mux2(const MultiProblem &spec,
     return out;
   }
 
-  if (const auto lib = compose_from_library(spec, library); lib)
+  // Library search: the beam picks measured atoms and pays only for the glue
+  // its signals leave undetermined.  timed_out survives the fallback to the
+  // pure mux2 network so callers can tell an exhaustive search from a cut one.
+  bool timed_out = false;
+  if (auto lib = compose_from_library(spec, library, options.time_budget_ms,
+                                      &timed_out);
+      lib)
     return *lib;
+  out.timed_out = timed_out;
 
   // Exact whole-function match first: one atom instance, no search needed.
   for (const auto &atom : library) {
@@ -890,7 +1264,9 @@ ComposeResult compose_mux2(const MultiProblem &spec,
 
     out.rtl = top.str();
     out.atom_rtl = at.str();
+    out.mode = "atom";
     out.nodes = 1;
+    out.plan.push_back({atom.title, spec.vars, atom.names});
     const std::string dir = temp_dir();
     const fs::path top_path = fs::path(dir) / "top.v";
     const fs::path atom_path = fs::path(dir) / (atom.title + ".v");
@@ -987,6 +1363,7 @@ ComposeResult compose_mux2(const MultiProblem &spec,
   os << "endmodule\n";
 
   out.rtl = os.str();
+  out.mode = "bdd-mux2";
   out.nodes = static_cast<int>(mux_nodes.size());
 
   // Exhaustively evaluate the composed network against the spec rows; this is
@@ -1012,7 +1389,7 @@ ComposeResult compose_mux2(const MultiProblem &spec,
       }
   if (!self_check)
     return out;
-  if (!synthesize) {
+  if (!options.synthesize) {
     // RTL only: the emitted network is checked against its own tables here,
     // and the caller proves the composed top it inlines this into.
     out.ok = true;

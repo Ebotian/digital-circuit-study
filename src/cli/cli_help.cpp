@@ -33,7 +33,8 @@ Commands:
   multi synth    --spec FILE [--out DIR] [--png] [--max-fanin N]
                  [--rtl TOP.v --atoms ATOMS.v] [--json]
   multi exact    --spec FILE [--out DIR] [--json]
-  multi compose  --spec FILE [--out DIR] [--json]  (BDD -> 2:1 mux network)
+  multi compose  --spec FILE [--library LIB.json] [--time-budget-ms N]
+                 [--out DIR] [--json]  (atom search, else BDD -> mux2)
   multi path     --spec FILE [--max-cost N] [--max-chain N] [--max-ops N] [--tri-state] [--json]
   multi template --spec FILE [--json]
   render         --expr EXPR | --tt BITS | --netlist FILE [--atoms FILE]
@@ -58,6 +59,9 @@ Options:
   --tri-state    allow high-Z outputs; a 0 in a one-hot output becomes high-Z
   --spec         JSON circuit spec: {"inputs":[...],"outputs":[{"name":...,"expr":...}]}
   --max-fanin N  static CMOS cell fan-in limit (e.g. 2); 0 = library default
+  --library FILE JSON array of atom specs; multi compose searches them instead
+                 of only synthesising a BDD -> mux2 network
+  --time-budget-ms N  wall-clock limit for the compose search; 0 = no deadline
   --rtl FILE     hierarchical Verilog (top module `top`) to map instead of spec RTL
   --atoms FILE   atom modules read as blackboxes; "-" pipes in a previous stage
   --ref FILE     verify structurally against module FILE (spec optional)

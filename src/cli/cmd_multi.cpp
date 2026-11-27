@@ -284,7 +284,17 @@ int cmd_multi_path(const Args &a, const MultiProblem &spec) {
 
 int cmd_multi_compose(const Args &a, const MultiProblem &spec,
                       const std::vector<MultiProblem> &library) {
-  const ComposeResult r = compose_mux2(spec, library);
+  ComposeOptions opt;
+  if (a.has("time-budget-ms")) {
+    try {
+      opt.time_budget_ms = std::stoll(a.get("time-budget-ms"));
+    } catch (const std::exception &) {
+      throw CliError("--time-budget-ms must be an integer");
+    }
+    if (opt.time_budget_ms < 0)
+      throw CliError("--time-budget-ms must be >= 0");
+  }
+  const ComposeResult r = compose_mux2(spec, library, opt);
   const bool json = a.is("json");
   const std::string out_dir = a.get("out");
   if (r.ok && !out_dir.empty()) {
@@ -306,7 +316,7 @@ int cmd_multi_compose(const Args &a, const MultiProblem &spec,
     Json j;
     j["ok"] = r.ok;
     j["command"] = "multi.compose";
-    j["mode"] = "bdd-mux2";
+    j["mode"] = r.mode;
     j["title"] = spec.title;
     j["nodes"] = r.nodes;
     j["total"] = r.synth.total;
@@ -324,15 +334,37 @@ int cmd_multi_compose(const Args &a, const MultiProblem &spec,
     }
     j["atoms"] = std::move(atoms);
     j["verified"] = r.verified;
+    j["timed_out"] = r.timed_out;
+    j["time_budget_ms"] = static_cast<std::int64_t>(r.time_budget_ms);
+    Json plan = Json::Array{};
+    for (const auto &inst : r.plan) {
+      Json pj;
+      pj["module"] = inst.module;
+      Json inputs = Json::Array{};
+      for (const auto &name : inst.inputs)
+        inputs.push_back(name);
+      pj["inputs"] = std::move(inputs);
+      Json outputs = Json::Array{};
+      for (const auto &name : inst.outputs)
+        outputs.push_back(name);
+      pj["outputs"] = std::move(outputs);
+      plan.push_back(std::move(pj));
+    }
+    j["plan"] = std::move(plan);
     if (!r.ok)
       j["reason"] = r.reason;
     std::cout << j.dump() << "\n";
   } else if (!r.ok) {
     std::cerr << "multi compose failed: " << r.reason << "\n";
   } else {
-    std::cout << "multi compose (BDD -> mux2): " << r.nodes << " mux2, "
-              << r.synth.total << "T (" << r.synth.atom_cost << "T atoms + "
-              << r.synth.cell_cost << "T glue)\n  miter: PASS\n";
+    std::cout << "multi compose (" << r.mode << "): " << r.synth.total << "T ("
+              << r.synth.atom_cost << "T atoms + " << r.synth.cell_cost
+              << "T glue, " << r.nodes << " "
+              << (r.mode == "bdd-mux2" ? "mux2" : "signals")
+              << ")\n  miter: PASS\n";
+    if (r.timed_out)
+      std::cout << "  search: time budget exhausted, plan is not exhaustive"
+                << "\n";
   }
   return (r.ok && r.verified) ? 0 : 1;
 }

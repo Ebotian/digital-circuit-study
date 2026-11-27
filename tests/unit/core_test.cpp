@@ -232,3 +232,60 @@ TEST_CASE("generated miter wires cannot shadow input names", "[core]") {
   REQUIRE(src.find("wire y_dut;") == std::string::npos);
   REQUIRE(src.find("wire ok;") == std::string::npos);
 }
+TEST_CASE("function signatures ignore variable names", "[core]") {
+  // A & ~B: the declared order is already canonical, so order stays 0,1.
+  const FuncSignature s =
+      canonical_signature(std::vector<unsigned char>{0, 0, 1, 0}, 2);
+  REQUIRE(s.arity == 2);
+  REQUIRE(s.exact);
+  REQUIRE(s.table == std::vector<unsigned char>{0, 0, 1, 0});
+  REQUIRE(s.order == std::vector<std::size_t>{0, 1});
+
+  // The same function wired as B & ~A: same table, swapped order.  This is the
+  // property the library search uses to match an atom output to a spec output.
+  const FuncSignature t =
+      canonical_signature(std::vector<unsigned char>{0, 1, 0, 0}, 2);
+  REQUIRE(t.table == s.table);
+  REQUIRE(t.order == std::vector<std::size_t>{1, 0});
+
+  // Different functions never share a signature.
+  const FuncSignature and2 =
+      canonical_signature(std::vector<unsigned char>{0, 0, 0, 1}, 2);
+  const FuncSignature or2 =
+      canonical_signature(std::vector<unsigned char>{0, 1, 1, 1}, 2);
+  REQUIRE(and2.table != or2.table);
+}
+
+TEST_CASE("function signatures strip unused inputs", "[core]") {
+  // f(A,B,C) = A & B: C never matters, so the arity drops to 2.
+  const FuncSignature s = canonical_signature(
+      std::vector<unsigned char>{0, 0, 0, 0, 0, 0, 1, 1}, 3);
+  REQUIRE(s.arity == 2);
+  REQUIRE(s.exact);
+  REQUIRE(s.table == std::vector<unsigned char>{0, 0, 0, 1});
+  REQUIRE(s.order == std::vector<std::size_t>{0, 1});
+
+  // A constant depends on nothing.
+  const FuncSignature one =
+      canonical_signature(std::vector<unsigned char>{1, 1, 1, 1}, 2);
+  REQUIRE(one.arity == 0);
+  REQUIRE(one.table == std::vector<unsigned char>{1});
+  REQUIRE(one.order.empty());
+}
+
+TEST_CASE("signature search stops above its variable cap", "[core]") {
+  // Parity of 7 inputs depends on every variable: past kMaxSignatureVars the
+  // permutation search is skipped, and the signature reports that it is not
+  // canonical so two such tables are only compared in declared order.
+  std::vector<unsigned char> parity(std::size_t{1} << 7, 0);
+  for (std::size_t m = 0; m < parity.size(); ++m) {
+    bool odd = false;
+    for (std::size_t v = 0; v < 7; ++v)
+      odd = odd != (((m >> v) & 1u) != 0);
+    parity[m] = odd ? 1 : 0;
+  }
+  const FuncSignature s = canonical_signature(parity, 7);
+  REQUIRE(s.arity == 7);
+  REQUIRE_FALSE(s.exact);
+  REQUIRE(s.order == std::vector<std::size_t>{0, 1, 2, 3, 4, 5, 6});
+}

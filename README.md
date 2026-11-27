@@ -413,7 +413,22 @@ multi-output static CMOS: decoder3to8
 - 验证：≤12 输入走 spec 真值表 miter；13–16 输入用「穷举自检（BDD 对 spec 全行）+ 结构 miter（映射网表对 BDD 行为参考）」。
 - spec 输入上限：compose 为 16，其他 `multi` 子命令仍为 12。
 
+#### 原子库搜索：`--library`
 
+带上 `--library` 时，`multi compose` 不再直接落成 mux2 网络，而是在原子库里**自动选原子、自动分解**：
+
+```bash
+./build/dcstudy multi compose --spec bench/fixtures/prio8.json \
+  --library tests/verify/instances/specs/library.json --json
+# 66T = 2x pe42 + or4 + 2x mux2 胶合, verified
+```
+
+- 每个原子先按现有后端实测成本（≤4 输入用单级静态精确解，其余走 Yosys 映射）；成本按实例计一次，胶合用 BDD→mux2 网络，最后仍由 Yosys miter 证明**实际写出的网表**。
+- 原子输出按**函数形状**匹配：去掉函数不依赖的输入、枚举变量重命名取字典序最小真值表作签名。签名相同即同一函数，所以端口顺序/变量名不同的原子也能对上（`A&~B` 可匹配 `~X&W`，并把实例接成 `W,X`）。
+- 搜索是「种子 + 贪心」：空计划、各精确覆盖（原子输出恰好等于某个 spec 输出，胶合里只需一根线）以及两两不相交的覆盖作为起点；每步加冲突下降最多的原子（第二种模式按每晶体管收益排序），先做一步前瞻评估「种子 + 一个原子」，最后删掉多余的实例。
+- 组宽度不限（`n = k·g` 只是常见情形；混合宽度、部分输入不接原子也可以），允许原子共享输入；库里名为 `mux2` 的模块必须是真正的 2:1 mux，否则跳过（胶合网络就实例化这个模块）。
+- `--time-budget-ms N` 给搜索一个墙钟上限：到期返回当前最好的完整方案并置 `timed_out: true`；一个方案都没有就回退到纯 mux2 网络（同样 verified）。
+- JSON 增加 `mode`（`library` / `atom` / `bdd-mux2`）、`plan`（每个实例的模块、输入、输出端口）、`timed_out`、`time_budget_ms`。
 
 #### 复用自定义原子组件：`--rtl` + `--atoms`
 

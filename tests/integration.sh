@@ -560,6 +560,65 @@ JSON
   yosys -Q -p "read_verilog -sv $TMP/compose-lib-out/mux2.v $TMP/compose-lib-out/compose.v; hierarchy -top top; check -assert" \
     > "$TMP/compose-lib-check.log" 2>&1 || fail "library compose has conflicting drivers"
   pass "miter/compose name hygiene"
+  # The search matches atoms by function shape: an atom whose output equals a
+  # spec output only after renaming its inputs must still be found, and the
+  # emitted instance has to be wired to the renamed variables.
+  cat > "$TMP/lt-lib.json" <<'JSON'
+[{"name":"lt","inputs":["A","B"],"outputs":[{"name":"Y","expr":"A&~B"}]}]
+JSON
+  cat > "$TMP/lt-spec.json" <<'JSON'
+{"name":"lt_swapped","inputs":["X","W"],"outputs":[{"name":"Y","expr":"~X&W"}]}
+JSON
+  "$BIN" multi compose --spec "$TMP/lt-spec.json" --library "$TMP/lt-lib.json" \
+    --json > "$TMP/lt-out.json" || fail "compose permuted match"
+  [ "$(jq -r .mode "$TMP/lt-out.json")" = "library" ] || fail "permuted match mode"
+  [ "$(jq -r '.plan | length' "$TMP/lt-out.json")" = "1" ] || fail "permuted match plan"
+  [ "$(jq -r '.plan[0].module' "$TMP/lt-out.json")" = "lt" ] || fail "permuted match atom"
+  [ "$(jq -r '.plan[0].inputs | join(",")' "$TMP/lt-out.json")" = "W,X" ] || fail "permuted match wiring"
+  [ "$(jq -r .verified "$TMP/lt-out.json")" = "true" ] || fail "permuted match verify"
+  [ "$(jq -r .cell_cost "$TMP/lt-out.json")" = "0" ] || fail "permuted match glue"
+
+  # Mixed atom widths: 3+2 inputs cover all five, so no partition into equal
+  # groups exists; the search still has to find both atoms with no glue.
+  cat > "$TMP/mixed-lib.json" <<'JSON'
+[{"name":"and3","inputs":["A","B","C"],"outputs":[{"name":"Y","expr":"A&B&C"}]},
+ {"name":"and2","inputs":["A","B"],"outputs":[{"name":"Y","expr":"A&B"}]}]
+JSON
+  cat > "$TMP/mixed-spec.json" <<'JSON'
+{"name":"mixed","inputs":["A","B","C","D","E"],
+ "outputs":[{"name":"Y3","expr":"A&B&C"},{"name":"Y2","expr":"D&E"}]}
+JSON
+  "$BIN" multi compose --spec "$TMP/mixed-spec.json" --library "$TMP/mixed-lib.json" \
+    --json > "$TMP/mixed-out.json" || fail "compose mixed widths"
+  [ "$(jq -r .verified "$TMP/mixed-out.json")" = "true" ] || fail "mixed widths verify"
+  [ "$(jq -r '.plan | length' "$TMP/mixed-out.json")" = "2" ] || fail "mixed widths plan"
+  [ "$(jq -r .cell_cost "$TMP/mixed-out.json")" = "0" ] || fail "mixed widths glue"
+  [ "$(jq -r '[.plan[].module] | sort | join(",")' "$TMP/mixed-out.json")" = "and2,and3" ] \
+    || fail "mixed widths atoms"
+
+  # A library atom called mux2 that is not the 2:1 mux would be redefined in
+  # atoms.v or silently used as the glue cell, so it must not be used at all.
+  cat > "$TMP/bogus-mux.json" <<'JSON'
+[{"name":"mux2","inputs":["A","B","S"],"outputs":[{"name":"Y","expr":"A^B"}]}]
+JSON
+  "$BIN" multi compose --spec "$TMP/mixed-spec.json" --library "$TMP/bogus-mux.json" \
+    --json > "$TMP/bogus-mux-out.json" || fail "compose with a shadowing mux2"
+  [ "$(jq -r .mode "$TMP/bogus-mux-out.json")" = "bdd-mux2" ] || fail "shadowing mux2 was used"
+  [ "$(jq -r '.plan | length' "$TMP/bogus-mux-out.json")" = "0" ] || fail "shadowing mux2 plan"
+
+  # The wall-clock budget has to cut the search and say so, and the fallback
+  # network still has to be verified.
+  "$BIN" multi compose --spec "$ROOT/bench/fixtures/prio8.json" \
+    --library "$SPEC/library.json" --time-budget-ms 1 --json > "$TMP/budget.json" \
+    || fail "compose time budget"
+  [ "$(jq -r .timed_out "$TMP/budget.json")" = "true" ] || fail "time budget not reported"
+  [ "$(jq -r .verified "$TMP/budget.json")" = "true" ] || fail "time budget verify"
+  "$BIN" multi compose --spec "$ROOT/bench/fixtures/prio8.json" \
+    --library "$SPEC/library.json" --json > "$TMP/no-budget.json" \
+    || fail "compose without a budget"
+  [ "$(jq -r .timed_out "$TMP/no-budget.json")" = "false" ] || fail "unbounded search cut"
+  [ "$(jq -r .total "$TMP/no-budget.json")" = "66" ] || fail "prio8 library plan"
+  pass "compose search"
 
   # An atom module that shadows a standard cell would be costed and mapped as
   # the library cell while the miter reads the atom's own RTL.
