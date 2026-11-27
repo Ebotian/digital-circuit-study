@@ -1159,8 +1159,19 @@ compose_from_library(const MultiProblem &spec,
     glue_src += "\n";
     glue_src += kMux2Module;
     abc = abc_rewrite(glue_src, glue_name, options.abc_options);
-    if (abc.ok)
-      abc_glue = abc.verilog;
+    if (abc.ok) {
+      // ABC may change the netlist, not the function: prove the rewrite against
+      // the network the table-level check already accepted.  This is what keeps
+      // big specs (no top-level miter) sound, and it catches a wrong rewrite
+      // even when the flow would have mapped it without complaint.
+      const AbcEquivResult eq =
+          abc_equivalent(glue_src, abc.verilog, glue_name, glue_res.first->vars,
+                         spec.names, options.abc_options.timeout_seconds);
+      if (eq.ok)
+        abc_glue = abc.verilog;
+      else
+        abc.reason = eq.reason;
+    }
   }
 
   // Emit the final top: atom instances + the glue module.
@@ -1250,7 +1261,9 @@ compose_from_library(const MultiProblem &spec,
     // Prove the netlist that is actually written out.  The table-level search
     // above checked the atom and glue functions, but not the emitted text: a
     // net-name collision used to survive it.  Above the SOP reference size the
-    // miter is too deep, so that range keeps the table-level check only.
+    // miter is too deep, so that range keeps the table-level check only; with
+    // --abc the rewritten glue is separately proved equivalent to the glue that
+    // check accepted, so the rewrite does not weaken that range.
     const bool prove = spec.vars.size() <= kMaxGlueSignals;
     out.synth = synthesize_rtl_atoms(top_path.string(), atom_path.string(),
                                      spec, "", 0, !prove);

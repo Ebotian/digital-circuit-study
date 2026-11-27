@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <string>
+#include <vector>
 
 namespace dcstudy {
 
@@ -48,5 +49,21 @@ std::string find_abc_binary(const std::string &explicit_path = {});
 // top module; they are flattened away before BLIF so ABC only sees gates.
 AbcResult abc_rewrite(const std::string &verilog, const std::string &top,
                       const AbcOptions &options = {});
+
+// Proof that a rewrite kept the function: a SAT miter over both modules, with
+// the rewritten one renamed inside Yosys (so the sources keep their own module
+// name).  The glue is capped at kMaxGlueSignals inputs, which is why this check
+// is cheap enough to run on every rewrite.
+struct AbcEquivResult {
+  bool ok = false;
+  std::string reason;
+};
+
+AbcEquivResult abc_equivalent(const std::string &before_verilog,
+                              const std::string &after_verilog,
+                              const std::string &module,
+                              const std::vector<std::string> &inputs,
+                              const std::vector<std::string> &outputs,
+                              int timeout_seconds = kAbcTimeoutSeconds);
 
 } // namespace dcstudy

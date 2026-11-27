@@ -83,3 +83,20 @@ TEST_CASE("ABC balance does not grow the netlist", "[abc]") {
       prove_yosys(wrap_dut(r.verilog, "abc_dut"), spec.func, spec.vars);
   REQUIRE(proof.ok);
 }
+
+TEST_CASE("ABC equivalence rejects a changed function", "[abc]") {
+  REQUIRE_ABC_TOOLS();
+  const std::string and2 = "module g(input logic A, B, output logic Y);\n"
+                           "  assign Y = A & B;\nendmodule\n";
+  const std::string or2 = "module g(input logic A, B, output logic Y);\n"
+                          "  assign Y = A | B;\nendmodule\n";
+  const AbcEquivResult bad = abc_equivalent(and2, or2, "g", {"A", "B"}, {"Y"});
+  REQUIRE_FALSE(bad.ok);
+  REQUIRE_FALSE(bad.reason.empty());
+  // Reordering the expression is still the same function.
+  const std::string same = "module g(input logic A, B, output logic Y);\n"
+                           "  assign Y = B & A;\nendmodule\n";
+  const AbcEquivResult good =
+      abc_equivalent(and2, same, "g", {"A", "B"}, {"Y"});
+  REQUIRE(good.ok);
+}

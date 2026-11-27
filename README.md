@@ -429,7 +429,8 @@ multi-output static CMOS: decoder3to8
 - 组宽度不限（`n = k·g` 只是常见情形；混合宽度、部分输入不接原子也可以），允许原子共享输入；库里名为 `mux2` 的模块必须是真正的 2:1 mux，否则跳过（胶合网络就实例化这个模块）。
 - `--time-budget-ms N` 给搜索一个墙钟上限：到期返回当前最好的完整方案并置 `timed_out: true`；一个方案都没有就回退到纯 mux2 网络（同样 verified）。
 - JSON 增加 `mode`（`library` / `atom` / `bdd-mux2`）、`plan`（每个实例的模块、输入、输出端口）、`timed_out`、`time_budget_ms`。
-- `--abc`：把胶合网（mux2 网络）交给**独立进程** ABC 做结构等价变换（默认 `balance; rewrite -l; refactor -l; resub -K 6 -N 2; drw -l`，不跑 amap/liberty），再回到原映射与 miter 口径：胶合因此变成标准单元（`cell_cost`），不再是按个计费的 mux2 原子。胶合大时收益明显：hex7seg_sel + 同一库，39 个胶合 mux2（468T）经 ABC 后映射到 186T 标准单元，总 546T → 258T，verified；prio8 的胶合本来只有 2 个 mux2，改写后 22→7 个 `.names`、总成本仍 66T。代价是两次 Yosys + 一次 ABC（约 +50ms）。
+- `--abc`：把胶合网（mux2 网络）交给**独立进程** ABC 做结构等价变换（默认 `balance; rewrite -l; refactor -l; resub -K 6 -N 2; drw -l`，不跑 amap/liberty），再回到原映射与 miter 口径：胶合因此变成标准单元（`cell_cost`），不再是按个计费的 mux2 原子。胶合大时收益明显：hex7seg_sel + 同一库，39 个胶合 mux2（468T）经 ABC 后映射到 186T 标准单元，总 546T → 258T，verified；prio8 的胶合本来只有 2 个 mux2，改写后 22→7 个 `.names`、总成本仍 66T。代价是三次 Yosys + 一次 ABC（约 +70ms）。
+- 改写前后再做一次 SAT 等价证明（胶合 ≤12 信号，miter 很小），失败同样回退，避免「节点数对了但函数改错了」；这一步约 +30ms。
 - ABC 失败、超时或把网表变大时回退到内联 mux2 胶合，`abc.reason` 给出原因（机器可读）；`--abc-timeout` 控制每步超时（默认 5s），`--abc-commands` 覆盖脚本。没有 `--library` 时 `--abc` 不会改写纯 BDD 网络，JSON 里也会说明。
 - JSON 另有 `glue`（`mux2` / `abc` / `direct`）、`glue_estimated`（搜索估价，只用于选方案）和 `abc`（`version` / `commands` / `nodes_before` / `nodes_after` / `reason`）；最终成本以实测的 `atom_cost` / `cell_cost` 为准。
 

@@ -288,4 +288,71 @@ AbcResult abc_rewrite(const std::string &verilog, const std::string &top,
   return out;
 }
 
+AbcEquivResult abc_equivalent(const std::string &before_verilog,
+                              const std::string &after_verilog,
+                              const std::string &module,
+                              const std::vector<std::string> &inputs,
+                              const std::vector<std::string> &outputs,
+                              int timeout_seconds) {
+  AbcEquivResult out;
+  if (before_verilog.empty() || after_verilog.empty() || module.empty() ||
+      inputs.empty() || outputs.empty()) {
+    out.reason = "equivalence check needs two modules and their ports";
+    return out;
+  }
+  if (timeout_seconds <= 0) {
+    out.reason = "equivalence check needs a positive timeout";
+    return out;
+  }
+  TempDir dir;
+  const fs::path &work = dir.path();
+  write_file(work / "before.v", before_verilog);
+  write_file(work / "after.v", after_verilog);
+
+  std::ostringstream miter;
+  miter << "module miter(";
+  for (std::size_t i = 0; i < inputs.size(); ++i)
+    miter << (i ? ", " : "") << "input logic " << inputs[i];
+  miter << ", output logic mismatch);\n";
+  for (const auto &name : outputs)
+    miter << "  wire " << name << "_a, " << name << "_b;\n";
+  auto instance = [&](const std::string &type, const std::string &suffix) {
+    miter << "  " << type << " u_" << suffix << "(";
+    bool first = true;
+    for (const auto &name : inputs) {
+      miter << (first ? "" : ", ") << "." << name << "(" << name << ")";
+      first = false;
+    }
+    for (const auto &name : outputs)
+      miter << ", ." << name << "(" << name << "_" << suffix << ")";
+    miter << ");\n";
+  };
+  instance("glue_a", "a");
+  instance("glue_b", "b");
+  miter << "  assign mismatch = ";
+  for (std::size_t i = 0; i < outputs.size(); ++i)
+    miter << (i ? " | " : "") << "(" << outputs[i] << "_a !== " << outputs[i]
+          << "_b)";
+  miter << ";\nendmodule\n";
+  write_file(work / "miter.v", miter.str());
+
+  // Rename between reads: both sources keep their own module name, and the
+  // miter instantiates glue_a / glue_b.
+  const std::string script =
+      "read_verilog -sv before.v; rename " + module +
+      " glue_a; read_verilog -sv after.v; rename " + module +
+      " glue_b; read_verilog -sv miter.v; prep -top miter; flatten; "
+      "delete t:$scopeinfo; opt -full; sat -verify -prove mismatch 0 miter";
+  const std::string cmd = "cd " + shell_quote(work.string()) +
+                          " && yosys -Q -p " + shell_quote(script);
+  const int rc = run_logged(cmd, work / "equiv.log", timeout_seconds);
+  if (rc != 0) {
+    out.reason = "rewrite changed the glue function (or the miter failed): " +
+                 tail(read_file(work / "equiv.log"));
+    return out;
+  }
+  out.ok = true;
+  return out;
+}
+
 } // namespace dcstudy
