@@ -22,6 +22,7 @@
 `docs/index.html` 是总目录页。启用 GitHub Pages 后(Source 选 `main` 分支的 `/docs` 目录)可直接在线阅读。
 
 相关调研：[`docs/transistor-synthesis-survey.md`](docs/transistor-synthesis-survey.md) — 晶体管级/多输出/pass-transistor 综合的现有实现与来源。
+相关设计基线：[`docs/sequential-design.md`](docs/sequential-design.md) — 时序逻辑的需求编码（`REQ-SEQ`）与验证交叉矩阵（VCRM），S0–S5 计划（设计基线，未实现）。
 
 ---
 
